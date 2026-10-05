@@ -21,9 +21,22 @@
 		AA0000000000000000000031 /* VigorTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VigorTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		AA0000000000000000000042 /* Exceptions for "Vigor" folder in "Vigor" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = AA0000000000000000000010 /* Vigor */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		AA0000000000000000000040 /* Vigor */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AA0000000000000000000042 /* Exceptions for "Vigor" folder in "Vigor" target */,
+			);
 			path = Vigor;
 			sourceTree = "<group>";
 		};
@@ -264,6 +277,7 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Vigor/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Vigor;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Vigor utilise la caméra pour scanner le code-barres des aliments.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Vigor lit tes données de santé (sommeil, VFC, fréquence cardiaque, séances, poids, nutrition) pour analyser ta forme et adapter ton entraînement.";
@@ -298,6 +312,7 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Vigor/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Vigor;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Vigor utilise la caméra pour scanner le code-barres des aliments.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Vigor lit tes données de santé (sommeil, VFC, fréquence cardiaque, séances, poids, nutrition) pour analyser ta forme et adapter ton entraînement.";

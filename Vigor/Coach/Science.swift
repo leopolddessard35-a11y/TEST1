@@ -106,4 +106,12 @@ enum Science {
         id: "helms2016",
         citation: "Helms ER, et al. Application of the repetitions in reserve-based rating of perceived exertion scale for resistance training. Strength Cond J. 2016;38(4):42-49.",
         finding: "Le RPE basé sur les répétitions en réserve permet d'ajuster la charge à la forme du jour.")
+    static let fullagar2015 = Reference(
+        id: "fullagar2015",
+        citation: "Fullagar HHK, Skorski S, Duffield R, Hammes D, Coutts AJ, Meyer T. Sleep and athletic performance: the effects of sleep loss on exercise performance, and physiological and cognitive responses to exercise. Sports Med. 2015;45(2):161-186.",
+        finding: "Le manque de sommeil réduit surtout la performance en effort intense et prolongé, ainsi que la motivation et la perception de l'effort.")
+    static let mountjoy2018 = Reference(
+        id: "mountjoy2018",
+        citation: "Mountjoy M, et al. IOC consensus statement on relative energy deficiency in sport (RED-S): 2018 update. Br J Sports Med. 2018;52(11):687-697.",
+        finding: "Manger nettement moins que ce que l'on dépense dégrade la récupération, l'immunité, la santé osseuse et les gains musculaires.")
 }

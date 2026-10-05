@@ -23,6 +23,10 @@ private struct ProfileForm: View {
     @Environment(AppModel.self) private var app
     @Bindable var profile: AthleteProfile
     @State private var apiKey = ""
+    @AppStorage(NotificationScheduler.Keys.morningEnabled) private var morningEnabled = true
+    @AppStorage(NotificationScheduler.Keys.morningMinutes) private var morningMinutes = 7 * 60 + 15
+    @AppStorage(NotificationScheduler.Keys.eveningEnabled) private var eveningEnabled = true
+    @AppStorage(NotificationScheduler.Keys.eveningMinutes) private var eveningMinutes = 20 * 60 + 30
 
     var body: some View {
         Form {
@@ -78,6 +82,20 @@ private struct ProfileForm: View {
             } footer: {
                 Text("1. Crée un compte gratuit sur intervals.icu et relie Garmin Connect (Settings → Connections).\n2. Settings → Developer Settings : copie l'« Athlete ID » et génère une « API Key ».\n3. Colle-les ici, puis synchronise. Tu récupères tes séances complètes, la VFC nocturne, le score de sommeil, la readiness Garmin et ton calendrier d'entraînement.")
             }
+            Section {
+                Toggle("Plan du matin", isOn: $morningEnabled)
+                if morningEnabled {
+                    DatePicker("Heure", selection: timeBinding($morningMinutes), displayedComponents: .hourAndMinute)
+                }
+                Toggle("Bilan du soir", isOn: $eveningEnabled)
+                if eveningEnabled {
+                    DatePicker("Heure", selection: timeBinding($eveningMinutes), displayedComponents: .hourAndMinute)
+                }
+            } header: {
+                Text("Notifications")
+            } footer: {
+                Text("Matin : verdict du jour, séance adaptée à ta nuit et ta récup, priorité n° 1. Soir : protéines ou calories manquantes, préparation de la séance du lendemain (glucides, coucher).")
+            }
             Section("Synchronisation") {
                 Button {
                     Task { await app.syncAll(context: context, profile: profile) }
@@ -106,7 +124,22 @@ private struct ProfileForm: View {
         .scrollContentBackground(.hidden)
         .background(AppBackground())
         .onAppear { apiKey = app.intervalsAPIKey }
+        .onChange(of: morningEnabled) { app.dataVersion += 1 }
+        .onChange(of: eveningEnabled) { app.dataVersion += 1 }
         .onDisappear { try? context.save() }
+    }
+
+    /// Convertit des minutes après minuit en heure pour le sélecteur.
+    private func timeBinding(_ minutes: Binding<Int>) -> Binding<Date> {
+        Binding(
+            get: {
+                Calendar.current.date(byAdding: .minute, value: minutes.wrappedValue, to: Calendar.current.startOfDay(for: .now)) ?? .now
+            },
+            set: { date in
+                let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+                minutes.wrappedValue = (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
+                app.dataVersion += 1
+            })
     }
 
     private func numberField(_ title: String, value: Binding<Double>) -> some View {

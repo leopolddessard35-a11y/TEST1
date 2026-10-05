@@ -1,27 +1,31 @@
 import SwiftUI
 import SwiftData
+import BackgroundTasks
 
 @main
 struct VigorApp: App {
     @State private var app = AppModel()
+    let container: ModelContainer
+
+    init() {
+        do {
+            container = try ModelContainer(for: DailyWellness.self, CardioActivity.self, StrengthWorkout.self, StrengthSet.self,
+                                           Unavailability.self, Injury.self, AthleteProfile.self, PlannedWorkout.self,
+                                           FoodItem.self, FoodEntry.self)
+        } catch {
+            fatalError("Base de données impossible à ouvrir : \(error)")
+        }
+    }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environment(app)
         }
-        .modelContainer(for: [
-            DailyWellness.self,
-            CardioActivity.self,
-            StrengthWorkout.self,
-            StrengthSet.self,
-            Unavailability.self,
-            Injury.self,
-            AthleteProfile.self,
-            PlannedWorkout.self,
-            FoodItem.self,
-            FoodEntry.self,
-        ])
+        .modelContainer(container)
+        .backgroundTask(.appRefresh(AppModel.refreshTaskID)) {
+            await app.backgroundRefresh(container: container)
+        }
     }
 }
 
@@ -65,6 +69,54 @@ final class AppModel {
             }
         }
         statusMessage = messages.joined(separator: "\n")
+    }
+
+    static let refreshTaskID = "fr.leopold.vigor.refresh"
+
+    /// Recalcule le coach depuis la base (hors affichage) : notifications et arrière-plan.
+    func makeSnapshot(context: ModelContext) -> CoachSnapshot? {
+        guard let profile = (try? context.fetch(FetchDescriptor<AthleteProfile>()))?.first else { return nil }
+        return CoachSnapshot.build(
+            profile: profile,
+            wellness: (try? context.fetch(FetchDescriptor<DailyWellness>())) ?? [],
+            activities: (try? context.fetch(FetchDescriptor<CardioActivity>())) ?? [],
+            strength: (try? context.fetch(FetchDescriptor<StrengthWorkout>())) ?? [],
+            unavailabilities: (try? context.fetch(FetchDescriptor<Unavailability>())) ?? [],
+            injuries: (try? context.fetch(FetchDescriptor<Injury>())) ?? [],
+            foods: (try? context.fetch(FetchDescriptor<FoodEntry>())) ?? [],
+            planned: (try? context.fetch(FetchDescriptor<PlannedWorkout>())) ?? [])
+    }
+
+    func refreshNotifications(context: ModelContext) async {
+        guard let snapshot = makeSnapshot(context: context) else { return }
+        await NotificationScheduler.refresh(with: snapshot)
+    }
+
+    /// Demande à iOS de réveiller l'app tôt le matin pour préparer le bilan du jour.
+    func scheduleBackgroundRefresh() {
+        let calendar = Calendar.current
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: .now)) ?? .now
+        let request = BGAppRefreshTaskRequest(identifier: Self.refreshTaskID)
+        request.earliestBeginDate = calendar.date(byAdding: .minute, value: NotificationScheduler.morningMinutes - 60, to: tomorrow)
+        try? BGTaskScheduler.shared.submit(request)
+    }
+
+    /// Réveil en arrière-plan : synchronise Intervals.icu (et Apple Santé si l'iPhone est déverrouillé),
+    /// puis envoie le bilan du matin adapté à la nuit.
+    func backgroundRefresh(container: ModelContainer) async {
+        scheduleBackgroundRefresh()
+        let context = container.mainContext
+        let profile = (try? context.fetch(FetchDescriptor<AthleteProfile>()))?.first
+        _ = try? await DataStore.syncHealth(health, into: context, days: 7)
+        let key = intervalsAPIKey
+        if !key.isEmpty {
+            let client = IntervalsClient(apiKey: key, athleteID: profile?.intervalsAthleteID ?? "0")
+            _ = try? await DataStore.syncIntervals(client, into: context, days: 7)
+        }
+        dataVersion += 1
+        guard let snapshot = makeSnapshot(context: context) else { return }
+        await NotificationScheduler.sendMorningBrief(snapshot)
+        await NotificationScheduler.refresh(with: snapshot)
     }
 
     func importHevy(from url: URL, context: ModelContext) {

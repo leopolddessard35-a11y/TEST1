@@ -18,6 +18,22 @@ Objectif actuel : **The Traka 100 (fin avril 2027)** + prise de masse (PPL 3×/s
 
 Mode clair / sombre automatique (suit le réglage de l'iPhone).
 
+### Le coach du jour (`Coach/DailyCoach.swift`)
+Chaque matin, Vigor part de ta séance prévue (plan Traka réparti en semaine type PPL + vélo, ou calendrier Intervals.icu)
+et estime ta **capacité du jour** en croisant :
+- **Santé** : score de récupération, nuit dernière, dette de sommeil sur 7 jours ;
+- **Entraînement** : fatigue accumulée, pic de charge, séance Legs de moins de 30 h, blessures ;
+- **Nutrition** : déficit calorique, glucides et protéines de la veille.
+
+Il en déduit un verdict (performer / feu vert / ajuster / lever le pied / repos), **adapte chaque séance** (type, durée,
+watts cibles calculés sur ta FTP, séries et RPE en muscu), te donne la nutrition autour de la séance et tes 3 priorités.
+Une nuit de moins de 6 h ou une fatigue extrême suppriment l'intensité quel que soit le score.
+
+### Notifications
+- **Matin** : verdict, séance adaptée, priorité n° 1 (iOS réveille l'app pour synchroniser Intervals.icu avant).
+- **Soir** : protéines / calories manquantes, préparation de la séance du lendemain (glucides, heure de coucher).
+Réglables dans *Réglages → Notifications*.
+
 ### Le « cerveau » (dossier `Vigor/Coach`)
 - `InsightEngine.swift` : **analyse critique** de tes données, règle par règle, chacune justifiée par une publication :
   surmenage (VFC ↓ + FC repos ↑, Plews 2013 / Buchheit 2014), dette et irrégularité du sommeil, progression de charge trop rapide

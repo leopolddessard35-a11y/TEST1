@@ -19,6 +19,10 @@ struct CoachSnapshot {
     let todayNutrition: NutritionDay
     let plannedToday: [PlannedWorkout]
     let todayAdvice: String
+    /// Le plan du jour adapté (santé × entraînement × nutrition).
+    let brief: DailyBrief
+    /// Séances prévues demain (pour la notification du matin).
+    let tomorrowPlan: [SessionPrescription]
 
     var today: LoadPoint? { load.last }
 
@@ -190,6 +194,64 @@ struct CoachSnapshot {
             phase: plan.currentWeek?.phase,
             readiness: todayReadiness)
         let insights: [Insight] = InsightEngine.analyze(insightInput, calendar: calendar)
+        // Coach du jour : croisement santé × entraînement × nutrition.
+        var sleepDebt: Double = 0
+        var nightsCounted = 0
+        for offset in 0..<7 {
+            guard let day = calendar.date(byAdding: .day, value: -offset, to: todayStart),
+                  let sleep = wellnessByDay[day]?.sleepHours else { continue }
+            sleepDebt += max(0, profile.sleepNeedHours - sleep)
+            nightsCounted += 1
+        }
+        let acuteLoad: Double = load.suffix(7).reduce(0) { $0 + $1.tss } / 7
+        let chronicLoad: Double = load.suffix(28).reduce(0) { $0 + $1.tss } / 28
+        let yesterdayStart: Date = calendar.date(byAdding: .day, value: -1, to: todayStart) ?? todayStart
+        var externalPlan: [PlannedSessionInput] = []
+        for workout in plannedToday {
+            let minutes: Int = Int((workout.plannedSeconds ?? 3600) / 60)
+            externalPlan.append(PlannedSessionInput(name: workout.name, sport: workout.sport, minutes: minutes, tss: workout.plannedTSS))
+        }
+        var unavailableToday: UnavailabilityReason?
+        for item in unavailabilities where calendar.startOfDay(for: item.start) <= todayStart && calendar.startOfDay(for: item.end) >= todayStart {
+            unavailableToday = item.reason
+        }
+        var lastLegs: Date?
+        for workout in strength where workout.start <= now {
+            var lowerSets = 0
+            for session in workout.exerciseSessions {
+                let lower = MuscleMap.targets(for: session.exercise).primary.contains { $0.region == .lowerBody }
+                if lower { lowerSets += session.workingSets.count }
+            }
+            if lowerSets >= 3, lastLegs.map({ workout.start > $0 }) ?? true { lastLegs = workout.start }
+        }
+        let coachInput = DailyCoachInput(
+            today: now,
+            readiness: todayReadiness,
+            lastNightSleep: wellnessByDay[todayStart]?.sleepHours,
+            sleepNeed: profile.sleepNeedHours,
+            sleepDebt7: nightsCounted >= 4 ? sleepDebt : nil,
+            load: load.last,
+            acuteChronicRatio: chronicLoad > 10 ? acuteLoad / chronicLoad : nil,
+            yesterdayNutrition: totalsByDay[yesterdayStart],
+            expenditure: macroTargets?.expenditure,
+            weightKg: currentWeight,
+            week: plan.currentWeek,
+            externalPlan: externalPlan,
+            ftp: thresholds.ftp,
+            injuries: injuryStatuses,
+            unavailableToday: unavailableToday,
+            lastLegsSession: lastLegs)
+        let brief: DailyBrief = DailyCoach.brief(coachInput, calendar: calendar)
+
+        let tomorrow: Date = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? todayStart
+        var tomorrowWeek: PlannedWeek? = plan.currentWeek
+        for week in plan.weeks where week.start <= tomorrow {
+            tomorrowWeek = week
+        }
+        let tomorrowPlan: [SessionPrescription] = tomorrowWeek.map {
+            DailyCoach.template(for: $0, weekday: calendar.component(.weekday, from: tomorrow), ftp: thresholds.ftp)
+        } ?? []
+
         return CoachSnapshot(
             load: load,
             readiness: todayReadiness,
@@ -204,7 +266,9 @@ struct CoachSnapshot {
             macroTargets: macroTargets,
             todayNutrition: todayNutrition,
             plannedToday: plannedToday,
-            todayAdvice: advice(readiness: todayReadiness, planned: plannedToday, week: plan.currentWeek))
+            todayAdvice: brief.headline,
+            brief: brief,
+            tomorrowPlan: tomorrowPlan)
     }
 
     /// Conseil du jour : croise la récupération avec la séance prévue.

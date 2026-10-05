@@ -14,13 +14,16 @@ struct TodayView: View {
                         NavigationLink {
                             ReadinessDetailView(readiness: snapshot.readiness, history: snapshot.readinessHistory, hrvSource: snapshot.hrvSource)
                         } label: {
-                            ReadinessCard(readiness: snapshot.readiness, advice: snapshot.todayAdvice)
+                            ReadinessCard(readiness: snapshot.readiness, advice: snapshot.readiness?.level.advice ?? "")
                         }
                         .buttonStyle(.plain)
 
-                        if !snapshot.plannedToday.isEmpty {
-                            PlannedTodayCard(workouts: snapshot.plannedToday)
+                        NavigationLink {
+                            DailyBriefDetailView(brief: snapshot.brief)
+                        } label: {
+                            DailyBriefCard(brief: snapshot.brief)
                         }
+                        .buttonStyle(.plain)
 
                         NavigationLink {
                             InsightsView(insights: snapshot.insights)
@@ -103,31 +106,6 @@ private struct ReadinessCard: View {
                     }
                     Text("Synchronise tes données (bouton en haut à droite). Le score apparaît dès 2 semaines de VFC ou avec ta nuit de sommeil.")
                         .font(.subheadline).foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-}
-
-private struct PlannedTodayCard: View {
-    let workouts: [PlannedWorkout]
-
-    var body: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: 8) {
-                SectionTitle(title: "Prévu aujourd'hui (Intervals.icu)", symbol: "calendar.badge.clock")
-                ForEach(workouts) { workout in
-                    HStack {
-                        Image(systemName: workout.sport.symbol)
-                        VStack(alignment: .leading) {
-                            Text(workout.name).font(.subheadline.weight(.semibold))
-                            HStack(spacing: 8) {
-                                if let seconds = workout.plannedSeconds { Text((seconds / 3600).hoursText) }
-                                if let tss = workout.plannedTSS { Text("TSS \(tss.noDecimal)") }
-                            }
-                            .font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
                 }
             }
         }
