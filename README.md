@@ -6,22 +6,36 @@ lever le pied, adapter le plan quand tu es malade, blessé ou en déplacement.
 
 Objectif actuel : **The Traka 100 (fin avril 2027)** + prise de masse (PPL 3×/semaine) + VO2max.
 
-## Ce que fait la version 0.1
+## Ce que fait la version 0.2
 
 | Onglet | Contenu |
 |---|---|
-| **Aujourd'hui** | Score de récupération (VFC, FC repos, sommeil comparés à TA moyenne), condition/fatigue/forme, programme de la semaine, compte à rebours course |
-| **Entraînement** | Import Hevy (CSV complet : séries, charges, reps, RPE, notes, supersets), volume par muscle sur 7 jours, **prochaines charges conseillées** par exercice, courbes de charge vélo, liste des sorties |
-| **Plan** | Plan vélo semaine par semaine jusqu'à la course (reprise → foncier → développement → spécifique → affûtage), déclaration d'indisponibilités et de blessures, recalcul automatique |
-| **Nutrition** | Objectif nutritionnel de la phase (le scan code-barres arrive à l'étape 2) |
-| **Réglages** | FTP, FC seuil, poids, heures dispo, date de course, connexion Apple Santé |
+| **Aujourd'hui** | Score de récupération + conseil du jour (croisé avec la séance prévue), **analyse du coach**, sommeil, VFC, FC repos, pas, poids, VO2max, nutrition du jour, charge, semaine en cours. **Chaque carte s'ouvre** sur un écran détaillé : courbes 30 j / 90 j / 1 an, ta zone normale, tendance, explication du calcul et sources scientifiques |
+| **Entraînement** | Import Hevy (CSV complet), volume par muscle, prochaines charges conseillées, courbes de charge, sorties |
+| **Plan** | Plan vélo jusqu'à la Traka (reprise → foncier → développement → spécifique → affûtage), indisponibilités et blessures, recalcul automatique |
+| **Nutrition** | Journal par repas, **scan de code-barres** (Open Food Facts), recherche, aliments de référence, création manuelle, objectifs calories / protéines / glucides / lipides calculés chaque jour |
+| **Réglages** | Profil, seuils, morphologie, **connexion Garmin via Intervals.icu**, synchronisation, mode démo |
+
+Mode clair / sombre automatique (suit le réglage de l'iPhone).
 
 ### Le « cerveau » (dossier `Vigor/Coach`)
-- `TrainingLoad.swift` : TSS par séance (puissance → FC → durée), condition (CTL 42 j), fatigue (ATL 7 j), forme (TSB).
-- `Readiness.swift` : score de récupération sur 100.
-- `StrengthProgression.swift` : double progression, 1RM estimé, décharge si 3 séances en baisse, blocage si récup basse ou zone blessée.
-- `MuscleMap.swift` : exercice → muscles (noms Hevy anglais et français).
-- `SeasonPlanner.swift` : progression de la condition limitée à +3 à +5 points/semaine, 1 semaine de récup sur 4, sortie longue +15 min/semaine (jusqu'à 4 h 30), retour progressif après maladie, adaptation aux blessures.
+- `InsightEngine.swift` : **analyse critique** de tes données, règle par règle, chacune justifiée par une publication :
+  surmenage (VFC ↓ + FC repos ↑, Plews 2013 / Buchheit 2014), dette et irrégularité du sommeil, progression de charge trop rapide
+  et ratio aigu/chronique (Gabbett 2016), monotonie (Foster 1998), répartition 80/20 (Seiler 2010), volume par muscle
+  (Schoenfeld 2017), stagnation, jambes trop proches du vélo intense (Wilson 2012), protéines (Morton 2018), glucides des jours longs
+  (Burke 2011), vitesse de prise de masse (Iraki 2019), qualité des données (VFC manquante, mesure aberrante, FTP sous-estimée…).
+- `NutritionPlanner.swift` : métabolisme de base (Mifflin-St Jeor), objectifs du jour selon l'entraînement et la phase,
+  puis **dépense énergétique réelle mesurée** (apports − variation de poids lissé × 7 700 kcal/kg) dès 3 semaines de données.
+- `Readiness.swift`, `TrainingLoad.swift`, `StrengthProgression.swift`, `MuscleMap.swift`, `SeasonPlanner.swift` : voir version 0.1.
+- `Science.swift` : toutes les références citées dans l'app.
+
+### Connecter Garmin (Intervals.icu, gratuit)
+1. Crée un compte sur [intervals.icu](https://intervals.icu) et relie Garmin Connect (*Settings → Connections*).
+2. *Settings → Developer Settings* : copie l'**Athlete ID** et génère une **API Key**.
+3. Dans Vigor : *Réglages → Garmin via Intervals.icu* → colle les deux → *Enregistrer la clé* → *Tout synchroniser*.
+
+Tu récupères : séances complètes (TSS, puissance normalisée, IF), VFC nocturne (rMSSD), score de sommeil, readiness Garmin,
+FC de repos, SpO2, respiration, VO2max, poids, et le calendrier des séances prévues.
 
 ## Installer l'app sur ton iPhone (gratuit, sans compte développeur payant)
 
@@ -60,8 +74,8 @@ Puis Vigor → Entraînement → **Importer l'export Hevy**. Tu peux réimporter
 
 ## Feuille de route
 - [x] **Étape 1** — Socle : design Liquid Glass, Apple Santé, import Hevy, charge d'entraînement, récupération, progression muscu, plan Traka adaptatif
-- [ ] **Étape 2** — Nutrition : scan code-barres (Open Food Facts), aliments sans code-barres (table Ciqual), macros au gramme, repas favoris, bilan apports / dépenses
-- [ ] **Étape 3** — Intervals.icu : données Garmin complètes (Body Battery, Training Readiness, score de sommeil, puissance seconde par seconde), calendrier des séances vélo
+- [x] **Étape 2** — Nutrition : scan code-barres (Open Food Facts), aliments sans code-barres (table Ciqual), macros au gramme, repas favoris, bilan apports / dépenses
+- [x] **Étape 3** — Intervals.icu : données Garmin complètes (Body Battery, Training Readiness, score de sommeil, puissance seconde par seconde), calendrier des séances vélo
 - [ ] **Étape 4** — Programmes PPL dans l'app (prévu vs réalisé), carte du corps, tests FTP / VO2max, alertes croisées (jambes lourdes la veille d'une séance vélo intense, déficit calorique en semaine chargée…)
 
 ⚠️ Les conseils de l'app ne remplacent pas un avis médical, en particulier pour la blessure aux ischios.

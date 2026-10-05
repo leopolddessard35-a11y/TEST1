@@ -16,15 +16,21 @@ enum Theme {
     }
 }
 
-/// Fond sombre dégradé : le verre Liquid Glass réfracte ces couleurs.
+/// Fond dégradé qui suit le mode clair / sombre de l'iPhone : le verre Liquid Glass réfracte ces couleurs.
 struct AppBackground: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
+        let dark = colorScheme == .dark
         ZStack {
-            LinearGradient(colors: [Color(red: 0.04, green: 0.05, blue: 0.10), Color(red: 0.02, green: 0.10, blue: 0.14)],
-                           startPoint: .top, endPoint: .bottom)
-            Circle().fill(Theme.recovery.opacity(0.35)).frame(width: 320).blur(radius: 120).offset(x: -140, y: -300)
-            Circle().fill(Theme.sleep.opacity(0.30)).frame(width: 300).blur(radius: 120).offset(x: 160, y: 40)
-            Circle().fill(Theme.strain.opacity(0.22)).frame(width: 260).blur(radius: 120).offset(x: -100, y: 380)
+            LinearGradient(
+                colors: dark
+                    ? [Color(red: 0.04, green: 0.05, blue: 0.10), Color(red: 0.02, green: 0.10, blue: 0.14)]
+                    : [Color(red: 0.95, green: 0.97, blue: 0.99), Color(red: 0.90, green: 0.95, blue: 0.96)],
+                startPoint: .top, endPoint: .bottom)
+            Circle().fill(Theme.recovery.opacity(dark ? 0.35 : 0.30)).frame(width: 320).blur(radius: 120).offset(x: -140, y: -300)
+            Circle().fill(Theme.sleep.opacity(dark ? 0.30 : 0.25)).frame(width: 300).blur(radius: 120).offset(x: 160, y: 40)
+            Circle().fill(Theme.strain.opacity(dark ? 0.22 : 0.18)).frame(width: 260).blur(radius: 120).offset(x: -100, y: 380)
         }
         .ignoresSafeArea()
     }
@@ -43,6 +49,15 @@ struct GlassCard<Content: View>: View {
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
             .glassEffect(.regular, in: .rect(cornerRadius: 24))
+    }
+}
+
+/// Petit chevron indiquant qu'une carte s'ouvre en détail.
+struct DetailChevron: View {
+    var body: some View {
+        Image(systemName: "chevron.right")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.tertiary)
     }
 }
 

@@ -18,6 +18,9 @@ enum DemoData {
             let record = DailyWellness(day: day)
             record.sleepHours = Double.random(in: 6.2...8.4, using: &random)
             record.hrvMs = Double.random(in: 52...72, using: &random)
+            record.hrvRMSSD = Double.random(in: 48...66, using: &random)
+            record.sleepScore = Double.random(in: 62...90, using: &random)
+            record.vo2Max = 52 + Double(120 - offset) * 0.008
             record.restingHeartRate = Double.random(in: 46...53, using: &random)
             record.steps = Double.random(in: 6000...14000, using: &random)
             record.activeEnergyKcal = Double.random(in: 450...1100, using: &random)
@@ -80,6 +83,44 @@ enum DemoData {
             session += 1
         }
 
+        // Repas des 3 dernières semaines.
+        let menuSpec: [(Meal, String, Double)] = [
+            (.breakfast, "Flocons d'avoine", 80), (.breakfast, "Skyr", 150), (.breakfast, "Banane", 120),
+            (.lunch, "Riz blanc", 250), (.lunch, "Blanc de poulet", 160), (.lunch, "Brocoli", 150),
+            (.snack, "Amandes", 30),
+            (.dinner, "Pâtes", 250), (.dinner, "Saumon", 140), (.dinner, "Huile", 10),
+        ]
+        let menu: [(Meal, FoodProduct, Double)] = menuSpec.compactMap { entry in
+            CommonFoods.search(entry.1).first.map { (entry.0, $0, entry.2) }
+        }
+        var items: [String: FoodItem] = [:]
+        for offset in 0..<21 {
+            guard let day = calendar.date(byAdding: .day, value: -offset, to: today) else { continue }
+            for (meal, product, grams) in menu {
+                let item = items[product.key] ?? {
+                    let created = FoodItem(key: product.key, name: product.name, brand: product.brand, barcode: nil,
+                                           source: product.source, kcal100: product.kcal100, protein100: product.protein100,
+                                           carbs100: product.carbs100, fat100: product.fat100)
+                    created.fiber100 = product.fiber100
+                    created.servingGrams = product.servingGrams
+                    created.lastUsed = now
+                    context.insert(created)
+                    return created
+                }()
+                items[product.key] = item
+                let hour: Int
+                switch meal {
+                case .breakfast: hour = 7
+                case .lunch: hour = 12
+                case .snack: hour = 16
+                default: hour = 20
+                }
+                let date = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: day) ?? day
+                let portion = grams * Double.random(in: 0.85...1.15, using: &random)
+                context.insert(FoodEntry(date: date, meal: meal, grams: portion.rounded(), item: item))
+            }
+        }
+
         // Ta blessure actuelle, pour voir l'adaptation du plan.
         if let injuryStart = calendar.date(byAdding: .day, value: -10, to: today) {
             context.insert(Injury(title: "Ischio gauche (démo)", muscles: [.hamstrings], affectsRunning: true,
@@ -96,6 +137,8 @@ enum DemoData {
         try context.delete(model: StrengthWorkout.self)
         try context.delete(model: Unavailability.self)
         try context.delete(model: Injury.self)
+        try context.delete(model: FoodEntry.self)
+        try context.delete(model: PlannedWorkout.self)
         try context.save()
     }
 }

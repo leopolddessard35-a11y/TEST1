@@ -12,6 +12,15 @@ final class DailyWellness {
     var activeEnergyKcal: Double?
     var weightKg: Double?
     var vo2Max: Double?
+    // Données Garmin complètes (via Intervals.icu)
+    /// VFC nocturne Garmin (rMSSD). Différente de la VFC Apple (SDNN) : jamais mélangées.
+    var hrvRMSSD: Double?
+    var sleepScore: Double?
+    var garminReadiness: Double?
+    var sleepingHeartRate: Double?
+    var spO2: Double?
+    var respiration: Double?
+    var bodyFatPercent: Double?
 
     init(day: Date) {
         self.day = day
@@ -34,6 +43,8 @@ final class CardioActivity {
     var energyKcal: Double?
     /// TSS fourni par la source (ex. Intervals.icu). Sinon il est estimé à l'affichage.
     var providedTSS: Double?
+    /// Intensité relative au seuil fournie par la source (IF).
+    var providedIntensity: Double?
 
     var sport: Sport { Sport(rawValue: sportRaw) ?? .other }
 
@@ -169,6 +180,17 @@ final class AthleteProfile {
     var weeklyHoursAvailable: Double = 8
     var strengthSessionsPerWeek: Int = 3
     var sleepNeedHours: Double = 8
+    var heightCm: Double = 0
+    var birthYear: Int = 0
+    var sexRaw: String = Sex.male.rawValue
+    var intervalsAthleteID: String = "0"
+
+    var sex: Sex { Sex(rawValue: sexRaw) ?? .male }
+
+    var age: Int? {
+        guard birthYear > 1900 else { return nil }
+        return Calendar.current.component(.year, from: .now) - birthYear
+    }
 
     init() {}
 
@@ -183,5 +205,100 @@ final class AthleteProfile {
             runningLTHR: runningLTHR > 0 ? runningLTHR : nil,
             maxHeartRate: maxHeartRate > 0 ? maxHeartRate : nil
         )
+    }
+}
+
+/// Séance prévue (calendrier Intervals.icu).
+@Model
+final class PlannedWorkout {
+    @Attribute(.unique) var externalID: String
+    var date: Date
+    var name: String
+    var details: String
+    var sportRaw: String
+    var plannedSeconds: Double?
+    var plannedTSS: Double?
+
+    var sport: Sport { Sport(rawValue: sportRaw) ?? .other }
+
+    init(externalID: String, date: Date, name: String, details: String, sport: Sport) {
+        self.externalID = externalID
+        self.date = date
+        self.name = name
+        self.details = details
+        self.sportRaw = sport.rawValue
+    }
+}
+
+/// Aliment connu (scanné, recherché, de référence ou créé à la main). Valeurs pour 100 g.
+@Model
+final class FoodItem {
+    @Attribute(.unique) var key: String
+    var name: String
+    var brand: String
+    var barcode: String?
+    var source: String
+    var kcal100: Double
+    var protein100: Double
+    var carbs100: Double
+    var fat100: Double
+    var fiber100: Double?
+    var sugar100: Double?
+    var saturatedFat100: Double?
+    var salt100: Double?
+    var servingGrams: Double?
+    var lastUsed: Date = Date.distantPast
+    var useCount: Int = 0
+
+    init(key: String, name: String, brand: String, barcode: String?, source: String,
+         kcal100: Double, protein100: Double, carbs100: Double, fat100: Double) {
+        self.key = key
+        self.name = name
+        self.brand = brand
+        self.barcode = barcode
+        self.source = source
+        self.kcal100 = kcal100
+        self.protein100 = protein100
+        self.carbs100 = carbs100
+        self.fat100 = fat100
+    }
+}
+
+/// Ce que tu as mangé. Les valeurs nutritionnelles sont copiées pour que l'historique ne change jamais.
+@Model
+final class FoodEntry {
+    var date: Date
+    var mealRaw: String
+    var grams: Double
+    var itemKey: String
+    var name: String
+    var brand: String
+    var kcal100: Double
+    var protein100: Double
+    var carbs100: Double
+    var fat100: Double
+    var fiber100: Double?
+    var sugar100: Double?
+
+    var meal: Meal { Meal(rawValue: mealRaw) ?? .snack }
+    var kcal: Double { kcal100 * grams / 100 }
+    var protein: Double { protein100 * grams / 100 }
+    var carbs: Double { carbs100 * grams / 100 }
+    var fat: Double { fat100 * grams / 100 }
+    var fiber: Double { (fiber100 ?? 0) * grams / 100 }
+
+    init(date: Date, meal: Meal, grams: Double, item: FoodItem) {
+        self.date = date
+        self.mealRaw = meal.rawValue
+        self.grams = grams
+        self.itemKey = item.key
+        self.name = item.name
+        self.brand = item.brand
+        self.kcal100 = item.kcal100
+        self.protein100 = item.protein100
+        self.carbs100 = item.carbs100
+        self.fat100 = item.fat100
+        self.fiber100 = item.fiber100
+        self.sugar100 = item.sugar100
     }
 }

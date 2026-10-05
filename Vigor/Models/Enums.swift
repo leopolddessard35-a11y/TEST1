@@ -123,3 +123,46 @@ enum UnavailabilityReason: String, Codable, CaseIterable, Identifiable {
         }
     }
 }
+
+enum Sex: String, Codable, CaseIterable, Identifiable {
+    case male, female
+
+    var id: String { rawValue }
+    var label: String { self == .male ? "Homme" : "Femme" }
+}
+
+enum Meal: String, Codable, CaseIterable, Identifiable {
+    case breakfast, lunch, snack, dinner, training
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .breakfast: "Petit-déjeuner"
+        case .lunch: "Déjeuner"
+        case .snack: "Collation"
+        case .dinner: "Dîner"
+        case .training: "Pendant l'effort"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .breakfast: "sunrise.fill"
+        case .lunch: "sun.max.fill"
+        case .snack: "carrot.fill"
+        case .dinner: "moon.stars.fill"
+        case .training: "bicycle"
+        }
+    }
+
+    /// Repas proposé par défaut selon l'heure.
+    static func suggested(for date: Date = .now) -> Meal {
+        switch Calendar.current.component(.hour, from: date) {
+        case 4..<11: .breakfast
+        case 11..<15: .lunch
+        case 15..<18: .snack
+        default: .dinner
+        }
+    }
+}

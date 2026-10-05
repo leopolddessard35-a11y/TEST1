@@ -22,6 +22,7 @@ private struct ProfileForm: View {
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
     @Bindable var profile: AthleteProfile
+    @State private var apiKey = ""
 
     var body: some View {
         Form {
@@ -29,6 +30,20 @@ private struct ProfileForm: View {
                 TextField("Course", text: $profile.raceName)
                 DatePicker("Date", selection: $profile.raceDate, displayedComponents: .date)
                 Stepper("Condition visée : \(profile.targetRaceCTL.noDecimal)", value: $profile.targetRaceCTL, in: 30...100, step: 5)
+            }
+            Section {
+                Picker("Sexe", selection: $profile.sexRaw) {
+                    ForEach(Sex.allCases) { Text($0.label).tag($0.rawValue) }
+                }
+                numberField("Taille (cm)", value: $profile.heightCm)
+                Stepper("Année de naissance : \(profile.birthYear > 0 ? String(profile.birthYear) : "–")",
+                        value: $profile.birthYear, in: 1940...2015)
+                    .onAppear { if profile.birthYear == 0 { profile.birthYear = 1995 } }
+                numberField("Poids (kg)", value: $profile.weightKg)
+            } header: {
+                Text("Morphologie")
+            } footer: {
+                Text("Utilisés pour le métabolisme de base (Mifflin-St Jeor). Le poids synchronisé depuis Garmin / Apple Santé est prioritaire.")
             }
             Section {
                 Stepper("Heures dispo / semaine : \(profile.weeklyHoursAvailable.oneDecimal)", value: $profile.weeklyHoursAvailable, in: 3...20, step: 0.5)
@@ -42,39 +57,55 @@ private struct ProfileForm: View {
                 numberField("FC seuil vélo (bpm)", value: $profile.cyclingLTHR)
                 numberField("FC seuil course (bpm)", value: $profile.runningLTHR)
                 numberField("FC max (bpm)", value: $profile.maxHeartRate)
-                numberField("Poids (kg)", value: $profile.weightKg)
             } header: {
                 Text("Seuils")
             } footer: {
                 Text("0 = inconnu. La FTP sert à calculer la charge de tes sorties avec puissance. Re-teste-la dès que ta blessure le permet.")
             }
-            Section("Sources de données") {
+            Section {
+                SecureField("Clé d'API", text: $apiKey)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                TextField("Identifiant athlète (ex. i123456)", text: $profile.intervalsAthleteID)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button("Enregistrer la clé") {
+                    app.intervalsAPIKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+                    app.statusMessage = apiKey.isEmpty ? "Clé supprimée." : "Clé enregistrée dans le trousseau sécurisé de l'iPhone."
+                }
+            } header: {
+                Text("Garmin via Intervals.icu")
+            } footer: {
+                Text("1. Crée un compte gratuit sur intervals.icu et relie Garmin Connect (Settings → Connections).\n2. Settings → Developer Settings : copie l'« Athlete ID » et génère une « API Key ».\n3. Colle-les ici, puis synchronise. Tu récupères tes séances complètes, la VFC nocturne, le score de sommeil, la readiness Garmin et ton calendrier d'entraînement.")
+            }
+            Section("Synchronisation") {
                 Button {
-                    Task { await app.syncHealth(context: context) }
+                    Task { await app.syncAll(context: context, profile: profile) }
                 } label: {
-                    Label(app.isSyncing ? "Synchronisation…" : "Connecter / synchroniser Apple Santé", systemImage: "heart.text.square.fill")
+                    Label(app.isSyncing ? "Synchronisation…" : "Tout synchroniser (Apple Santé + Intervals.icu)", systemImage: "arrow.triangle.2.circlepath")
                 }
                 .disabled(app.isSyncing)
                 Label("Hevy : import CSV depuis l'onglet Entraînement", systemImage: "dumbbell")
-                Label("Intervals.icu (Garmin complet) : prochaine étape", systemImage: "link")
-                    .foregroundStyle(.secondary)
             }
             Section {
                 Button("Charger des données de démo") {
                     try? DemoData.load(into: context)
-                    app.statusMessage = "Données de démo chargées : 4 mois de sommeil, vélo et muscu PPL."
+                    app.dataVersion += 1
+                    app.statusMessage = "Données de démo chargées : 4 mois de sommeil, VFC, vélo, muscu PPL et repas."
                 }
                 Button("Effacer toutes les données", role: .destructive) {
                     try? DemoData.clear(context)
+                    app.dataVersion += 1
                 }
             } header: {
                 Text("Démo")
             } footer: {
-                Text("Pour essayer l'app dans le simulateur, sans iPhone ni Apple Santé. « Effacer » supprime les séances et mesures, pas ton profil.")
+                Text("Pour essayer l'app dans le simulateur, sans iPhone ni Apple Santé. « Effacer » supprime séances, mesures et repas, pas ton profil.")
             }
         }
         .scrollContentBackground(.hidden)
         .background(AppBackground())
+        .onAppear { apiKey = app.intervalsAPIKey }
         .onDisappear { try? context.save() }
     }
 

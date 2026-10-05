@@ -62,6 +62,25 @@ enum TrainingLoad {
         }
     }
 
+    /// Intensité relative au seuil (IF) : puissance / FTP, sinon FC / FC seuil.
+    static func intensityFactor(sport: Sport,
+                                normalizedPower: Double? = nil,
+                                averagePower: Double? = nil,
+                                averageHeartRate: Double? = nil,
+                                thresholds: Thresholds) -> Double? {
+        if sport.isCycling, let ftp = thresholds.ftp, ftp > 0,
+           let power = normalizedPower ?? averagePower.map({ $0 * 1.05 }), power > 0 {
+            return power / ftp
+        }
+        let lthr = sport == .running
+            ? (thresholds.runningLTHR ?? thresholds.cyclingLTHR ?? thresholds.maxHeartRate.map({ $0 * 0.89 }))
+            : (thresholds.cyclingLTHR ?? thresholds.maxHeartRate.map({ $0 * 0.87 }))
+        if let hr = averageHeartRate, hr > 0, let lthr, lthr > 0 {
+            return min(hr / lthr, 1.2)
+        }
+        return nil
+    }
+
     /// Additionne les TSS par jour.
     static func dailyTotals(_ items: [(date: Date, tss: Double)], calendar: Calendar = .current) -> [Date: Double] {
         var totals: [Date: Double] = [:]

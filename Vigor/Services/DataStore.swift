@@ -114,4 +114,115 @@ enum DataStore {
         try context.save()
         return (added, updated)
     }
+    /// Synchronise Intervals.icu : données Garmin complètes + séances prévues.
+    static func syncIntervals(_ client: IntervalsClient, into context: ModelContext, days: Int = 365) async throws -> String {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: .now)
+        let oldest = calendar.date(byAdding: .day, value: -days, to: today) ?? today
+        let horizon = calendar.date(byAdding: .day, value: 14, to: today) ?? today
+
+        let wellness = try await client.wellness(oldest: oldest, newest: today)
+        let activities = try await client.activities(oldest: oldest, newest: today)
+        let planned = try await client.plannedWorkouts(oldest: today, newest: horizon)
+
+        // Bien-être Garmin.
+        let existingDays = try context.fetch(FetchDescriptor<DailyWellness>())
+        var byDay = Dictionary(existingDays.map { ($0.day, $0) }, uniquingKeysWith: { first, _ in first })
+        for item in wellness {
+            guard let date = IntervalsClient.dayFormatter.date(from: item.id) else { continue }
+            let day = calendar.startOfDay(for: date)
+            let record: DailyWellness
+            if let existing = byDay[day] {
+                record = existing
+            } else {
+                record = DailyWellness(day: day)
+                context.insert(record)
+                byDay[day] = record
+            }
+            if let value = item.hrv { record.hrvRMSSD = value }
+            if let value = item.restingHR { record.restingHeartRate = value }
+            if let value = item.sleepSecs, value > 0 { record.sleepHours = value / 3600 }
+            if let value = item.sleepScore { record.sleepScore = value }
+            if let value = item.readiness { record.garminReadiness = value }
+            if let value = item.avgSleepingHR { record.sleepingHeartRate = value }
+            if let value = item.spO2 { record.spO2 = value }
+            if let value = item.respiration { record.respiration = value }
+            if let value = item.vo2max { record.vo2Max = value }
+            if let value = item.weight { record.weightKg = value }
+            if let value = item.bodyFat { record.bodyFatPercent = value }
+            if let value = item.steps, record.steps == nil { record.steps = value }
+        }
+
+        // Séances : Intervals est la source la plus riche, elle enrichit les doublons Apple Santé.
+        var stored = try context.fetch(FetchDescriptor<CardioActivity>())
+        let knownIDs = Set(stored.map(\.externalID))
+        var added = 0
+        for item in activities {
+            guard let sport = item.sport, let start = IntervalsClient.parseLocal(item.startDateLocal),
+                  let duration = item.movingTime, duration > 0 else { continue }
+            let id = "intervals|\(item.id.value)"
+            let target: CardioActivity
+            if knownIDs.contains(id), let existing = stored.first(where: { $0.externalID == id }) {
+                target = existing
+            } else if let duplicate = stored.first(where: {
+                ActivityDeduplicator.isSameSession(sportA: $0.sport, startA: $0.start, durationA: $0.durationSeconds,
+                                                   sportB: sport, startB: start, durationB: duration)
+            }) {
+                target = duplicate
+            } else {
+                target = CardioActivity(externalID: id, source: "Garmin via Intervals.icu", sport: sport,
+                                        title: item.name ?? sport.label, start: start, durationSeconds: duration)
+                context.insert(target)
+                stored.append(target)
+                added += 1
+            }
+            target.source = "Garmin via Intervals.icu"
+            if let name = item.name, !name.isEmpty { target.title = name }
+            target.providedTSS = item.trainingLoad ?? target.providedTSS
+            target.providedIntensity = item.intensityFactor ?? target.providedIntensity
+            target.averagePower = item.averageWatts ?? target.averagePower
+            target.normalizedPower = item.weightedAverageWatts ?? target.normalizedPower
+            target.averageHeartRate = item.averageHeartRate ?? target.averageHeartRate
+            target.distanceMeters = item.distance ?? target.distanceMeters
+            target.energyKcal = item.calories ?? target.energyKcal
+        }
+
+        // Séances prévues : mise à jour du calendrier à venir.
+        let existingPlanned = try context.fetch(FetchDescriptor<PlannedWorkout>())
+        let plannedByID = Dictionary(existingPlanned.map { ($0.externalID, $0) }, uniquingKeysWith: { first, _ in first })
+        var seen = Set<String>()
+        for event in planned {
+            guard let date = IntervalsClient.parseLocal(event.startDateLocal) else { continue }
+            let sport: Sport
+            switch event.type ?? "" {
+            case "VirtualRide": sport = .indoorCycling
+            case "Ride", "GravelRide": sport = .cycling
+            case "Run": sport = .running
+            case "WeightTraining": sport = .strength
+            default: sport = .other
+            }
+            let id = "intervals|event|\(event.id.value)"
+            seen.insert(id)
+            let workout: PlannedWorkout
+            if let existing = plannedByID[id] {
+                workout = existing
+                workout.date = date
+                workout.name = event.name ?? "Séance prévue"
+                workout.details = event.description ?? ""
+                workout.sportRaw = sport.rawValue
+            } else {
+                workout = PlannedWorkout(externalID: id, date: date, name: event.name ?? "Séance prévue",
+                                         details: event.description ?? "", sport: sport)
+                context.insert(workout)
+            }
+            workout.plannedSeconds = event.movingTime
+            workout.plannedTSS = event.trainingLoad
+        }
+        for workout in existingPlanned where workout.date >= today && !seen.contains(workout.externalID) {
+            context.delete(workout)
+        }
+
+        try context.save()
+        return "Intervals.icu : \(wellness.count) jours Garmin, \(added) nouvelle(s) séance(s), \(planned.count) séance(s) prévue(s)."
+    }
 }
