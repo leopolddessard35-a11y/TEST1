@@ -13,11 +13,7 @@ struct NutritionView: View {
             ScrollView {
                 SnapshotReader { profile, snapshot in
                     let dayEntries = entries.filter { Calendar.current.isDate($0.date, inSameDayAs: day) }
-                    let totals = NutritionDay(date: day,
-                                              kcal: dayEntries.reduce(0) { $0 + $1.kcal },
-                                              protein: dayEntries.reduce(0) { $0 + $1.protein },
-                                              carbs: dayEntries.reduce(0) { $0 + $1.carbs },
-                                              fat: dayEntries.reduce(0) { $0 + $1.fat })
+                    let totals: NutritionDay = NutritionView.totals(of: dayEntries, day: day)
                     VStack(spacing: 16) {
                         DayPicker(day: $day)
 
@@ -69,6 +65,19 @@ struct NutritionView: View {
     }
 }
 
+extension NutritionView {
+    static func totals(of entries: [FoodEntry], day: Date) -> NutritionDay {
+        var kcal = 0.0, protein = 0.0, carbs = 0.0, fat = 0.0
+        for entry in entries {
+            kcal += entry.kcal
+            protein += entry.protein
+            carbs += entry.carbs
+            fat += entry.fat
+        }
+        return NutritionDay(date: day, kcal: kcal, protein: protein, carbs: carbs, fat: fat)
+    }
+}
+
 private struct DayPicker: View {
     @Binding var day: Date
 
@@ -109,7 +118,7 @@ private struct MealCard: View {
                     Label(meal.label, systemImage: meal.symbol).font(.headline)
                     Spacer()
                     if !entries.isEmpty {
-                        Text("\(entries.reduce(0) { $0 + $1.kcal }.noDecimal) kcal").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                        Text("\(NutritionView.totals(of: entries, day: .now).kcal.noDecimal) kcal").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
                     }
                     Button(action: onAdd) { Image(systemName: "plus") }
                         .buttonStyle(.glassProminent)

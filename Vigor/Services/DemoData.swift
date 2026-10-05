@@ -20,11 +20,14 @@ enum DemoData {
             record.hrvMs = Double.random(in: 52...72, using: &random)
             record.hrvRMSSD = Double.random(in: 48...66, using: &random)
             record.sleepScore = Double.random(in: 62...90, using: &random)
-            record.vo2Max = 52 + Double(120 - offset) * 0.008
+            let vo2Drift: Double = Double(120 - offset) * 0.008
+            record.vo2Max = 52 + vo2Drift
             record.restingHeartRate = Double.random(in: 46...53, using: &random)
             record.steps = Double.random(in: 6000...14000, using: &random)
             record.activeEnergyKcal = Double.random(in: 450...1100, using: &random)
-            record.weightKg = 72 + Double(120 - offset) * 0.01 + Double.random(in: -0.3...0.3, using: &random)
+            let drift: Double = Double(120 - offset) * 0.01
+            let noise: Double = Double.random(in: -0.3...0.3, using: &random)
+            record.weightKg = 72 + drift + noise
             context.insert(record)
         }
 

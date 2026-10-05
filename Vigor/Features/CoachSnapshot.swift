@@ -47,26 +47,36 @@ struct CoachSnapshot {
             return ActivitySample(date: activity.start, sport: activity.sport, durationSeconds: activity.durationSeconds,
                                   tss: tss, intensityFactor: intensity, averagePower: activity.averagePower)
         }
-        var items: [(date: Date, tss: Double)] = samples.map { ($0.date, $0.tss) }
-        items += strength.map { workout in
-            (workout.start, TrainingLoad.estimateTSS(sport: .strength, durationSeconds: workout.durationSeconds, thresholds: thresholds))
+        var items: [(date: Date, tss: Double)] = []
+        for sample in samples { items.append((date: sample.date, tss: sample.tss)) }
+        for workout in strength {
+            let tss: Double = TrainingLoad.estimateTSS(sport: .strength, durationSeconds: workout.durationSeconds, thresholds: thresholds)
+            items.append((date: workout.start, tss: tss))
         }
-        let daily = TrainingLoad.dailyTotals(items, calendar: calendar)
-        let firstDay = daily.keys.min() ?? calendar.date(byAdding: .day, value: -60, to: now) ?? now
-        let load = TrainingLoad.series(daily: daily, from: firstDay, to: now, calendar: calendar)
-        let loadByDay = Dictionary(load.map { ($0.date, $0) }, uniquingKeysWith: { first, _ in first })
+        let daily: [Date: Double] = TrainingLoad.dailyTotals(items, calendar: calendar)
+        let fallbackStart: Date = calendar.date(byAdding: .day, value: -60, to: now) ?? now
+        let firstDay: Date = daily.keys.min() ?? fallbackStart
+        let load: [LoadPoint] = TrainingLoad.series(daily: daily, from: firstDay, to: now, calendar: calendar)
+        var loadByDay: [Date: LoadPoint] = [:]
+        for point in load { loadByDay[point.date] = point }
 
         // VFC : une seule source, jamais de mélange SDNN / rMSSD.
-        let sortedWellness = wellness.sorted { $0.day < $1.day }
-        let rmssd = sortedWellness.compactMap { record in record.hrvRMSSD.map { DayValue(date: record.day, value: $0) } }
-        let sdnn = sortedWellness.compactMap { record in record.hrvMs.map { DayValue(date: record.day, value: $0) } }
+        let sortedWellness: [DailyWellness] = wellness.sorted { $0.day < $1.day }
+        var rmssd: [DayValue] = []
+        var sdnn: [DayValue] = []
+        var restingHR: [DayValue] = []
+        var wellnessByDay: [Date: DailyWellness] = [:]
+        for record in sortedWellness {
+            if let value = record.hrvRMSSD { rmssd.append(DayValue(date: record.day, value: value)) }
+            if let value = record.hrvMs { sdnn.append(DayValue(date: record.day, value: value)) }
+            if let value = record.restingHeartRate { restingHR.append(DayValue(date: record.day, value: value)) }
+            wellnessByDay[record.day] = record
+        }
         let recentRMSSD = Stats.lastDays(60, of: rmssd, today: now, calendar: calendar).count
         let recentSDNN = Stats.lastDays(60, of: sdnn, today: now, calendar: calendar).count
         let useGarmin = recentRMSSD >= 14
-        let hrvSeries = useGarmin ? rmssd : sdnn
+        let hrvSeries: [DayValue] = useGarmin ? rmssd : sdnn
         let hrvSource = useGarmin ? "Garmin (rMSSD nocturne)" : "Apple Santé (SDNN)"
-        let restingHR = sortedWellness.compactMap { record in record.restingHeartRate.map { DayValue(date: record.day, value: $0) } }
-        let wellnessByDay = Dictionary(sortedWellness.map { ($0.day, $0) }, uniquingKeysWith: { first, _ in first })
 
         func readiness(on day: Date) -> ReadinessResult? {
             ReadinessCalculator.compute(
@@ -83,61 +93,92 @@ struct CoachSnapshot {
         }
 
         // Plan saisonnier.
-        let activeInjuries = injuries.filter(\.isActive)
-        let plan = SeasonPlanner.makePlan(PlannerInput(
+        let activeInjuries: [Injury] = injuries.filter(\.isActive)
+        var periods: [UnavailabilityPeriod] = []
+        for item in unavailabilities {
+            periods.append(UnavailabilityPeriod(start: item.start, end: item.end, reason: item.reason))
+        }
+        var injuryStatuses: [InjuryStatus] = []
+        for injury in activeInjuries {
+            injuryStatuses.append(InjuryStatus(name: injury.title, muscles: injury.muscles, affectsRunning: injury.affectsRunning,
+                                               affectsCycling: injury.affectsCycling, severity: injury.severity))
+        }
+        let currentCTL: Double = load.last?.ctl ?? 0
+        let plannerInput = PlannerInput(
             today: now,
             raceDate: profile.raceDate,
             raceName: profile.raceName,
-            currentCTL: load.last?.ctl ?? 0,
+            currentCTL: currentCTL,
             targetRaceCTL: profile.targetRaceCTL,
             weeklyHoursAvailable: profile.weeklyHoursAvailable,
             strengthSessionsPerWeek: profile.strengthSessionsPerWeek,
-            unavailabilities: unavailabilities.map { UnavailabilityPeriod(start: $0.start, end: $0.end, reason: $0.reason) },
-            injuries: activeInjuries.map {
-                InjuryStatus(name: $0.title, muscles: $0.muscles, affectsRunning: $0.affectsRunning,
-                             affectsCycling: $0.affectsCycling, severity: $0.severity)
-            }))
+            unavailabilities: periods,
+            injuries: injuryStatuses)
+        let plan: SeasonPlan = SeasonPlanner.makePlan(plannerInput)
 
-        // Nutrition.
-        let nutritionDays = Dictionary(grouping: foods, by: { calendar.startOfDay(for: $0.date) }).map { day, entries in
-            NutritionDay(date: day,
-                         kcal: entries.reduce(0) { $0 + $1.kcal },
-                         protein: entries.reduce(0) { $0 + $1.protein },
-                         carbs: entries.reduce(0) { $0 + $1.carbs },
-                         fat: entries.reduce(0) { $0 + $1.fat })
-        }.sorted { $0.date < $1.date }
-        let todayNutrition = nutritionDays.first { $0.date == todayStart }
-            ?? NutritionDay(date: todayStart, kcal: 0, protein: 0, carbs: 0, fat: 0)
-        let weights = sortedWellness.compactMap { record in record.weightKg.map { DayValue(date: record.day, value: $0) } }
-        let currentWeight = Stats.exponentialTrend(Stats.lastDays(14, of: weights, today: now, calendar: calendar)).last?.value
-            ?? (profile.weightKg > 0 ? profile.weightKg : 0)
+        // Nutrition (boucles explicites : plus rapides à compiler).
+        var totalsByDay: [Date: NutritionDay] = [:]
+        for entry in foods {
+            let day = calendar.startOfDay(for: entry.date)
+            let current = totalsByDay[day] ?? NutritionDay(date: day, kcal: 0, protein: 0, carbs: 0, fat: 0)
+            totalsByDay[day] = NutritionDay(date: day,
+                                            kcal: current.kcal + entry.kcal,
+                                            protein: current.protein + entry.protein,
+                                            carbs: current.carbs + entry.carbs,
+                                            fat: current.fat + entry.fat)
+        }
+        let nutritionDays: [NutritionDay] = totalsByDay.values.sorted { $0.date < $1.date }
+        let emptyToday = NutritionDay(date: todayStart, kcal: 0, protein: 0, carbs: 0, fat: 0)
+        let todayNutrition: NutritionDay = totalsByDay[todayStart] ?? emptyToday
 
-        let plannedToday = planned.filter { calendar.isDate($0.date, inSameDayAs: now) }
-        let doneToday = samples.filter { calendar.isDate($0.date, inSameDayAs: now) }.reduce(0) { $0 + $1.durationSeconds }
-        let plannedSeconds = plannedToday.reduce(0) { $0 + ($1.plannedSeconds ?? 0) }
-        let averageActive = Stats.mean(Stats.lastDays(7, of: sortedWellness.compactMap { record in
-            record.activeEnergyKcal.map { DayValue(date: record.day, value: $0) }
-        }, today: calendar.date(byAdding: .day, value: -1, to: now) ?? now, calendar: calendar).map(\.value))
+        var weights: [DayValue] = []
+        var activeEnergy: [DayValue] = []
+        for record in sortedWellness {
+            if let weight = record.weightKg { weights.append(DayValue(date: record.day, value: weight)) }
+            if let active = record.activeEnergyKcal { activeEnergy.append(DayValue(date: record.day, value: active)) }
+        }
+        let recentWeights: [DayValue] = Stats.lastDays(14, of: weights, today: now, calendar: calendar)
+        let trendWeight: Double? = Stats.exponentialTrend(recentWeights).last?.value
+        let profileWeight: Double = profile.weightKg > 0 ? profile.weightKg : 0
+        let currentWeight: Double = trendWeight ?? profileWeight
 
-        let macroTargets = NutritionPlanner.targets(
+        let plannedToday: [PlannedWorkout] = planned.filter { calendar.isDate($0.date, inSameDayAs: now) }
+        var doneToday: Double = 0
+        for sample in samples where calendar.isDate(sample.date, inSameDayAs: now) {
+            doneToday += sample.durationSeconds
+        }
+        var plannedSeconds: Double = 0
+        for workout in plannedToday {
+            plannedSeconds += workout.plannedSeconds ?? 0
+        }
+        let yesterday: Date = calendar.date(byAdding: .day, value: -1, to: now) ?? now
+        let lastWeekActive: [Double] = Stats.lastDays(7, of: activeEnergy, today: yesterday, calendar: calendar).map(\.value)
+        let averageActive: Double? = Stats.mean(lastWeekActive)
+        let adaptive: Double? = NutritionPlanner.adaptiveExpenditure(nutrition: nutritionDays, weights: weights,
+                                                                     today: now, calendar: calendar)
+
+        let trainingHours: Double = max(doneToday, plannedSeconds) / 3600
+        let macroTargets: MacroTargets? = NutritionPlanner.targets(
             weightKg: currentWeight,
             heightCm: profile.heightCm,
             age: profile.age,
             sex: profile.sex,
             activeKcal: averageActive,
-            trainingHours: max(doneToday, plannedSeconds) / 3600,
+            trainingHours: trainingHours,
             phase: plan.currentWeek?.phase,
-            adaptiveExpenditure: NutritionPlanner.adaptiveExpenditure(nutrition: nutritionDays, weights: weights, today: now, calendar: calendar))
+            adaptiveExpenditure: adaptive)
 
         // Analyse critique.
-        let strengthSessions = strength.flatMap(\.exerciseSessions)
-        let insights = InsightEngine.analyze(InsightInput(
+        let strengthSessions: [ExerciseSession] = strength.flatMap(\.exerciseSessions)
+        var insightWellness: [WellnessSample] = []
+        for record in sortedWellness {
+            let hrv: Double? = useGarmin ? record.hrvRMSSD : record.hrvMs
+            insightWellness.append(WellnessSample(date: record.day, sleepHours: record.sleepHours, hrv: hrv,
+                                                  restingHR: record.restingHeartRate, weightKg: record.weightKg))
+        }
+        let insightInput = InsightInput(
             today: now,
-            wellness: sortedWellness.map { record in
-                WellnessSample(date: record.day, sleepHours: record.sleepHours,
-                               hrv: useGarmin ? record.hrvRMSSD : record.hrvMs,
-                               restingHR: record.restingHeartRate, weightKg: record.weightKg)
-            },
+            wellness: insightWellness,
             hrvSourcesMixed: recentRMSSD > 0 && recentSDNN > 0,
             load: load,
             activities: samples,
@@ -147,8 +188,8 @@ struct CoachSnapshot {
             ftp: thresholds.ftp,
             sleepNeedHours: profile.sleepNeedHours,
             phase: plan.currentWeek?.phase,
-            readiness: todayReadiness), calendar: calendar)
-
+            readiness: todayReadiness)
+        let insights: [Insight] = InsightEngine.analyze(insightInput, calendar: calendar)
         return CoachSnapshot(
             load: load,
             readiness: todayReadiness,
