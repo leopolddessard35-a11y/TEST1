@@ -42,6 +42,16 @@ Objectif actuel : **The Traka 100 (fin avril 2027)** + prise de masse (PPL 3×/s
 > ⏱ Avec un compte gratuit, l'app doit être **réinstallée tous les 7 jours** : rebranche l'iPhone et clique ▶︎
 > (30 secondes, tes données sont conservées). Pour éviter ça : SideStore (gratuit) ou compte développeur (99 €/an).
 
+### Essayer sans iPhone (simulateur)
+1. Ouvre `Vigor.xcodeproj` dans Xcode.
+2. En haut de la fenêtre, à la place de ton iPhone, choisis un simulateur (ex. **iPhone 17 Pro**).
+   S'il n'y en a pas : *Xcode → Settings → Components* → télécharge la plateforme iOS.
+3. Clique sur **▶︎** : un iPhone virtuel s'ouvre sur ton Mac.
+4. Dans l'app : **Réglages → Démo → Charger des données de démo** pour voir tous les écrans remplis.
+
+Pas besoin de choisir une *Team* pour le simulateur. Aperçu encore plus rapide : ouvre un fichier de vue
+(ex. `TodayView.swift`) et affiche le **Canvas** (`⌥⌘↩`).
+
 **Lancer les tests** : dans Xcode, `⌘U`.
 
 ## Importer tes séances Hevy

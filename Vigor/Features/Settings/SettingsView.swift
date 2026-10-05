@@ -59,6 +59,19 @@ private struct ProfileForm: View {
                 Label("Intervals.icu (Garmin complet) : prochaine étape", systemImage: "link")
                     .foregroundStyle(.secondary)
             }
+            Section {
+                Button("Charger des données de démo") {
+                    try? DemoData.load(into: context)
+                    app.statusMessage = "Données de démo chargées : 4 mois de sommeil, vélo et muscu PPL."
+                }
+                Button("Effacer toutes les données", role: .destructive) {
+                    try? DemoData.clear(context)
+                }
+            } header: {
+                Text("Démo")
+            } footer: {
+                Text("Pour essayer l'app dans le simulateur, sans iPhone ni Apple Santé. « Effacer » supprime les séances et mesures, pas ton profil.")
+            }
         }
         .scrollContentBackground(.hidden)
         .background(AppBackground())
