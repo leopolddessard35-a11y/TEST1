@@ -25,6 +25,110 @@ enum Theme {
     }
 }
 
+/// Apparence choisie dans les réglages : clair par défaut.
+enum Appearance: String, CaseIterable, Identifiable {
+    case light, dark, system
+
+    static let storageKey = "vigor.appearance"
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .light: "Clair"
+        case .dark: "Sombre"
+        case .system: "Auto"
+        }
+    }
+
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .light: .light
+        case .dark: .dark
+        case .system: nil
+        }
+    }
+}
+
+/// Petit libellé en capitales espacées (façon Whoop) : « RÉCUPÉRATION », « COACHING »…
+struct CapsLabel: View {
+    let text: String
+    var color: Color = .secondary
+
+    init(_ text: String, color: Color = .secondary) {
+        self.text = text
+        self.color = color
+    }
+
+    var body: some View {
+        Text(text.uppercased())
+            .font(.caption2.weight(.bold))
+            .tracking(1.3)
+            .foregroundStyle(color)
+    }
+}
+
+/// Pastille de statut (façon Ultrahuman) : texte coloré sur fond teinté.
+struct StatusPill: View {
+    let text: String
+    var symbol: String?
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if let symbol { Image(systemName: symbol) }
+            Text(text)
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(color)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4)
+        .background(color.opacity(0.13), in: .capsule)
+    }
+}
+
+/// Courbe miniature (14 derniers points), trait dégradé et aire estompée.
+struct Sparkline: View {
+    let values: [Double]
+    let color: Color
+
+    var body: some View {
+        GeometryReader { proxy in
+            let points = Self.points(values, in: proxy.size)
+            if points.count >= 2 {
+                ZStack {
+                    Path { path in
+                        path.move(to: CGPoint(x: points[0].x, y: proxy.size.height))
+                        for point in points { path.addLine(to: point) }
+                        path.addLine(to: CGPoint(x: points[points.count - 1].x, y: proxy.size.height))
+                        path.closeSubpath()
+                    }
+                    .fill(LinearGradient(colors: [color.opacity(0.22), color.opacity(0)], startPoint: .top, endPoint: .bottom))
+                    Path { path in
+                        path.move(to: points[0])
+                        for point in points.dropFirst() { path.addLine(to: point) }
+                    }
+                    .stroke(LinearGradient(colors: [color.opacity(0.45), color], startPoint: .leading, endPoint: .trailing),
+                            style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                    Circle().fill(color).frame(width: 5, height: 5).position(points[points.count - 1])
+                }
+            }
+        }
+    }
+
+    static func points(_ values: [Double], in size: CGSize) -> [CGPoint] {
+        guard values.count >= 2, let low = values.min(), let high = values.max() else { return [] }
+        let range = max(high - low, 0.0001)
+        let step = size.width / CGFloat(values.count - 1)
+        var result: [CGPoint] = []
+        for (index, value) in values.enumerated() {
+            let y = size.height - 3 - CGFloat((value - low) / range) * (size.height - 6)
+            result.append(CGPoint(x: CGFloat(index) * step, y: y))
+        }
+        return result
+    }
+}
+
 /// Fond clair avec un voile de couleur pastel en haut et un grain très fin : du relief sans perdre la propreté.
 struct AppBackground: View {
     @Environment(\.colorScheme) private var colorScheme

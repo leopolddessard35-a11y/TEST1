@@ -14,13 +14,23 @@ struct VigorApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            AppearanceRoot()
                 .environment(app)
         }
         .modelContainer(container)
         .backgroundTask(.appRefresh(AppModel.refreshTaskID)) {
             await app.backgroundRefresh(container: container)
         }
+    }
+}
+
+/// Applique l'apparence choisie (clair par défaut) à toute l'app, feuilles comprises.
+struct AppearanceRoot: View {
+    @AppStorage(Appearance.storageKey) private var appearance = Appearance.light.rawValue
+
+    var body: some View {
+        ContentView()
+            .preferredColorScheme((Appearance(rawValue: appearance) ?? .light).colorScheme)
     }
 }
 

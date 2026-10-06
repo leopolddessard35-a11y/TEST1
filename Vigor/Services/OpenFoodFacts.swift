@@ -35,6 +35,26 @@ struct FlexibleDouble: Decodable {
     }
 }
 
+/// Accepte un texte, une liste de textes ou un texte par langue (selon l'API d'Open Food Facts).
+struct FlexibleText: Decodable {
+    let text: String?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let value = try? container.decode(String.self) {
+            text = value
+        } else if let list = try? container.decode([String].self) {
+            text = list.joined(separator: ", ")
+        } else if let byLanguage = try? container.decode([String: String].self) {
+            text = byLanguage["fr"] ?? byLanguage["main"] ?? byLanguage["en"] ?? byLanguage.values.first
+        } else if let number = try? container.decode(Int.self) {
+            text = String(number)
+        } else {
+            text = nil
+        }
+    }
+}
+
 /// Base collaborative Open Food Facts (gratuite, très complète pour les produits français).
 enum OpenFoodFacts {
     struct ProductResponse: Decodable {
@@ -46,11 +66,16 @@ enum OpenFoodFacts {
         let products: [RawProduct]?
     }
 
+    /// Réponse du moteur de recherche « search-a-licious » (search.openfoodfacts.org).
+    struct ModernSearchResponse: Decodable {
+        let hits: [RawProduct]?
+    }
+
     struct RawProduct: Decodable {
-        let code: String?
-        let productName: String?
-        let productNameFR: String?
-        let brands: String?
+        let code: FlexibleText?
+        let productName: FlexibleText?
+        let productNameFR: FlexibleText?
+        let brands: FlexibleText?
         let servingQuantity: FlexibleDouble?
         let nutriments: [String: FlexibleDouble]?
 
@@ -65,13 +90,15 @@ enum OpenFoodFacts {
     }
 
     enum OFFError: LocalizedError {
-        case notFound, incomplete, network(Int)
+        case notFound, incomplete, network(Int), offline, busy
 
         var errorDescription: String? {
             switch self {
             case .notFound: "Produit introuvable dans Open Food Facts. Tu peux le créer à la main."
             case .incomplete: "Ce produit n'a pas de valeurs nutritionnelles complètes. Tu peux le créer à la main."
-            case .network(let code): "Erreur réseau (\(code))."
+            case .network(let code): "Open Food Facts ne répond pas (code \(code)). Réessaie dans un instant ou utilise les aliments courants."
+            case .offline: "Pas de connexion Internet. Les aliments courants, favoris et récents restent disponibles."
+            case .busy: "Open Food Facts est surchargé. Réessaie dans une minute, ou scanne le code-barres (plus fiable)."
             }
         }
     }
@@ -88,7 +115,33 @@ enum OpenFoodFacts {
         return product
     }
 
+    /// Recherche texte : d'abord le nouveau moteur (rapide, peu limité), puis l'ancien en secours.
     static func search(_ query: String) async throws -> [FoodProduct] {
+        do {
+            let products = try await modernSearch(query)
+            if !products.isEmpty { return products }
+        } catch OFFError.offline {
+            throw OFFError.offline
+        } catch {
+            // On tente l'ancienne API ci-dessous.
+        }
+        return try await legacySearch(query)
+    }
+
+    private static func modernSearch(_ query: String) async throws -> [FoodProduct] {
+        var components = URLComponents(string: "https://search.openfoodfacts.org/search")!
+        components.queryItems = [
+            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "langs", value: "fr,en"),
+            URLQueryItem(name: "page_size", value: "25"),
+            URLQueryItem(name: "fields", value: fields),
+        ]
+        let data = try await get(components.url!)
+        let response = try JSONDecoder().decode(ModernSearchResponse.self, from: data)
+        return (response.hits ?? []).compactMap { normalize($0, fallbackBarcode: nil) }
+    }
+
+    private static func legacySearch(_ query: String) async throws -> [FoodProduct] {
         var components = URLComponents(string: "https://world.openfoodfacts.org/cgi/search.pl")!
         components.queryItems = [
             URLQueryItem(name: "search_terms", value: query),
@@ -111,9 +164,10 @@ enum OpenFoodFacts {
         guard let kcal, let protein = value("proteins_100g"),
               let carbs = value("carbohydrates_100g"), let fat = value("fat_100g") else { return nil }
 
-        let name = [raw.productNameFR, raw.productName].compactMap { $0 }.first { !$0.isEmpty } ?? "Produit sans nom"
-        let barcode = raw.code ?? fallbackBarcode
-        let brand = raw.brands?.split(separator: ",").first.map { String($0).trimmingCharacters(in: .whitespaces) } ?? ""
+        let names: [String] = [raw.productNameFR?.text, raw.productName?.text].compactMap { $0 }
+        let name = names.first { !$0.isEmpty } ?? "Produit sans nom"
+        let barcode = raw.code?.text ?? fallbackBarcode
+        let brand = raw.brands?.text?.split(separator: ",").first.map { String($0).trimmingCharacters(in: .whitespaces) } ?? ""
         return FoodProduct(
             key: "off|\(barcode ?? name)",
             barcode: barcode,
@@ -131,13 +185,41 @@ enum OpenFoodFacts {
             servingGrams: raw.servingQuantity?.value)
     }
 
-    private static func get(_ url: URL) async throws -> Data {
+    private static func get(_ url: URL, attempt: Int = 0) async throws -> Data {
         var request = URLRequest(url: url)
-        request.setValue("Vigor/0.2 (app iOS personnelle)", forHTTPHeaderField: "User-Agent")
-        request.timeoutInterval = 15
-        let (data, response) = try await URLSession.shared.data(for: request)
-        if let http = response as? HTTPURLResponse, http.statusCode == 404 { throw OFFError.notFound }
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) { throw OFFError.network(http.statusCode) }
-        return data
+        // Open Food Facts demande un User-Agent « App/Version (contact) ».
+        request.setValue("Vigor/0.8 (app iOS personnelle; contact: vigor-app)", forHTTPHeaderField: "User-Agent")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 20
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch let error as URLError {
+            switch error.code {
+            case .notConnectedToInternet, .networkConnectionLost, .dataNotAllowed, .internationalRoamingOff:
+                throw OFFError.offline
+            case .timedOut where attempt == 0:
+                return try await get(url, attempt: 1)
+            default:
+                throw OFFError.network(error.errorCode)
+            }
+        }
+        guard let http = response as? HTTPURLResponse else { return data }
+        switch http.statusCode {
+        case 200..<300:
+            return data
+        case 404:
+            throw OFFError.notFound
+        case 429, 502, 503, 504:
+            // Limite de requêtes ou serveur saturé : un seul nouvel essai après une courte pause.
+            if attempt == 0 {
+                try await Task.sleep(for: .seconds(1.5))
+                return try await get(url, attempt: 1)
+            }
+            throw OFFError.busy
+        default:
+            throw OFFError.network(http.statusCode)
+        }
     }
 }

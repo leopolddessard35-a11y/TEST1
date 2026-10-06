@@ -149,7 +149,7 @@ struct VerticalGauge: View {
     }
 }
 
-/// Tuile du « Moniteur de santé » : nom, valeur, statut coloré et mini-jauge.
+/// Tuile du « Moniteur de santé » : statut et jauge (Bevel), chiffre massif et courbe fine (Ultrahuman / Whoop).
 struct HealthMonitorTile: View {
     let title: String
     let symbol: String
@@ -157,26 +157,29 @@ struct HealthMonitorTile: View {
     let unit: String
     let reading: HealthReading
     var tint: Color = Theme.sleep
+    var trend: [Double] = []
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .top, spacing: 10) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
                     IconBadge(symbol: symbol, tint: tint, size: 22)
                     Text(title).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
-                    Text(value).font(.system(.title2, design: .rounded).weight(.bold)).monospacedDigit()
+                    Text(value).font(.system(.title2, design: .rounded).weight(.heavy)).monospacedDigit()
                         .lineLimit(1).minimumScaleFactor(0.6)
-                    if !unit.isEmpty { Text(unit).font(.caption).foregroundStyle(.secondary) }
+                    if !unit.isEmpty { Text(unit).font(.caption.weight(.medium)).foregroundStyle(.secondary) }
                 }
-                Label(reading.status.label, systemImage: reading.status.symbol)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(reading.color)
+                if trend.count >= 2 {
+                    Sparkline(values: trend, color: tint).frame(height: 22)
+                }
+                StatusPill(text: reading.status.label, symbol: reading.status.symbol, color: reading.color)
             }
             Spacer(minLength: 0)
             VerticalGauge(position: reading.position, band: reading.band, color: reading.color)
-                .frame(height: 64)
+                .frame(height: 84)
+                .padding(.top, 4)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)

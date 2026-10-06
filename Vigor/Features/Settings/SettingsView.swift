@@ -25,6 +25,7 @@ private struct ProfileForm: View {
     @Environment(AppModel.self) private var app
     @Bindable var profile: AthleteProfile
     @State private var apiKey = ""
+    @AppStorage(Appearance.storageKey) private var appearance = Appearance.light.rawValue
     @AppStorage(NotificationScheduler.Keys.morningEnabled) private var morningEnabled = true
     @AppStorage(NotificationScheduler.Keys.morningMinutes) private var morningMinutes = 7 * 60 + 15
     @AppStorage(NotificationScheduler.Keys.eveningEnabled) private var eveningEnabled = false
@@ -41,6 +42,12 @@ private struct ProfileForm: View {
 
     var body: some View {
         Form {
+            Section("Apparence") {
+                Picker("Apparence", selection: $appearance) {
+                    ForEach(Appearance.allCases) { Text($0.label).tag($0.rawValue) }
+                }
+                .pickerStyle(.segmented)
+            }
             Section("Objectif") {
                 TextField("Course", text: $profile.raceName)
                 DatePicker("Date", selection: $profile.raceDate, displayedComponents: .date)

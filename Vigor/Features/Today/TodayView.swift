@@ -82,32 +82,33 @@ private struct RingsCoachingCard: View {
     var body: some View {
         let brief = snapshot.brief
         VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 4) {
+            // Héros façon Whoop : la récupération en grand, colorée selon sa zone ; effort et sommeil autour (Bevel).
+            HStack(alignment: .center, spacing: 6) {
                 NavigationLink {
                     EffortDetailView(today: snapshot.effortToday, target: snapshot.effortTarget, history: snapshot.effortHistory,
                                      verdict: brief.verdict)
                 } label: {
-                    RingStat(title: "Effort", fraction: snapshot.effortToday / 21, text: snapshot.effortToday.oneDecimal,
-                             colors: Theme.strainGradient)
+                    SideRing(title: "Effort", fraction: snapshot.effortToday / 21, text: snapshot.effortToday.oneDecimal,
+                             suffix: "/21", colors: Theme.strainGradient)
                 }
                 NavigationLink {
                     ReadinessDetailView(readiness: snapshot.readiness, history: Array(snapshot.readinessHistory.suffix(30)),
                                         hrvSource: snapshot.hrvSource)
                 } label: {
-                    RingStat(title: "Récupération", fraction: Double(snapshot.readiness?.score ?? 0) / 100,
-                             text: snapshot.readiness.map { "\($0.score)" } ?? "–", suffix: "%", colors: Theme.recoveryGradient)
+                    HeroRing(readiness: snapshot.readiness)
                 }
                 NavigationLink {
                     SleepNeedDetailView(need: snapshot.sleepNeed, performance: snapshot.lastSleepPerformance,
                                         lastNight: snapshot.wellness.last.flatMap { Calendar.current.isDateInToday($0.day) ? $0.sleepHours : nil },
                                         regularity: snapshot.bedtimeRegularity)
                 } label: {
-                    RingStat(title: "Sommeil", fraction: snapshot.lastSleepPerformance ?? 0,
+                    SideRing(title: "Sommeil", fraction: snapshot.lastSleepPerformance ?? 0,
                              text: snapshot.lastSleepPerformance.map { "\(Int(($0 * 100).rounded()))" } ?? "–", suffix: "%",
                              colors: Theme.sleepGradient)
                 }
             }
             .buttonStyle(.plain)
+            .frame(maxWidth: .infinity)
 
             Divider()
 
@@ -116,13 +117,11 @@ private struct RingsCoachingCard: View {
             } label: {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("COACHING").font(.caption.weight(.bold)).tracking(1.2).foregroundStyle(.secondary)
+                        CapsLabel("Coaching")
                         Spacer()
+                        StatusPill(text: brief.verdict.label, symbol: brief.verdict.symbol, color: brief.verdict.color)
                         DetailChevron()
                     }
-                    Label(brief.verdict.label, systemImage: brief.verdict.symbol)
-                        .font(.headline)
-                        .foregroundStyle(brief.verdict.color)
                     Text(brief.headline).font(.subheadline).foregroundStyle(.primary).lineLimit(3)
                         .multilineTextAlignment(.leading)
                     ForEach(brief.adapted) { session in
@@ -137,6 +136,61 @@ private struct RingsCoachingCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .card(tint: brief.verdict.color)
         .scrollAppear()
+    }
+}
+
+/// Grand anneau de récupération : couleur de zone (vert ≥ 67, jaune 34–66, rouge < 34), chiffre massif.
+private struct HeroRing: View {
+    let readiness: ReadinessResult?
+
+    var body: some View {
+        let color: Color = readiness.map { Theme.color(for: $0.level) } ?? .secondary
+        let fraction = Double(readiness?.score ?? 0) / 100
+        ZStack {
+            Circle()
+                .fill(RadialGradient(colors: [color.opacity(0.16), color.opacity(0)], center: .center, startRadius: 10, endRadius: 90))
+            GradientRing(fraction: fraction, colors: [color.opacity(0.55), color], lineWidth: 14)
+                .padding(7)
+            VStack(spacing: 2) {
+                CapsLabel("Récupération")
+                HStack(alignment: .firstTextBaseline, spacing: 1) {
+                    Text(readiness.map { "\($0.score)" } ?? "–")
+                        .font(.system(size: 46, weight: .heavy, design: .rounded))
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                    Text("%").font(.system(.title3, design: .rounded).weight(.bold)).foregroundStyle(.secondary)
+                }
+                Text(readiness?.level.label ?? "En calibrage")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(color)
+            }
+        }
+        .frame(width: 158, height: 158)
+    }
+}
+
+/// Anneau latéral compact, libellé en capitales.
+private struct SideRing: View {
+    let title: String
+    let fraction: Double
+    let text: String
+    let suffix: String
+    let colors: [Color]
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ZStack {
+                GradientRing(fraction: fraction, colors: colors, lineWidth: 8)
+                VStack(spacing: 0) {
+                    Text(text).font(.system(.headline, design: .rounded).weight(.heavy)).monospacedDigit()
+                        .lineLimit(1).minimumScaleFactor(0.6)
+                    Text(suffix).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 70, height: 70)
+            CapsLabel(title)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -172,7 +226,8 @@ private struct HealthMonitorGrid: View {
             MetricDetailView(kind: kind, series: series, sourceNote: note, extraTiles: extra, events: snapshot.chartEvents)
         } label: {
             HealthMonitorTile(title: kind.shortTitle, symbol: kind.symbol, value: reading.latest.map { kind.format($0) } ?? "–",
-                              unit: unit, reading: reading, tint: kind.color)
+                              unit: unit, reading: reading, tint: kind.color,
+                              trend: series.sorted { $0.date < $1.date }.suffix(14).map(\.value))
         }
     }
 }
