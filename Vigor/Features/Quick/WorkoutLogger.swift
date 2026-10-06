@@ -167,6 +167,18 @@ struct WorkoutLoggerView: View {
                 }
             }
             .onChange(of: draft) { draft.persist() }
+            .task(id: restEnd) {
+                // Compte à rebours sonore quand l'app est ouverte : tics sur les 3 dernières secondes, puis son + vibration.
+                guard let end = restEnd else { return }
+                while true {
+                    let remaining = end.timeIntervalSinceNow
+                    if remaining <= 0 { break }
+                    if remaining <= 3.05 { Feedback.tick() }
+                    try? await Task.sleep(for: .seconds(min(1, remaining)))
+                    if Task.isCancelled { return }
+                }
+                Feedback.restFinished()
+            }
         }
     }
 
@@ -510,7 +522,10 @@ private struct SetLogRow: View {
 
             Button {
                 set.done.toggle()
-                if set.done { onDone() }
+                if set.done {
+                    Feedback.setDone()
+                    onDone()
+                }
             } label: {
                 Image(systemName: set.done ? "checkmark.circle.fill" : "circle")
                     .font(.title2)
@@ -518,7 +533,6 @@ private struct SetLogRow: View {
                     .frame(width: 30)
             }
             .buttonStyle(.plain)
-            .sensoryFeedback(.success, trigger: set.done)
         }
         .font(.subheadline.monospacedDigit())
         .padding(.vertical, 2)

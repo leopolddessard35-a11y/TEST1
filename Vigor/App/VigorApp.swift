@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 import SwiftData
 import BackgroundTasks
 
@@ -9,6 +10,7 @@ struct VigorApp: App {
 
     init() {
         container = SharedStore.container
+        UNUserNotificationCenter.current().delegate = NotificationPresenter.shared
         VigorShortcuts.updateAppShortcutParameters()
     }
 
