@@ -130,7 +130,7 @@ private struct ProfileForm: View {
                     Label(app.isSyncing ? "Synchronisation…" : "Tout synchroniser (Apple Santé + Intervals.icu)", systemImage: "arrow.triangle.2.circlepath")
                 }
                 .disabled(app.isSyncing)
-                Label("Hevy : import CSV depuis l'onglet Entraînement", systemImage: "dumbbell")
+                Label("Muscu : séances dans Activité → Muscu (historique Hevy importable une fois)", systemImage: "dumbbell")
             }
             Section {
                 Button("Charger des données de démo") {
