@@ -5,6 +5,7 @@ struct ContentView: View {
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(SyncService.self) private var sync
     @Query private var profiles: [AthleteProfile]
     @State private var selection: AppTab = .today
     @State private var showQuickAdd = false
@@ -43,12 +44,23 @@ struct ContentView: View {
             _ = await NotificationScheduler.requestAuthorization()
             app.scheduleBackgroundRefresh()
         }
+        // Synchro du sommeil au premier plan, seulement si aucune n'a encore réussi aujourd'hui.
+        .task {
+            await sync.syncIfNeeded()
+        }
+        .onChange(of: sync.lastSyncDate) {
+            app.dataVersion += 1
+        }
         .task(id: app.dataVersion) {
             await app.refreshNotifications(context: context)
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 app.scheduleBackgroundRefresh()
+                // Réveil le lendemain sans avoir fermé l'app : nouvelle journée, nouvelle synchro.
+                if !sync.hasSyncedToday {
+                    Task { await sync.syncIfNeeded() }
+                }
                 // Synchronisation automatique si la dernière date de plus d'une heure.
                 if Date.now.timeIntervalSince(app.lastSync) > 3600 {
                     Task { await app.syncAll(context: context, profile: profiles.first, silent: true) }

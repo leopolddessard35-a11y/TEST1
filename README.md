@@ -97,6 +97,12 @@ FC de repos, SpO2, respiration, VO2max, poids, et le calendrier des séances pr�
 - **Historique** par mois (exercices, séries, tonnage, durée).
 - L'import Hevy reste disponible une fois, pour récupérer l'ancien historique.
 
+## Synchro du sommeil au réveil (SyncService + Raccourcis)
+
+- `SyncService` (`Vigor/Services/Sync/`) : `syncSleepData(force:allowPrompt:)` lit la nuit dans Apple Santé (`sleepAnalysis`), sinon via l'API Intervals.icu ; une seule synchro réussie par jour (date en cache dans UserDefaults) ; état observable `isSyncing` / `syncError` / `lastSyncDate`. Sources, cache et stockage derrière des protocoles (mock pour le simulateur, les aperçus et les tests).
+- Au premier plan : synchro à l'ouverture et au retour dans l'app si rien n'a réussi aujourd'hui ; indicateur discret en haut de l'accueil ; tirer pour forcer.
+- Raccourcis : action **« Synchroniser les données du matin »**. Automatisation conseillée : Raccourcis → Automatisation → **Mode Sommeil → Lorsqu'il se désactive** → action Vigor « Synchroniser les données du matin » → **Exécuter immédiatement**.
+
 ## Installer l'app sur ton iPhone (gratuit, sans compte développeur payant)
 
 1. **Installe Xcode** sur ton Mac depuis l'App Store (gratuit, ~10 Go).

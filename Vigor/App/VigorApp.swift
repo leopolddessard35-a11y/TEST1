@@ -18,6 +18,7 @@ struct VigorApp: App {
         WindowGroup {
             AppearanceRoot()
                 .environment(app)
+                .environment(SyncService.shared)
         }
         .modelContainer(container)
         .backgroundTask(.appRefresh(AppModel.refreshTaskID)) {

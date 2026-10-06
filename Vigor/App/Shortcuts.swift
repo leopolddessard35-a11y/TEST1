@@ -63,6 +63,50 @@ struct TodayVerdictIntent: AppIntent {
     }
 }
 
+/// Synchronise la nuit au réveil. À brancher sur l'automatisation Raccourcis
+/// « Lorsque le mode Sommeil se désactive » → « Synchroniser les données du matin ».
+struct SyncMorningDataIntent: AppIntent {
+    static var title: LocalizedStringResource = "Synchroniser les données du matin"
+    static var description = IntentDescription(
+        "Récupère ta nuit de sommeil (Apple Santé, sinon Intervals.icu) et prépare le bilan du matin. Idéal en automatisation à la fin du mode Sommeil.",
+        categoryName: "Synchronisation")
+    /// S'exécute sans ouvrir l'app.
+    static var openAppWhenRun: Bool = false
+    static var isDiscoverable: Bool = true
+
+    @Parameter(title: "Forcer", description: "Relancer même si la synchro du jour est déjà faite.", default: false)
+    var force: Bool
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Synchroniser les données du matin") {
+            \.$force
+        }
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let sync = SyncService.shared
+        let alreadyDone = sync.hasSyncedToday && !force
+        do {
+            // Pas de demande d'autorisation depuis Raccourcis : aucune interface n'est disponible.
+            try await sync.syncSleepData(force: force, allowPrompt: false)
+        } catch {
+            return .result(dialog: IntentDialog(stringLiteral: error.localizedDescription))
+        }
+        // Le bilan du matin tient compte de la nuit qui vient d'arriver.
+        let model = AppModel()
+        await model.refreshNotifications(context: SharedStore.container.mainContext)
+
+        if alreadyDone {
+            return .result(dialog: "Déjà synchronisé aujourd'hui.")
+        }
+        if let night = sync.lastNight {
+            return .result(dialog: IntentDialog(stringLiteral: "Nuit de \(night.hours.hoursText) synchronisée (\(night.source))."))
+        }
+        return .result(dialog: "Synchronisation terminée.")
+    }
+}
+
 struct VigorShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(intent: TodayVerdictIntent(), phrases: ["Quel est mon plan du jour dans \(.applicationName)",
@@ -72,5 +116,8 @@ struct VigorShortcuts: AppShortcutsProvider {
                     shortTitle: "Noter l'effort", systemImageName: "gauge.with.dots.needle.67percent")
         AppShortcut(intent: AddWaterIntent(), phrases: ["Ajoute de l'eau dans \(.applicationName)"],
                     shortTitle: "Ajouter de l'eau", systemImageName: "drop.fill")
+        AppShortcut(intent: SyncMorningDataIntent(), phrases: ["Synchronise ma nuit dans \(.applicationName)",
+                                                               "Données du matin \(.applicationName)"],
+                    shortTitle: "Synchro du matin", systemImageName: "bed.double.fill")
     }
 }

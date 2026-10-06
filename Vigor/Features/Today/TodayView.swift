@@ -4,6 +4,7 @@ import SwiftData
 struct TodayView: View {
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
+    @Environment(SyncService.self) private var sync
     @Query private var profiles: [AthleteProfile]
     @State private var showSettings = false
     @State private var addingFood = false
@@ -14,6 +15,7 @@ struct TodayView: View {
                 SnapshotReader { _, snapshot in
                     // Niveau 1 : les trois anneaux + le coaching. Niveau 2 : le moniteur. Niveau 3 : le détail, au tap.
                     VStack(spacing: 12) {
+                        SyncStatusBadge()
                         RingsCoachingCard(snapshot: snapshot)
 
                         SectionHeader(title: "Moniteur de santé", trailing: "vs ta normale", symbol: "heart.text.square.fill", tint: Theme.warning)
@@ -70,7 +72,10 @@ struct TodayView: View {
                     }
                 }
             }
-            .refreshable { await app.syncAll(context: context, profile: profiles.first) }
+            .refreshable {
+                try? await sync.syncSleepData(force: true)
+                await app.syncAll(context: context, profile: profiles.first)
+            }
         }
     }
 }
