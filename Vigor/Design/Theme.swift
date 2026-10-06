@@ -193,18 +193,18 @@ struct CardBackground: ViewModifier {
                     shape.fill(LinearGradient(colors: [.white.opacity(dark ? 0.05 : 0.6), .clear],
                                               startPoint: .top, endPoint: .bottom))
                     if let tint {
-                        shape.fill(RadialGradient(colors: [tint.opacity(dark ? 0.22 : 0.13), .clear],
-                                                  center: .topLeading, startRadius: 0, endRadius: 260))
+                        shape.fill(RadialGradient(colors: [tint.opacity(dark ? 0.16 : 0.07), .clear],
+                                                  center: .topLeading, startRadius: 0, endRadius: 220))
                     }
                 }
             }
             .overlay {
-                shape.strokeBorder(LinearGradient(colors: [.white.opacity(dark ? 0.14 : 0.95), (tint ?? .black).opacity(dark ? 0.04 : 0.06)],
+                shape.strokeBorder(LinearGradient(colors: [.white.opacity(dark ? 0.14 : 0.95), Color.black.opacity(dark ? 0.04 : 0.05)],
                                                   startPoint: .top, endPoint: .bottom),
                                    lineWidth: 1)
             }
             .shadow(color: .black.opacity(dark ? 0 : 0.04), radius: 2, y: 1)
-            .shadow(color: (tint ?? .black).opacity(dark ? 0 : (tint == nil ? 0.07 : 0.10)), radius: 18, y: 8)
+            .shadow(color: .black.opacity(dark ? 0 : 0.06), radius: 18, y: 8)
     }
 }
 
@@ -311,9 +311,12 @@ struct ScoreRing: View {
                         style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             VStack(spacing: 2) {
-                CountingText(value: shown).font(.system(.largeTitle, design: .rounded).weight(.bold))
+                CountingText(value: shown).font(.system(.largeTitle, design: .rounded).weight(.heavy))
                 Text(label).font(.caption).foregroundStyle(.secondary)
             }
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+            .padding(.horizontal, lineWidth + 8)
         }
         .onAppear {
             withAnimation(.spring(response: 1.2, dampingFraction: 0.8).delay(0.1)) { shown = value }

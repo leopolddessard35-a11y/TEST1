@@ -50,6 +50,7 @@ struct ContextTile: View {
 
     var body: some View {
         let context = MetricContext(series: series)
+        let reading = HealthReading.evaluate(series, higherIsBetter: kind.higherIsBetter)
         NavigationLink {
             MetricDetailView(kind: kind, series: series, sourceNote: sourceNote, events: events)
         } label: {
@@ -69,7 +70,7 @@ struct ContextTile: View {
                         Text(delta)
                     }
                     .font(.caption.monospacedDigit())
-                    .foregroundStyle(context.isFavorable(kind) ? Theme.recovery : (context.isUnfavorable(kind) ? Theme.warning : .secondary))
+                    .foregroundStyle(reading.color)
                 } else {
                     Text("Base en cours de calcul").font(.caption2).foregroundStyle(.secondary)
                 }

@@ -85,29 +85,48 @@ struct HealthReading {
     let band: ClosedRange<Double>
     /// Écart dans le sens défavorable et marqué (> 2 écarts) : affiché en rouge.
     let concerning: Bool
+    /// Ta normale : médiane et écart robuste sur 60 jours (hors valeur du jour).
+    var center: Double? = nil
+    var spread: Double? = nil
+    var z: Double? = nil
 
+    /// Règle unique, partagée par l'accueil et les pages de détail :
+    /// |z| < 1 = normal ; 1–2 = légèrement au-dessus / en dessous ; > 2 = nettement.
     static func evaluate(_ unsorted: [DayValue], higherIsBetter: Bool?) -> HealthReading {
         let series: [DayValue] = unsorted.sorted { $0.date < $1.date }
         guard let last = series.last else {
             return HealthReading(latest: nil, status: .unknown, position: 0.5, band: 0.35...0.65, concerning: false)
         }
-        let cutoff = Calendar.current.date(byAdding: .day, value: -30, to: last.date) ?? last.date
+        let cutoff = Calendar.current.date(byAdding: .day, value: -60, to: last.date) ?? last.date
         let baseline: [Double] = series.dropLast().filter { $0.date >= cutoff }.map(\.value)
         guard baseline.count >= 5, let center = Robust.median(baseline) else {
             return HealthReading(latest: last.value, status: .unknown, position: 0.5, band: 0.35...0.65, concerning: false)
         }
-        // Écart robuste, avec un plancher de 2 % pour les mesures très stables (respiration, poids).
+        // Écart robuste, avec un plancher de 2 % pour les mesures très stables (respiration, poids, FC).
         let spread = max(Robust.mad(baseline) ?? 0, abs(center) * 0.02, 0.0001)
         let low = center - 3 * spread, high = center + 3 * spread
         let position = min(1, max(0, (last.value - low) / (high - low)))
         let z = (last.value - center) / spread
-        let status: Status = z > 1 ? .higher : (z < -1 ? .lower : .normal)
+        let status: Status = z >= 1 ? .higher : (z <= -1 ? .lower : .normal)
         var concerning = false
         if let higherIsBetter, abs(z) > 2 {
             concerning = higherIsBetter ? z < 0 : z > 0
         }
         return HealthReading(latest: last.value, status: status, position: position,
-                             band: (1.0 / 3)...(2.0 / 3), concerning: concerning)
+                             band: (1.0 / 3)...(2.0 / 3), concerning: concerning,
+                             center: center, spread: spread, z: z)
+    }
+
+    /// Phrase de lecture, identique partout.
+    func sentence(higherIsBetter: Bool?) -> String {
+        guard let z else { return "Encore quelques jours de mesure pour connaître ta normale." }
+        if abs(z) < 1 { return "Dans ta normale." }
+        let direction = z > 0 ? "au-dessus" : "en dessous"
+        let strength = abs(z) > 2 ? "Nettement" : "Légèrement"
+        guard let higherIsBetter else { return "\(strength) \(direction) de ta normale." }
+        let good = (z > 0) == higherIsBetter
+        if abs(z) <= 2 { return "\(strength) \(direction) de ta normale\(good ? " : plutôt bon signe." : ", rien d'inquiétant seul.")" }
+        return good ? "\(strength) \(direction) de ta normale : bon signe." : "\(strength) \(direction) de ta normale : à surveiller."
     }
 
     var color: Color {
@@ -183,7 +202,7 @@ struct HealthMonitorTile: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .card(cornerRadius: 22, tint: tint)
+        .card(cornerRadius: 22)
     }
 }
 

@@ -83,12 +83,13 @@ private struct RingsCoachingCard: View {
         let brief = snapshot.brief
         VStack(alignment: .leading, spacing: 16) {
             // Héros façon Whoop : la récupération en grand, colorée selon sa zone ; effort et sommeil autour (Bevel).
-            HStack(alignment: .center, spacing: 6) {
+            HStack(alignment: .top, spacing: 4) {
                 NavigationLink {
                     EffortDetailView(today: snapshot.effortToday, target: snapshot.effortTarget, history: snapshot.effortHistory,
                                      verdict: brief.verdict)
                 } label: {
-                    SideRing(title: "Effort", fraction: snapshot.effortToday / 21, text: snapshot.effortToday.oneDecimal,
+                    SideRing(title: "Effort", fraction: snapshot.effortToday / 21,
+                             text: snapshot.effortToday < 0.05 ? "0" : snapshot.effortToday.oneDecimal,
                              suffix: "/21", colors: Theme.strainGradient)
                 }
                 NavigationLink {
@@ -115,17 +116,27 @@ private struct RingsCoachingCard: View {
             NavigationLink {
                 DailyBriefDetailView(brief: brief, confidence: snapshot.confidence)
             } label: {
-                VStack(alignment: .leading, spacing: 8) {
+                let summary = CoachSummary.make(snapshot)
+                VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         CapsLabel("Coaching")
                         Spacer()
-                        StatusPill(text: brief.verdict.label, symbol: brief.verdict.symbol, color: brief.verdict.color)
+                        StatusPill(text: summary.pill, symbol: summary.pillSymbol,
+                                   color: summary.isRestDay && summary.pill == "Jour de repos" ? Theme.sleep : brief.verdict.color)
                         DetailChevron()
                     }
-                    Text(brief.headline).font(.subheadline).foregroundStyle(.primary).lineLimit(3)
+                    Text(summary.text)
+                        .font(.body)
+                        .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)
-                    ForEach(brief.adapted) { session in
-                        SessionRow(session: session, changed: !brief.planned.contains(session), compact: true)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !summary.isRestDay {
+                        ForEach(brief.adapted.filter { $0.kind != .rest }) { session in
+                            SessionRow(session: session, changed: !brief.planned.contains(session), compact: true)
+                                .padding(10)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.secondary.opacity(0.08), in: .rect(cornerRadius: 14, style: .continuous))
+                        }
                     }
                 }
                 .contentShape(.rect)
@@ -134,42 +145,49 @@ private struct RingsCoachingCard: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .card(tint: brief.verdict.color)
+        .card()
         .scrollAppear()
     }
 }
 
 /// Grand anneau de récupération : couleur de zone (vert ≥ 67, jaune 34–66, rouge < 34), chiffre massif.
+/// Le libellé est SOUS l'anneau : rien ne déborde, quelle que soit la taille de texte.
 private struct HeroRing: View {
     let readiness: ReadinessResult?
 
     var body: some View {
         let color: Color = readiness.map { Theme.color(for: $0.level) } ?? .secondary
         let fraction = Double(readiness?.score ?? 0) / 100
-        ZStack {
-            Circle()
-                .fill(RadialGradient(colors: [color.opacity(0.16), color.opacity(0)], center: .center, startRadius: 10, endRadius: 90))
-            GradientRing(fraction: fraction, colors: [color.opacity(0.55), color], lineWidth: 14)
-                .padding(7)
-            VStack(spacing: 2) {
-                CapsLabel("Récupération")
-                HStack(alignment: .firstTextBaseline, spacing: 1) {
-                    Text(readiness.map { "\($0.score)" } ?? "–")
-                        .font(.system(size: 46, weight: .heavy, design: .rounded))
-                        .monospacedDigit()
-                        .contentTransition(.numericText())
-                    Text("%").font(.system(.title3, design: .rounded).weight(.bold)).foregroundStyle(.secondary)
+        VStack(spacing: 8) {
+            ZStack {
+                GradientRing(fraction: fraction, colors: [color.opacity(0.5), color], lineWidth: 13)
+                VStack(spacing: 0) {
+                    HStack(alignment: .firstTextBaseline, spacing: 1) {
+                        Text(readiness.map { "\($0.score)" } ?? "–")
+                            .font(.system(size: 44, weight: .heavy, design: .rounded))
+                            .monospacedDigit()
+                            .contentTransition(.numericText())
+                        Text("%").font(.system(.headline, design: .rounded).weight(.bold)).foregroundStyle(.secondary)
+                    }
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    Text(readiness?.level.label ?? "En calibrage")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(color)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                 }
-                Text(readiness?.level.label ?? "En calibrage")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(color)
+                .padding(.horizontal, 22)
             }
+            .frame(width: 136, height: 136)
+            CapsLabel("Récupération")
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
-        .frame(width: 158, height: 158)
     }
 }
 
-/// Anneau latéral compact, libellé en capitales.
+/// Anneau latéral compact, libellé en capitales sous l'anneau.
 private struct SideRing: View {
     let title: String
     let fraction: Double
@@ -180,15 +198,20 @@ private struct SideRing: View {
     var body: some View {
         VStack(spacing: 8) {
             ZStack {
-                GradientRing(fraction: fraction, colors: colors, lineWidth: 8)
+                GradientRing(fraction: fraction, colors: colors, lineWidth: 7)
                 VStack(spacing: 0) {
                     Text(text).font(.system(.headline, design: .rounded).weight(.heavy)).monospacedDigit()
-                        .lineLimit(1).minimumScaleFactor(0.6)
                     Text(suffix).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
                 }
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .padding(.horizontal, 10)
             }
-            .frame(width: 70, height: 70)
+            .frame(width: 72, height: 72)
+            .frame(height: 136)
             CapsLabel(title)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity)
     }

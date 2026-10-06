@@ -156,9 +156,10 @@ struct MetricDetailView: View {
         let sorted = series.sorted { $0.date < $1.date }
         let visible = Stats.lastDays(days, of: sorted, today: .now)
         let baseline = Stats.lastDays(60, of: sorted, today: .now).map(\.value)
-        // Bande de normalité personnelle robuste : médiane ± MAD sur 60 jours.
-        let mean: Double? = baseline.count >= 7 ? Robust.median(baseline) : nil
-        let sd: Double = baseline.count >= 7 ? (Robust.mad(baseline) ?? 0) : 0
+        // Bande de normalité personnelle robuste : même règle que l'accueil (médiane ± écart, 60 jours).
+        let reading = HealthReading.evaluate(sorted, higherIsBetter: kind.higherIsBetter)
+        let mean: Double? = reading.center ?? (baseline.count >= 7 ? Robust.median(baseline) : nil)
+        let sd: Double = reading.spread ?? (baseline.count >= 7 ? (Robust.mad(baseline) ?? 0) : 0)
         let segments: [[DayValue]] = DataGaps.segments(visible)
         let missing: Int = DataGaps.missingDays(sorted, days: days)
         let firstVisible: Date = Calendar.current.date(byAdding: .day, value: -(days - 1), to: Calendar.current.startOfDay(for: .now)) ?? .now
@@ -178,7 +179,11 @@ struct MetricDetailView: View {
                                 Text(kind == .sleep ? "" : kind.unit).foregroundStyle(.secondary)
                             }
                             Text(latest.date.formatted(date: .complete, time: .omitted)).font(.caption).foregroundStyle(.secondary)
-                            if let mean { Text(verdict(latest.value, mean: mean, sd: sd)).font(.subheadline) }
+                            HStack(spacing: 8) {
+                                StatusPill(text: reading.status.label, symbol: reading.status.symbol, color: reading.color)
+                                Text(reading.sentence(higherIsBetter: kind.higherIsBetter)).font(.subheadline)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         } else {
                             Text("Pas encore de données.").foregroundStyle(.secondary)
                         }
@@ -187,7 +192,7 @@ struct MetricDetailView: View {
                 }
 
                 GlassCard {
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 14) {
                         RangePicker(days: $days)
                         Chart {
                             if let mean, sd > 0, let first = visible.first?.date, let last = visible.last?.date, kind != .steps {
@@ -201,9 +206,10 @@ struct MetricDetailView: View {
                             ForEach(visibleEvents) { event in
                                 RectangleMark(xStart: .value("Début", max(event.start, firstVisible)),
                                               xEnd: .value("Fin", event.end.addingTimeInterval(86_400)))
-                                    .foregroundStyle(Color.primary.opacity(0.06))
-                                    .annotation(position: .top, alignment: .leading) {
-                                        Image(systemName: event.symbol).font(.caption2).foregroundStyle(.secondary)
+                                    .foregroundStyle(Color.primary.opacity(0.05))
+                                    // Icône posée DANS la zone du graphique (en haut), jamais par-dessus le sélecteur.
+                                    .annotation(position: .overlay, alignment: .top, spacing: 0) {
+                                        EventBadge(symbol: event.symbol)
                                     }
                             }
                             if kind == .steps {
@@ -259,16 +265,19 @@ struct MetricDetailView: View {
         .navigationTitle(kind.title)
         .navigationBarTitleDisplayMode(.inline)
     }
+}
 
-    private func verdict(_ value: Double, mean: Double, sd: Double) -> String {
-        guard sd > 0 else { return "Ta moyenne : \(kind.format(mean))" }
-        let z = (value - mean) / sd
-        guard let higherIsBetter = kind.higherIsBetter else {
-            return "Ta moyenne sur 60 jours : \(kind.format(mean)) \(kind.unit)"
-        }
-        if abs(z) < 0.5 { return "Dans ta normale (moyenne : \(kind.format(mean)))." }
-        let good = (z > 0) == higherIsBetter
-        let direction = z > 0 ? "au-dessus" : "en dessous"
-        return good ? "Nettement \(direction) de ta normale : bon signe." : "Nettement \(direction) de ta normale : à surveiller."
+/// Pastille d'événement (maladie, voyage…) : petite, sur fond de carte, lisible sur la courbe.
+struct EventBadge: View {
+    let symbol: String
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .frame(width: 18, height: 18)
+            .background(Color(uiColor: .secondarySystemGroupedBackground), in: .circle)
+            .overlay(Circle().stroke(Color.secondary.opacity(0.25), lineWidth: 0.5))
+            .padding(.top, 2)
     }
 }
