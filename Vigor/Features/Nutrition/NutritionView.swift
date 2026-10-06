@@ -15,66 +15,93 @@ struct NutritionView: View {
     }
 }
 
-/// Contenu nutrition (utilisé dans l'onglet Journal).
+/// Contenu nutrition : objectifs du jour, ajout rapide, repas, puis tuiles vers le détail.
 struct NutritionContent: View {
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
     @Query(sort: \FoodEntry.date) private var entries: [FoodEntry]
     @State private var day = Calendar.current.startOfDay(for: .now)
-    @State private var addingMeal: Meal?
+    @State private var adding = false
 
     var body: some View {
-        Group {
-                SnapshotReader { profile, snapshot in
-                    let dayEntries = entries.filter { Calendar.current.isDate($0.date, inSameDayAs: day) }
-                    let totals: NutritionDay = NutritionView.totals(of: dayEntries, day: day)
-                    VStack(spacing: 16) {
-                        DayPicker(day: $day)
+        SnapshotReader { _, snapshot in
+            let dayEntries = entries.filter { Calendar.current.isDate($0.date, inSameDayAs: day) }
+            let totals: NutritionDay = NutritionView.totals(of: dayEntries, day: day)
+            VStack(spacing: 16) {
+                DayPicker(day: $day)
 
-                        if let targets = snapshot.macroTargets {
-                            NavigationLink {
-                                MacroTargetsDetailView(targets: targets, today: totals)
-                            } label: {
-                                GlassCard {
-                                    VStack(alignment: .leading, spacing: 10) {
-                                        HStack {
-                                            SectionTitle(title: "Objectifs · dépense \(targets.expenditureMethod)", symbol: "target")
-                                            Spacer()
-                                            DetailChevron()
-                                        }
-                                        MacroBar(label: "Calories", value: totals.kcal, target: targets.kcal, unit: "kcal", color: Theme.nutrition)
-                                        MacroBar(label: "Protéines", value: totals.protein, target: targets.protein, unit: "g", color: Theme.recovery)
-                                        MacroBar(label: "Glucides", value: totals.carbs, target: targets.carbs, unit: "g", color: Theme.sleep)
-                                        MacroBar(label: "Lipides", value: totals.fat, target: targets.fat, unit: "g", color: Theme.strain)
-                                    }
-                                }
-                            }
-                            .buttonStyle(.plain)
-                        } else {
-                            EmptyStateCard(title: "Objectifs à calculer",
-                                           message: "Renseigne ton poids, ta taille et ton année de naissance dans Réglages (ou synchronise ton poids depuis Garmin).",
-                                           symbol: "person.text.rectangle")
-                        }
+                if let targets = snapshot.macroTargets {
+                    NavigationLink {
+                        MacroTargetsDetailView(targets: targets, today: totals)
+                    } label: {
+                        MacroSummaryTile(targets: targets, totals: totals)
+                    }
+                    .buttonStyle(.plain)
+                }
 
-                        HydrationCard(target: snapshot.hydrationTarget, today: snapshot.waterToday)
-                        EnergyBalanceCard(weights: snapshot.weightMA7, nutrition: snapshot.nutritionDays,
-                                          expenditure: snapshot.macroTargets?.expenditure,
-                                          method: snapshot.macroTargets?.expenditureMethod ?? "estimée")
+                Button { adding = true } label: {
+                    Label("Ajouter un aliment", systemImage: "plus.circle.fill")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.glassProminent)
+                .controlSize(.large)
 
-                        ForEach(Meal.allCases) { meal in
-                            MealCard(meal: meal, entries: dayEntries.filter { $0.meal == meal }) {
-                                addingMeal = meal
-                            }
-                        }
-
-                        if let phase = snapshot.plan.currentWeek?.phase {
-                            ExplanationCard(title: "Objectif de la phase \(phase.label)", symbol: "flag.checkered", text: phase.nutritionFocus)
-                        }
+                ForEach(Meal.allCases) { meal in
+                    let items = dayEntries.filter { $0.meal == meal }
+                    if !items.isEmpty {
+                        MealCard(meal: meal, entries: items)
                     }
                 }
+
+                HStack(spacing: 12) {
+                    NavigationLink {
+                        DetailPage(title: "Hydratation") {
+                            HydrationCard(target: snapshot.hydrationTarget, today: snapshot.waterToday)
+                        }
+                    } label: {
+                        SimpleTile(title: "Eau", value: String(format: "%.1f L", snapshot.waterToday / 1000),
+                                   caption: String(format: "objectif %.1f L", snapshot.hydrationTarget / 1000),
+                                   symbol: "drop.fill", tint: Theme.sleep)
+                    }
+                    NavigationLink {
+                        DetailPage(title: "Bilan énergétique") {
+                            EnergyBalanceCard(weights: snapshot.weightMA7, nutrition: snapshot.nutritionDays,
+                                              expenditure: snapshot.macroTargets?.expenditure,
+                                              method: snapshot.macroTargets?.expenditureMethod ?? "estimée")
+                        }
+                    } label: {
+                        SimpleTile(title: "Poids 7 j", value: snapshot.weightMA7.last.map { "\($0.value.oneDecimal) kg" } ?? "–",
+                                   caption: "vs apports", symbol: "scalemass.fill", tint: Theme.nutrition)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .sheet(item: $addingMeal) { meal in
-            AddFoodView(meal: meal, day: day) { app.dataVersion += 1 }
+        .sheet(isPresented: $adding) {
+            AddFoodView(meal: Calendar.current.isDateInToday(day) ? Meal.suggested() : .lunch, day: day) { app.dataVersion += 1 }
+        }
+    }
+}
+
+/// Calories en anneau + macros en barres, dans une seule tuile.
+private struct MacroSummaryTile: View {
+    let targets: MacroTargets
+    let totals: NutritionDay
+
+    var body: some View {
+        GlassCard {
+            HStack(spacing: 16) {
+                ScoreRing(value: min(100, totals.kcal / max(targets.kcal, 1) * 100), color: Theme.nutrition, lineWidth: 10,
+                          label: "\(totals.kcal.noDecimal) / \(targets.kcal.noDecimal)")
+                    .frame(width: 110, height: 110)
+                VStack(alignment: .leading, spacing: 8) {
+                    MacroBar(label: "Protéines", value: totals.protein, target: targets.protein, unit: "g", color: Theme.recovery)
+                    MacroBar(label: "Glucides", value: totals.carbs, target: targets.carbs, unit: "g", color: Theme.sleep)
+                    MacroBar(label: "Lipides", value: totals.fat, target: targets.fat, unit: "g", color: Theme.strain)
+                }
+                DetailChevron()
+            }
         }
     }
 }
@@ -123,7 +150,6 @@ private struct MealCard: View {
     @Environment(AppModel.self) private var app
     let meal: Meal
     let entries: [FoodEntry]
-    let onAdd: () -> Void
 
     var body: some View {
         GlassCard {
@@ -134,8 +160,6 @@ private struct MealCard: View {
                     if !entries.isEmpty {
                         Text("\(NutritionView.totals(of: entries, day: .now).kcal.noDecimal) kcal").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
                     }
-                    Button(action: onAdd) { Image(systemName: "plus") }
-                        .buttonStyle(.glassProminent)
                 }
                 ForEach(entries) { entry in
                     HStack {

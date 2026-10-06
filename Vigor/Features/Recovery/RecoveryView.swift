@@ -5,9 +5,10 @@ import Charts
 /// explorateur jour par jour avec axe de temps synchronisé, tendances et croisements.
 struct RecoveryView: View {
     enum Segment: String, CaseIterable {
-        case today = "Aujourd'hui"
+        case today = "Vue"
         case explore = "Jour par jour"
         case trends = "Tendances"
+        case symptoms = "Symptômes"
     }
 
     @State private var segment: Segment = .today
@@ -25,6 +26,7 @@ struct RecoveryView: View {
                         case .today: RecoveryTodaySection(snapshot: snapshot)
                         case .explore: DayExplorer(snapshot: snapshot)
                         case .trends: TrendsSection(snapshot: snapshot)
+                        case .symptoms: JournalSection(patterns: snapshot.symptomPatterns)
                         }
                     }
                 }
@@ -133,9 +135,24 @@ private struct RecoveryTodaySection: View {
     let snapshot: CoachSnapshot
 
     var body: some View {
-        VStack(spacing: 16) {
-            ScoreTrio(snapshot: snapshot)
+        VStack(spacing: 12) {
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                NavigationLink {
+                    ReadinessDetailView(readiness: snapshot.readiness, history: Array(snapshot.readinessHistory.suffix(30)),
+                                        hrvSource: snapshot.hrvSource)
+                } label: {
+                    SimpleTile(title: "Récupération", value: snapshot.readiness.map { "\($0.score) %" } ?? "–",
+                               caption: snapshot.readiness?.level.label ?? "en attente de données",
+                               symbol: "heart.text.square.fill", tint: snapshot.readiness.map { Theme.color(for: $0.level) } ?? .secondary)
+                }
+                NavigationLink {
+                    SleepNeedDetailView(need: snapshot.sleepNeed, performance: snapshot.lastSleepPerformance,
+                                        lastNight: snapshot.wellness.last.flatMap { Calendar.current.isDateInToday($0.day) ? $0.sleepHours : nil },
+                                        regularity: snapshot.bedtimeRegularity)
+                } label: {
+                    SimpleTile(title: "Besoin cette nuit", value: snapshot.sleepNeed.total.hoursText,
+                               caption: "coucher vers \(snapshot.sleepNeed.bedtimeText)", symbol: "moon.zzz.fill", tint: Theme.sleep)
+                }
                 ContextTile(kind: .hrv, series: snapshot.hrvSeries, sourceNote: snapshot.hrvSource, events: snapshot.chartEvents)
                 ContextTile(kind: .restingHR, series: MetricKind.restingHR.series(from: snapshot.wellness), events: snapshot.chartEvents)
                 ContextTile(kind: .sleep, series: MetricKind.sleep.series(from: snapshot.wellness), events: snapshot.chartEvents)
@@ -143,27 +160,12 @@ private struct RecoveryTodaySection: View {
                 ContextTile(kind: .weight, series: MetricKind.weight.series(from: snapshot.wellness), events: snapshot.chartEvents)
                 ContextTile(kind: .vo2max, series: MetricKind.vo2max.series(from: snapshot.wellness), events: snapshot.chartEvents)
             }
-            GlassCard {
-                VStack(alignment: .leading, spacing: 8) {
-                    SectionTitle(title: "Régularité du sommeil", symbol: "clock.arrow.circlepath")
-                    HStack {
-                        StatTile(title: "Coucher moyen", value: snapshot.bedtimeRegularity?.average ?? "–")
-                        StatTile(title: "Variabilité", value: snapshot.bedtimeRegularity.map { String(format: "±%.0f min", $0.sd) } ?? "–", caption: "repère ±30 min")
-                        StatTile(title: "Lever week-end", value: snapshot.socialJetlag.map { String(format: "%+.0f min", $0) } ?? "–", caption: "vs semaine")
-                    }
-                }
-            }
+            .buttonStyle(.plain)
             NavigationLink {
                 InsightsView(insights: snapshot.insights)
             } label: {
-                HStack {
-                    Label("Analyse complète du coach (\(snapshot.insights.count))", systemImage: "brain.head.profile")
-                    Spacer()
-                    DetailChevron()
-                }
-                .font(.subheadline.weight(.medium))
-                .padding(14)
-                .glassEffect(.regular, in: .rect(cornerRadius: 18))
+                SimpleTile(title: "Analyse du coach", value: "\(snapshot.insights.count) observations",
+                           caption: snapshot.insights.first?.title ?? "rien à signaler", symbol: "brain.head.profile", tint: Theme.strain)
             }
             .buttonStyle(.plain)
         }

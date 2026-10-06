@@ -159,17 +159,10 @@ struct WeekStatusCard: View {
                         .frame(maxWidth: .infinity)
                     }
                 }
-                ForEach(days.filter { $0.status != .upcoming && $0.status != .rest }) { day in
-                    HStack(alignment: .top) {
-                        Text(day.date.formatted(.dateTime.weekday(.abbreviated))).font(.caption.weight(.semibold)).frame(width: 36, alignment: .leading)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("Prévu : " + day.planned.map(\.kind.label).joined(separator: " + ")).font(.caption)
-                            Text("Fait : " + (day.done.isEmpty ? "—" : day.done.joined(separator: ", ")))
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Text(day.status.label).font(.caption2.weight(.bold)).foregroundStyle(Self.color(day.status))
-                    }
+                HStack {
+                    Spacer()
+                    Text("Détail de la semaine").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    DetailChevron()
                 }
             }
         }

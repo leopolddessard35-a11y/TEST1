@@ -2,21 +2,19 @@ import SwiftUI
 import SwiftData
 import VisionKit
 
-/// Ajout d'un aliment : scan, recherche (Open Food Facts + aliments de référence), récents, création.
+/// Ajout d'un aliment, pensé pour aller vite :
+/// une seule liste (recherche + récents + favoris), ajout en un tap de ta portion habituelle,
+/// repas choisi automatiquement selon l'heure, scan à portée de pouce.
 struct AddFoodView: View {
-    enum Mode: String, CaseIterable {
-        case scan = "Scanner"
-        case search = "Rechercher"
-        case recent = "Récents"
-    }
-
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
     @Query(sort: \FoodItem.lastUsed, order: .reverse) private var recents: [FoodItem]
-    let meal: Meal
+    @Query(sort: \FoodEntry.date, order: .reverse) private var history: [FoodEntry]
     let day: Date
     let onSaved: () -> Void
 
-    @State private var mode: Mode = .scan
+    @State private var meal: Meal
+    @State private var scanning = false
     @State private var query = ""
     @State private var results: [FoodProduct] = []
     @State private var isLoading = false
@@ -25,34 +23,47 @@ struct AddFoodView: View {
     @State private var manualBarcode = ""
     @State private var creatingCustom = false
     @State private var lastScanned: String?
+    @State private var added: [String] = []
+
+    init(meal: Meal = Meal.suggested(), day: Date = .now, onSaved: @escaping () -> Void = {}) {
+        self._meal = State(initialValue: meal)
+        self.day = day
+        self.onSaved = onSaved
+    }
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 12) {
-                Picker("Mode", selection: $mode) {
-                    ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-
-                switch mode {
-                case .scan: scanView
-                case .search: searchView
-                case .recent: recentView
-                }
+            Group {
+                if scanning { scanView } else { listView }
             }
-            .navigationTitle(meal.label)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Fermer") { dismiss() } }
+                ToolbarItem(placement: .principal) {
+                    Picker("Repas", selection: $meal) {
+                        ForEach(Meal.allCases) { Label($0.label, systemImage: $0.symbol).tag($0) }
+                    }
+                    .pickerStyle(.menu)
+                }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(added.isEmpty ? "Fermer" : "Terminé") { dismiss() }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button("Créer", systemImage: "square.and.pencil") { creatingCustom = true }
                 }
             }
+            .safeAreaInset(edge: .bottom) {
+                if !added.isEmpty {
+                    Text("✓ Ajouté : " + added.suffix(2).joined(separator: ", "))
+                        .font(.footnote.weight(.semibold))
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                        .glassEffect(.regular.tint(Theme.recovery.opacity(0.4)), in: .capsule)
+                        .padding(.bottom, 8)
+                }
+            }
             .sheet(item: $selected) { product in
                 FoodPortionView(product: product, meal: meal, day: day) {
+                    added.append(product.name)
                     onSaved()
-                    dismiss()
                 }
             }
             .sheet(isPresented: $creatingCustom) {
@@ -61,7 +72,110 @@ struct AddFoodView: View {
                     selected = product
                 }
             }
+            .sensoryFeedback(.success, trigger: added.count)
         }
+    }
+
+    // MARK: Liste unique
+
+    private var listView: some View {
+        List {
+            Section {
+                HStack {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField("Rechercher un aliment ou une marque", text: $query)
+                        .submitLabel(.search)
+                        .onSubmit { Task { await search() } }
+                    if isLoading { ProgressView() }
+                }
+                Button {
+                    scanning = true
+                } label: {
+                    Label("Scanner un code-barres", systemImage: "barcode.viewfinder").font(.headline)
+                }
+            }
+
+            if query.isEmpty {
+                let frequent = recents.filter { $0.useCount >= 3 }.sorted { $0.useCount > $1.useCount }.prefix(6)
+                if !frequent.isEmpty {
+                    Section("Favoris · un tap = ta portion habituelle") {
+                        ForEach(Array(frequent)) { item in quickRow(item) }
+                    }
+                }
+                if !recents.isEmpty {
+                    Section("Récents") {
+                        ForEach(recents.prefix(15)) { item in quickRow(item) }
+                    }
+                }
+                Section("Aliments courants") {
+                    ForEach(CommonFoods.all.prefix(12)) { product in productRow(product) }
+                }
+            } else {
+                let reference = CommonFoods.search(query)
+                let matchingRecents = recents.filter { $0.name.localizedCaseInsensitiveContains(query) }
+                if !matchingRecents.isEmpty {
+                    Section("Déjà mangés") {
+                        ForEach(matchingRecents.prefix(8)) { item in quickRow(item) }
+                    }
+                }
+                if !reference.isEmpty {
+                    Section("Aliments de référence") {
+                        ForEach(reference) { product in productRow(product) }
+                    }
+                }
+                if !results.isEmpty {
+                    Section("Open Food Facts") {
+                        ForEach(results) { product in productRow(product) }
+                    }
+                } else if !isLoading {
+                    Section {
+                        Button("Chercher « \(query) » dans Open Food Facts") { Task { await search() } }
+                    }
+                }
+            }
+            if let error { Section { Text(error).foregroundStyle(Theme.warning) } }
+        }
+    }
+
+    /// Ligne d'un aliment connu : tap sur « + » = ajout immédiat de la portion habituelle.
+    private func quickRow(_ item: FoodItem) -> some View {
+        let grams = usualGrams(item)
+        return HStack {
+            Button {
+                selected = FoodProduct(item: item)
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.name).font(.subheadline.weight(.medium)).foregroundStyle(.primary).lineLimit(1)
+                    Text("\(grams.noDecimal) g · \((item.kcal100 * grams / 100).noDecimal) kcal · P \((item.protein100 * grams / 100).noDecimal) g")
+                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                }
+            }
+            .buttonStyle(.plain)
+            Spacer()
+            Button {
+                quickAdd(item, grams: grams)
+            } label: {
+                Image(systemName: "plus.circle.fill").font(.title2).foregroundStyle(Theme.recovery)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Ajouter \(grams.noDecimal) grammes de \(item.name)")
+        }
+    }
+
+    /// Dernière quantité utilisée pour cet aliment, sinon la portion, sinon 100 g.
+    private func usualGrams(_ item: FoodItem) -> Double {
+        history.first { $0.itemKey == item.key }?.grams ?? item.servingGrams ?? 100
+    }
+
+    private func quickAdd(_ item: FoodItem, grams: Double) {
+        item.lastUsed = .now
+        item.useCount += 1
+        let calendar = Calendar.current
+        let date = calendar.isDateInToday(day) ? Date.now : (calendar.date(bySettingHour: 12, minute: 0, second: 0, of: day) ?? day)
+        context.insert(FoodEntry(date: date, meal: meal, grams: grams, item: item))
+        try? context.save()
+        added.append("\(item.name) \(grams.noDecimal) g")
+        onSaved()
     }
 
     // MARK: Scan
@@ -83,7 +197,7 @@ struct AddFoodView: View {
                                        description: Text("La caméra n'est pas accessible (simulateur ou autorisation refusée). Tape le code-barres ci-dessous."))
             }
             HStack {
-                TextField("Code-barres (ex. 3017620422003)", text: $manualBarcode)
+                TextField("Code-barres", text: $manualBarcode)
                     .keyboardType(.numberPad)
                     .textFieldStyle(.roundedBorder)
                 Button("Chercher") { Task { await lookup(barcode: manualBarcode) } }
@@ -91,7 +205,10 @@ struct AddFoodView: View {
                     .disabled(manualBarcode.count < 8)
             }
             .padding(.horizontal)
-            statusView
+            if isLoading { ProgressView("Recherche du produit…") }
+            if let error { Text(error).font(.footnote).foregroundStyle(Theme.warning).padding(.horizontal) }
+            Button("Retour à la liste") { scanning = false }
+                .buttonStyle(.glass)
             Spacer()
         }
     }
@@ -102,38 +219,11 @@ struct AddFoodView: View {
         defer { isLoading = false }
         do {
             selected = try await OpenFoodFacts.product(barcode: barcode)
+            scanning = false
         } catch {
             self.error = error.localizedDescription
             lastScanned = nil
         }
-    }
-
-    // MARK: Recherche
-
-    private var searchView: some View {
-        List {
-            Section {
-                HStack {
-                    TextField("Aliment ou marque", text: $query)
-                        .submitLabel(.search)
-                        .onSubmit { Task { await search() } }
-                    if isLoading { ProgressView() }
-                }
-            }
-            let reference = CommonFoods.search(query)
-            if !reference.isEmpty {
-                Section("Aliments de référence") {
-                    ForEach(reference) { product in productRow(product) }
-                }
-            }
-            if !results.isEmpty {
-                Section("Open Food Facts") {
-                    ForEach(results) { product in productRow(product) }
-                }
-            }
-            if let error { Section { Text(error).foregroundStyle(Theme.warning) } }
-        }
-        .scrollContentBackground(.hidden)
     }
 
     private func search() async {
@@ -144,27 +234,11 @@ struct AddFoodView: View {
         defer { isLoading = false }
         do {
             results = try await OpenFoodFacts.search(text)
-            if results.isEmpty { error = "Aucun produit trouvé. Essaie la marque ou crée l'aliment." }
+            if results.isEmpty { error = "Aucun produit trouvé. Essaie la marque, ou « Créer » en haut à droite." }
         } catch {
             self.error = error.localizedDescription
         }
     }
-
-    // MARK: Récents
-
-    private var recentView: some View {
-        List {
-            if recents.isEmpty {
-                Text("Les aliments que tu ajoutes apparaîtront ici.").foregroundStyle(.secondary)
-            }
-            ForEach(recents.prefix(50)) { item in
-                productRow(FoodProduct(item: item))
-            }
-        }
-        .scrollContentBackground(.hidden)
-    }
-
-    // MARK: Commun
 
     private func productRow(_ product: FoodProduct) -> some View {
         Button {
@@ -177,18 +251,9 @@ struct AddFoodView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("\(product.kcal100.noDecimal) kcal").font(.footnote.monospacedDigit()).foregroundStyle(.primary)
-                    Text("P \(product.protein100.oneDecimal) · G \(product.carbs100.oneDecimal) · L \(product.fat100.oneDecimal)")
-                        .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
-                }
+                Text("\(product.kcal100.noDecimal) kcal/100 g").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             }
         }
-    }
-
-    @ViewBuilder private var statusView: some View {
-        if isLoading { ProgressView("Recherche du produit…") }
-        if let error { Text(error).font(.footnote).foregroundStyle(Theme.warning).padding(.horizontal) }
     }
 }
 

@@ -15,45 +15,67 @@ struct PlanView: View {
                 SnapshotReader { profile, snapshot in
                     VStack(spacing: 16) {
                         PlanHeaderCard(plan: snapshot.plan, raceName: profile.raceName)
-                        if let report = snapshot.weeklyReport, let review = snapshot.weeklyReview {
-                            WeeklyReviewCard(report: report, review: review)
-                        }
-                        GoalsCard(plan: snapshot.plan)
-                        if !snapshot.weekStatus.isEmpty {
-                            WeekStatusCard(days: snapshot.weekStatus)
-                        }
-                        FormCurveCard(baselines: baselines, load: snapshot.load, plan: snapshot.plan)
-                        if !snapshot.milestones.isEmpty {
-                            MilestonesCard(milestones: snapshot.milestones)
+
+                        if let week = snapshot.plan.currentWeek, !snapshot.weekStatus.isEmpty {
+                            NavigationLink { WeekDetailView(week: week) } label: { WeekStatusCard(days: snapshot.weekStatus) }
+                                .buttonStyle(.plain)
                         }
 
-                        GlassCard {
-                            VStack(alignment: .leading, spacing: 12) {
-                                SectionTitle(title: "Imprévus", symbol: "exclamationmark.bubble")
-                                HStack {
-                                    Button { showUnavailability = true } label: {
-                                        Label("Je ne peux pas", systemImage: "calendar.badge.minus").frame(maxWidth: .infinity)
-                                    }
-                                    Button { showInjury = true } label: {
-                                        Label("Blessure", systemImage: "bandage").frame(maxWidth: .infinity)
-                                    }
-                                }
-                                .buttonStyle(.glass)
+                        HStack(spacing: 12) {
+                            Button { showUnavailability = true } label: {
+                                Label("Je ne peux pas", systemImage: "calendar.badge.minus").frame(maxWidth: .infinity)
+                            }
+                            Button { showInjury = true } label: {
+                                Label("Blessure", systemImage: "bandage").frame(maxWidth: .infinity)
+                            }
+                        }
+                        .buttonStyle(.glass)
+                        .controlSize(.large)
 
-                                ForEach(injuries.filter(\.isActive)) { injury in
-                                    InjuryRow(injury: injury)
+                        let activeInjuries = injuries.filter(\.isActive)
+                        let upcoming = unavailabilities.filter { $0.end >= Calendar.current.startOfDay(for: .now) }
+                        if !activeInjuries.isEmpty || !upcoming.isEmpty {
+                            GlassCard {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    ForEach(activeInjuries) { injury in InjuryRow(injury: injury) }
+                                    ForEach(upcoming) { item in UnavailabilityRow(item: item) }
                                 }
-                                ForEach(unavailabilities.filter { $0.end >= Calendar.current.startOfDay(for: .now) }) { item in
-                                    UnavailabilityRow(item: item)
-                                }
-                                Text("Le plan se recalcule automatiquement : les séances manquées ne sont pas « rattrapées », la progression repart de ta forme réelle.")
-                                    .font(.caption).foregroundStyle(.secondary)
                             }
                         }
 
-                        ForEach(snapshot.plan.weeks) { week in
-                            WeekCard(week: week)
+                        GoalsCard(plan: snapshot.plan)
+
+                        LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                            NavigationLink {
+                                DetailPage(title: "Forme attendue vs réelle") {
+                                    FormCurveCard(baselines: baselines, load: snapshot.load, plan: snapshot.plan)
+                                    if !snapshot.milestones.isEmpty { MilestonesCard(milestones: snapshot.milestones) }
+                                }
+                            } label: {
+                                SimpleTile(title: "Forme", value: "prévu / réel", caption: "\(snapshot.milestones.count) jalons",
+                                           symbol: "chart.xyaxis.line", tint: Theme.recovery)
+                            }
+                            NavigationLink {
+                                DetailPage(title: "Toutes les semaines") {
+                                    ForEach(snapshot.plan.weeks) { week in
+                                        NavigationLink { WeekDetailView(week: week) } label: { WeekCard(week: week) }
+                                            .buttonStyle(.plain)
+                                    }
+                                }
+                            } label: {
+                                SimpleTile(title: "Semaines", value: "\(snapshot.plan.weeks.count)", caption: "jusqu'à la course",
+                                           symbol: "list.bullet.rectangle", tint: Theme.sleep)
+                            }
+                            if let report = snapshot.weeklyReport, let review = snapshot.weeklyReview {
+                                NavigationLink {
+                                    DetailPage(title: "Revue de la semaine") { WeeklyReviewCard(report: report, review: review) }
+                                } label: {
+                                    SimpleTile(title: "Revue", value: "7 derniers jours", caption: review.vigilance,
+                                               symbol: "calendar.badge.checkmark", tint: Theme.nutrition)
+                                }
+                            }
                         }
+                        .buttonStyle(.plain)
                     }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 24)
@@ -90,8 +112,7 @@ private struct PlanHeaderCard: View {
             VStack(alignment: .leading, spacing: 10) {
                 if let week = plan.currentWeek {
                     Text("Phase actuelle : \(week.phase.label)").font(.title3.weight(.semibold))
-                    Text(week.phase.summary).font(.subheadline).foregroundStyle(.secondary)
-                    Label(week.phase.nutritionFocus, systemImage: "fork.knife").font(.footnote)
+                    Text(week.phase.summary).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
                 }
                 HStack {
                     VStack(alignment: .leading) {

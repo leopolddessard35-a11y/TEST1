@@ -12,7 +12,7 @@ struct ContentView: View {
             Tab("Aujourd'hui", systemImage: "sun.max.fill") { TodayView() }
             Tab("Charge", systemImage: "figure.outdoor.cycle") { TrainingView() }
             Tab("Récup", systemImage: "heart.fill") { RecoveryView() }
-            Tab("Journal", systemImage: "square.and.pencil") { JournalView() }
+            Tab("Nutrition", systemImage: "fork.knife") { NutritionView() }
             Tab("Plan", systemImage: "calendar") { PlanView() }
         }
         .task {

@@ -157,3 +157,51 @@ extension Double {
         return minutes == 0 ? "\(hours) h" : String(format: "%d h %02d", hours, minutes)
     }
 }
+
+/// Tuile simple et cliquable : un chiffre, son contexte, un chevron.
+struct SimpleTile: View {
+    let title: String
+    let value: String
+    var caption: String = ""
+    let symbol: String
+    var tint: Color = .primary
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Label(title, systemImage: symbol).font(.caption.weight(.medium)).foregroundStyle(tint)
+                Spacer()
+                DetailChevron()
+            }
+            Text(value).font(.title2.weight(.semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+            if !caption.isEmpty {
+                Text(caption).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassEffect(.regular, in: .rect(cornerRadius: 20))
+    }
+}
+
+/// Page de détail générique (fond, défilement, titre).
+struct DetailPage<Content: View>: View {
+    let title: String
+    private let content: Content
+
+    init(title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) { content }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 24)
+        }
+        .background(AppBackground())
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}

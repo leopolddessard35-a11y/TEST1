@@ -24,31 +24,20 @@ struct DailyBriefCard: View {
                         .font(.headline)
                         .foregroundStyle(brief.verdict.color)
                     Spacer()
-                    DetailChevron()
                 }
                 EnergyGauge(value: brief.capacity, color: brief.verdict.color, label: "Énergie du jour")
-                    .frame(maxWidth: 260)
+                    .frame(maxWidth: 200)
                     .frame(maxWidth: .infinity)
-                Text(brief.headline).font(.subheadline)
+                Text(brief.headline).font(.subheadline).lineLimit(3)
 
                 ForEach(brief.adapted) { session in
-                    SessionRow(session: session, changed: !brief.planned.contains(session))
+                    SessionRow(session: session, changed: !brief.planned.contains(session), compact: true)
                 }
 
-                // Niveau 2 : les 3–4 raisons qui justifient le verdict.
-                let reasons = brief.factors.filter { $0.impact != 0 }.sorted { abs($0.impact) > abs($1.impact) }.prefix(4)
-                if !reasons.isEmpty {
-                    Divider()
-                    Text("Pourquoi").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                    ForEach(Array(reasons)) { factor in
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Image(systemName: factor.impact < 0 ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
-                                .foregroundStyle(factor.impact < 0 ? Theme.warning : Theme.recovery)
-                                .accessibilityLabel(factor.impact < 0 ? "défavorable" : "favorable")
-                            Text(factor.name).font(.footnote.weight(.semibold))
-                            Text(factor.detail).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
-                        }
-                    }
+                HStack {
+                    Spacer()
+                    Text("Voir pourquoi").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    DetailChevron()
                 }
             }
         }
@@ -58,6 +47,8 @@ struct DailyBriefCard: View {
 struct SessionRow: View {
     let session: SessionPrescription
     var changed = false
+    /// Compact : titre seul (accueil). Sinon : titre + détail (watts, séries…).
+    var compact = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -72,7 +63,7 @@ struct SessionRow: View {
                         Text("adaptée").font(.caption2.weight(.bold)).foregroundStyle(Theme.nutrition)
                     }
                 }
-                if !session.detail.isEmpty {
+                if !compact && !session.detail.isEmpty {
                     Text(session.detail).font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -83,6 +74,7 @@ struct SessionRow: View {
 /// Le détail du raisonnement : chaque facteur, son poids, et ce qui a changé.
 struct DailyBriefDetailView: View {
     let brief: DailyBrief
+    var confidence: DataConfidence?
 
     var body: some View {
         ScrollView {
@@ -96,6 +88,10 @@ struct DailyBriefDetailView: View {
                             .frame(maxWidth: 260)
                             .frame(maxWidth: .infinity)
                     }
+                }
+
+                if let confidence {
+                    GlassCard { ConfidenceRow(confidence: confidence) }
                 }
 
                 GlassCard {

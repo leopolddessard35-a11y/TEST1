@@ -6,6 +6,7 @@ struct TodayView: View {
     @Environment(AppModel.self) private var app
     @Query private var profiles: [AthleteProfile]
     @State private var showSettings = false
+    @State private var addingFood = false
 
     var body: some View {
         NavigationStack {
@@ -16,19 +17,31 @@ struct TodayView: View {
                         ScoreTrio(snapshot: snapshot)
 
                         NavigationLink {
-                            DailyBriefDetailView(brief: snapshot.brief)
+                            DailyBriefDetailView(brief: snapshot.brief, confidence: snapshot.confidence)
                         } label: {
                             DailyBriefCard(brief: snapshot.brief)
                         }
                         .buttonStyle(.plain)
 
-                        ConfidenceRow(confidence: snapshot.confidence)
+                        Button { addingFood = true } label: {
+                            Label("Ajouter un repas", systemImage: "fork.knife.circle.fill")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.glassProminent)
+                        .controlSize(.large)
 
                         QuickEntryBar()
 
                         if let report = snapshot.weeklyReport, let review = snapshot.weeklyReview,
                            [1, 2].contains(Calendar.current.component(.weekday, from: .now)) {
-                            WeeklyReviewCard(report: report, review: review)
+                            NavigationLink {
+                                DetailPage(title: "Revue de la semaine") { WeeklyReviewCard(report: report, review: review) }
+                            } label: {
+                                SimpleTile(title: "Revue de la semaine", value: review.strongPoint, caption: review.adjustment,
+                                           symbol: "calendar.badge.checkmark", tint: Theme.sleep)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                     .padding(.horizontal, 16)
@@ -38,6 +51,7 @@ struct TodayView: View {
             .background(AppBackground())
             .navigationTitle("Aujourd'hui")
             .sheet(isPresented: $showSettings) { SettingsView() }
+            .sheet(isPresented: $addingFood) { AddFoodView { app.dataVersion += 1 } }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }

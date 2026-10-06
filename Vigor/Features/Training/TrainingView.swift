@@ -5,9 +5,10 @@ import UniformTypeIdentifiers
 
 struct TrainingView: View {
     enum Segment: String, CaseIterable {
-        case summary = "Synthèse"
+        case summary = "Vue"
         case endurance = "Endurance"
         case strength = "Muscu"
+        case life = "Hors sport"
     }
 
     @State private var segment: Segment = .summary
@@ -24,6 +25,7 @@ struct TrainingView: View {
                     switch segment {
                     case .summary: SnapshotReader { _, snapshot in LoadSummarySection(snapshot: snapshot) }
                     case .strength: StrengthSection()
+                    case .life: SnapshotReader { _, snapshot in LifeSection(lifeLoad7: snapshot.lifeLoad7) }
                     case .endurance: EnduranceSection()
                     }
                 }
@@ -63,11 +65,39 @@ private struct StrengthSection: View {
                         message: "Dans Hevy : Profil → Réglages → Exporter et importer → Exporter les séances. Enregistre le fichier dans Fichiers, puis importe-le ici. Tu peux réimporter l'export complet à chaque fois, sans doublon.",
                         symbol: "dumbbell")
                 } else {
-                    MuscleVolumeCard(workouts: workouts)
-                    ProgressionCard(workouts: workouts, readiness: snapshot.readiness?.level, injured: injured)
-                    TonnageCard(volumes: snapshot.weeklyVolumes)
-                    ExerciseListCard(workouts: workouts)
-                    WorkoutListCard(workouts: Array(workouts.prefix(15)))
+                    let weekAgo = Calendar.current.date(byAdding: .day, value: -7, to: .now) ?? .now
+                    let weekSets = MuscleMap.weeklySets(workouts.filter { $0.start >= weekAgo }.flatMap(\.exerciseSessions))
+                    let lowMuscles = [Muscle.chest, .lats, .upperBack, .sideDelts, .quads, .glutes, .biceps, .triceps]
+                        .filter { (weekSets[$0] ?? 0) < MuscleMap.hypertrophyRange.lowerBound }.count
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                        NavigationLink {
+                            DetailPage(title: "Prochaines charges") {
+                                ProgressionCard(workouts: workouts, readiness: snapshot.readiness?.level, injured: injured)
+                            }
+                        } label: {
+                            SimpleTile(title: "Prochaines charges", value: "\(Set(workouts.prefix(6).flatMap { $0.sets.map(\.exercise) }).count) exos",
+                                       caption: "charge conseillée", symbol: "scalemass.fill", tint: Theme.strain)
+                        }
+                        NavigationLink {
+                            DetailPage(title: "Volume par muscle") { MuscleVolumeCard(workouts: workouts) }
+                        } label: {
+                            SimpleTile(title: "Volume 7 j", value: lowMuscles == 0 ? "OK" : "\(lowMuscles) en retard",
+                                       caption: "objectif 10–20 séries", symbol: "figure.arms.open", tint: Theme.recovery)
+                        }
+                        NavigationLink {
+                            DetailPage(title: "Tonnage") { TonnageCard(volumes: snapshot.weeklyVolumes) }
+                        } label: {
+                            SimpleTile(title: "Tonnage", value: snapshot.weeklyVolumes.dropLast().last.map { String(format: "%.1f t", $0.tonnage / 1000) } ?? "–",
+                                       caption: "semaine dernière", symbol: "chart.bar.fill", tint: Theme.nutrition)
+                        }
+                        NavigationLink {
+                            DetailPage(title: "Exercices") { ExerciseListCard(workouts: workouts) }
+                        } label: {
+                            SimpleTile(title: "Records", value: "1RM", caption: "par exercice", symbol: "trophy.fill", tint: Theme.sleep)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    WorkoutListCard(workouts: Array(workouts.prefix(5)))
                 }
             }
         }
@@ -238,7 +268,6 @@ private struct EnduranceSection: View {
     var body: some View {
         SnapshotReader { profile, snapshot in
             VStack(spacing: 16) {
-                LoadChartCard(points: Array(snapshot.load.suffix(120)))
                 if activities.isEmpty {
                     EmptyStateCard(title: "Aucune séance d'endurance",
                                    message: "Synchronise Apple Santé depuis l'onglet Aujourd'hui. Garmin, Zwift et MyWhoosh (via Garmin) y écrivent tes sorties.",
@@ -378,40 +407,41 @@ private struct LoadSummarySection: View {
 
     var body: some View {
         let global = snapshot.disciplineLoads.first { $0.name == "Global" }
-        VStack(spacing: 16) {
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                StatTile(title: "Ratio 7 j / 28 j", value: global?.ratio.map { String(format: "%.2f", $0) } ?? "–",
-                         caption: ratioCaption(global?.ratio))
-                StatTile(title: "Forme (TSB)", value: snapshot.today?.form.noDecimal ?? "–", caption: "condition − fatigue")
-                StatTile(title: "Monotonie 7 j", value: snapshot.monotony.map { String(format: "%.1f", $0) } ?? "–",
-                         caption: (snapshot.monotony ?? 0) > 2 ? "⚠︎ trop uniforme (> 2)" : "repère : < 2")
-                StatTile(title: "Strain (Foster)", value: snapshot.fosterStrain.map { $0.noDecimal } ?? "–", caption: "charge × monotonie")
-                StatTile(title: "sRPE 7 j", value: snapshot.srpeWeek.noDecimal, caption: "RPE × minutes")
-                StatTile(title: "Hors sport 7 j", value: snapshot.lifeLoad7.noDecimal, caption: "points de charge")
+        let detail = LoadDetailView(load: snapshot.load, disciplines: snapshot.disciplineLoads, volumes: snapshot.weeklyVolumes,
+                                    alerts: snapshot.volumeAlerts, lifeLoad7: snapshot.lifeLoad7)
+        let lastWeek = snapshot.weeklyVolumes.dropLast().last
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+            NavigationLink { detail } label: {
+                SimpleTile(title: "Ratio 7 j / 28 j", value: global?.ratio.map { String(format: "%.2f", $0) } ?? "–",
+                           caption: ratioCaption(global?.ratio), symbol: "gauge.with.needle", tint: Theme.strain)
+            }
+            NavigationLink { detail } label: {
+                SimpleTile(title: "Forme", value: snapshot.today?.form.noDecimal ?? "–",
+                           caption: "condition \(snapshot.today?.ctl.noDecimal ?? "–")", symbol: "chart.line.uptrend.xyaxis", tint: Theme.recovery)
+            }
+            NavigationLink { detail } label: {
+                SimpleTile(title: "Volume semaine", value: lastWeek.map { $0.sportHours.hoursText } ?? "–",
+                           caption: snapshot.volumeAlerts.isEmpty ? "progression OK" : "⚠︎ +10 % dépassé", symbol: "calendar", tint: Theme.sleep)
+            }
+            NavigationLink { detail } label: {
+                SimpleTile(title: "Monotonie", value: snapshot.monotony.map { String(format: "%.1f", $0) } ?? "–",
+                           caption: (snapshot.monotony ?? 0) > 2 ? "⚠︎ trop uniforme" : "repère < 2", symbol: "waveform", tint: Theme.nutrition)
             }
             NavigationLink {
-                LoadDetailView(load: snapshot.load, disciplines: snapshot.disciplineLoads, volumes: snapshot.weeklyVolumes,
-                               alerts: snapshot.volumeAlerts, lifeLoad7: snapshot.lifeLoad7)
-            } label: {
-                HStack {
-                    Label("Courbe de forme, détail par discipline et volume", systemImage: "chart.xyaxis.line")
-                    Spacer()
-                    DetailChevron()
+                DetailPage(title: "Efficiency Factor") {
+                    TrendChart(title: "Efficiency Factor vélo (NP / FC)", color: Theme.recovery, points: snapshot.efSeries, days: 120)
+                    ExplanationCard(title: "Ce que ça mesure", symbol: "lightbulb", text: "Puissance produite par battement cardiaque, sur des sorties d'endurance comparables (≥ 45 min, peu de dénivelé). Il monte quand ta base aérobie progresse : c'est l'indicateur de progrès sans chrono.")
                 }
-                .font(.subheadline.weight(.medium))
-                .padding(14)
-                .glassEffect(.regular, in: .rect(cornerRadius: 18))
+            } label: {
+                SimpleTile(title: "Efficacité aérobie", value: snapshot.efSeries.last.map { String(format: "%.2f", $0.value) } ?? "–",
+                           caption: "puissance / FC", symbol: "bolt.heart.fill", tint: Theme.recovery)
             }
-            .buttonStyle(.plain)
-            ForEach(snapshot.volumeAlerts, id: \.self) { alert in
-                Label(alert, systemImage: "exclamationmark.triangle.fill").font(.footnote)
-            }
-            if snapshot.efSeries.count >= 3 {
-                TrendChart(title: "Efficiency Factor vélo (NP / FC)", color: Theme.recovery, points: snapshot.efSeries, days: 120)
-                Text("À conditions comparables (endurance, ≥ 45 min, peu de dénivelé). Il monte quand ta base aérobie progresse : c'est l'indicateur de progrès sans chrono.")
-                    .font(.caption).foregroundStyle(.secondary)
+            NavigationLink { detail } label: {
+                SimpleTile(title: "Hors sport 7 j", value: "\(snapshot.lifeLoad7.noDecimal) pts",
+                           caption: "travaux, debout, pas", symbol: "hammer.fill", tint: Theme.strain)
             }
         }
+        .buttonStyle(.plain)
     }
 
     private func ratioCaption(_ ratio: Double?) -> String {
