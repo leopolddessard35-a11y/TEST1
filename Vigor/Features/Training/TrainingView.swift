@@ -59,29 +59,17 @@ private struct StrengthSection: View {
     @Environment(AppModel.self) private var app
     @Query(sort: \StrengthWorkout.start, order: .reverse) private var workouts: [StrengthWorkout]
     @State private var importing = false
-    @State private var logging = false
 
     var body: some View {
         SnapshotReader { _, snapshot in
             let injured = snapshot.activeInjuries.reduce(into: Set<Muscle>()) { $0.formUnion($1.muscles) }
             VStack(spacing: 16) {
-                HStack(spacing: 10) {
-                    Button { logging = true } label: {
-                        Label("Démarrer une séance", systemImage: "play.fill").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.glassProminent)
-                    .tint(Theme.strain)
-                    Button { importing = true } label: {
-                        Label("Import Hevy", systemImage: "square.and.arrow.down").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.glass)
-                }
-                .controlSize(.large)
+                StrengthPlansSection()
 
                 if workouts.isEmpty {
                     EmptyStateCard(
-                        title: "Aucune séance de muscu",
-                        message: "Dans Hevy : Profil → Réglages → Exporter et importer → Exporter les séances. Enregistre le fichier dans Fichiers, puis importe-le ici. Tu peux réimporter l'export complet à chaque fois, sans doublon.",
+                        title: "Aucune séance pour l'instant",
+                        message: "Lance une séance type ou une séance libre ci-dessus : séries, charges et repos se notent en direct, et le coach propose les charges suivantes.",
                         symbol: "dumbbell")
                 } else {
                     let weekAgo = Calendar.current.date(byAdding: .day, value: -7, to: .now) ?? .now
@@ -118,6 +106,13 @@ private struct StrengthSection: View {
                     .buttonStyle(.plain)
                     WorkoutListCard(workouts: Array(workouts.prefix(5)))
                 }
+                Button { importing = true } label: {
+                    Label("Récupérer mon historique Hevy (CSV)", systemImage: "square.and.arrow.down")
+                        .font(.footnote)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .padding(.top, 4)
             }
         }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.commaSeparatedText, .plainText, .text]) { result in
@@ -125,7 +120,7 @@ private struct StrengthSection: View {
                 app.importHevy(from: url, context: context)
             }
         }
-        .sheet(isPresented: $logging) { WorkoutLoggerView() }
+
     }
 }
 

@@ -39,6 +39,7 @@ struct ContentView: View {
                 context.insert(AthleteProfile())
                 try? context.save()
             }
+            ExerciseLibrary.registerCustom((try? context.fetch(FetchDescriptor<CustomExercise>())) ?? [])
             _ = await NotificationScheduler.requestAuthorization()
             app.scheduleBackgroundRefresh()
         }

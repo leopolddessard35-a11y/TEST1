@@ -88,6 +88,21 @@ FC de repos, SpO2, respiration, VO2max, poids, et le calendrier des séances pr�
   - Corps et santé : symptôme, blessure ;
   - Quotidien : activité hors sport, imprévu.
 
+## Musculation intégrée (v0.9, plus besoin de Hevy)
+
+- **Banque d'exercices** : ~70 exercices en français (filtres par groupe musculaire et matériel, recherche par nom ou muscle), exercices perso avec leurs muscles, fiche par exercice (historique, records, 1RM estimé).
+- **Programmes et séances types** : programme PPL prêt à l'emploi en un tap, ou tes propres séances (exercices, séries, plage de répétitions, repos, notes, réordonnables).
+- **Séance en direct** : lancée depuis une séance type ou en libre ; charges proposées d'après la dernière séance, colonne « Précédent », échauffements, records détectés à la fin.
+- **Repos dans la Dynamic Island** : compte à rebours en Live Activity (Dynamic Island + écran verrouillé) avec la prochaine série, et notification à la fin du repos.
+- **Historique** par mois (exercices, séries, tonnage, durée).
+- L'import Hevy reste disponible une fois, pour récupérer l'ancien historique.
+
+### Après la mise à jour du projet (nouvelle extension « VigorWidgets »)
+1. Dans Xcode, cible **VigorWidgets** → *Signing & Capabilities* : choisis la même **Team** que pour Vigor.
+2. Son **Bundle Identifier** doit commencer par celui de l'app : `<identifiant de l'app>.widgets` (ex. `fr.tonnom.vigor.widgets`).
+3. Lance ▶︎ sur la cible **Vigor** comme d'habitude : l'extension est installée avec l'app.
+4. Sur l'iPhone, Réglages → Vigor → *Activités en direct* doit être activé (c'est le cas par défaut).
+
 ## Installer l'app sur ton iPhone (gratuit, sans compte développeur payant)
 
 1. **Installe Xcode** sur ton Mac depuis l'App Store (gratuit, ~10 Go).

@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import UniformTypeIdentifiers
 
 /// Ce qu'ouvre le bouton « + » de la barre d'onglets : toutes les saisies en un tap.
 struct QuickAddView: View {
@@ -10,7 +9,6 @@ struct QuickAddView: View {
     var isSheet = false
     @State private var sheet: Entry?
     @State private var waterAdded: Double?
-    @State private var importingHevy = false
 
     enum Entry: String, Identifiable {
         case food, workout, cardio, rpe, weight, symptom, life, unavailability, injury
@@ -38,7 +36,7 @@ struct QuickAddView: View {
             Action(id: "weight", title: "Pesée", caption: "poids du matin", symbol: "scalemass.fill", tint: Theme.nutrition, entry: .weight)
         ]),
         ActionGroup(title: "Entraînement", actions: [
-            Action(id: "workout", title: "Séance de muscu", caption: "séries, charges, repos", symbol: "dumbbell.fill", tint: Theme.strain, entry: .workout),
+            Action(id: "workout", title: "Séance de muscu", caption: "libre ou séance type", symbol: "dumbbell.fill", tint: Theme.strain, entry: .workout),
             Action(id: "cardio", title: "Séance d'endurance", caption: "vélo, course sans montre", symbol: "bicycle", tint: Theme.strain, entry: .cardio),
             Action(id: "rpe", title: "Effort ressenti", caption: "noter une séance", symbol: "gauge.with.dots.needle.67percent", tint: Theme.strain, entry: .rpe)
         ]),
@@ -73,13 +71,6 @@ struct QuickAddView: View {
                                 Button { sheet = action.entry } label: { tile(action) }
                                     .buttonStyle(.plain)
                             }
-                            if group.title == "Entraînement" {
-                                Button { importingHevy = true } label: {
-                                    tile(Action(id: "hevy", title: "Import Hevy", caption: "fichier CSV exporté", symbol: "square.and.arrow.down.fill",
-                                                tint: Theme.strain, entry: .workout))
-                                }
-                                .buttonStyle(.plain)
-                            }
                         }
                     }
                 }
@@ -91,11 +82,6 @@ struct QuickAddView: View {
             .toolbar {
                 if isSheet {
                     ToolbarItem(placement: .confirmationAction) { Button("OK") { dismiss() } }
-                }
-            }
-            .fileImporter(isPresented: $importingHevy, allowedContentTypes: [.commaSeparatedText, .plainText, .text]) { result in
-                if case .success(let url) = result {
-                    app.importHevy(from: url, context: context)
                 }
             }
             .sheet(item: $sheet) { entry in

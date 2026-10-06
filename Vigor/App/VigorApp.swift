@@ -41,7 +41,8 @@ enum SharedStore {
             return try ModelContainer(for: DailyWellness.self, CardioActivity.self, StrengthWorkout.self, StrengthSet.self,
                                       Unavailability.self, Injury.self, AthleteProfile.self, PlannedWorkout.self,
                                       FoodItem.self, FoodEntry.self, LifeActivity.self, Symptom.self, Shoe.self,
-                                      Goal.self, PlanBaseline.self, Experiment.self)
+                                      Goal.self, PlanBaseline.self, Experiment.self,
+                                      WorkoutRoutine.self, CustomExercise.self)
         } catch {
             fatalError("Base de données impossible à ouvrir : \(error)")
         }

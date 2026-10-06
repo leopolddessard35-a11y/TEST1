@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import UserNotifications
 
 /// Séance en cours, sauvegardée à chaque modification : rien n'est perdu si tu quittes l'app pendant la séance.
 struct WorkoutDraft: Codable, Equatable {
@@ -16,11 +15,17 @@ struct WorkoutDraft: Codable, Equatable {
         var id = UUID()
         var name: String
         var sets: [SetDraft]
+        /// Repos après chaque série (secondes) ; défaut selon l'exercice.
+        var restSeconds: Int?
+        /// Objectif de la séance type (« 8–12 »).
+        var targetReps: String?
+        var note: String?
     }
 
     var title: String = ""
     var start: Date = .now
     var exercises: [ExerciseDraft] = []
+    var routineID: String?
 
     static let storageKey = "vigor.workoutDraft"
 
@@ -58,24 +63,17 @@ struct WorkoutDraft: Codable, Equatable {
     }
 }
 
-/// Exercices proposés d'emblée (reconnus par la carte des muscles).
-enum ExerciseCatalog {
-    static let common: [String] = [
-        "Développé couché", "Développé incliné haltères", "Développé militaire", "Élévation latérale", "Dips",
-        "Extension triceps poulie", "Écarté poulie", "Tractions", "Tirage vertical", "Rowing barre", "Rowing haltère",
-        "Face pull", "Curl biceps", "Curl marteau", "Squat", "Presse à cuisses", "Soulevé de terre roumain",
-        "Soulevé de terre", "Leg curl", "Leg extension", "Fentes bulgares", "Hip thrust", "Mollets debout",
-        "Gainage", "Relevé de jambes"
-    ]
-}
-
 /// Saisie d'une séance de musculation en direct, à la manière de Hevy.
 struct WorkoutLoggerView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Environment(AppModel.self) private var app
     @Query(sort: \StrengthWorkout.start, order: .reverse) private var workouts: [StrengthWorkout]
+    /// Séance type à lancer (sinon séance libre).
+    var routine: WorkoutRoutine?
     @State private var draft = WorkoutDraft()
+    @State private var restExercise = ""
+    @State private var restNext = ""
     @State private var loaded = false
     @State private var picking = false
     @State private var finishing = false
@@ -96,7 +94,7 @@ struct WorkoutLoggerView: View {
                         ExerciseLogCard(exercise: $exercise,
                                         previous: sessions.last,
                                         advice: StrengthProgression.advise(exercise: exercise.name, sessions: sessions),
-                                        onSetDone: { startRest(for: exercise.name) },
+                                        onSetDone: { setID in startRest(after: setID, in: exercise.id) },
                                         onDelete: { remove(exercise.id) })
                     }
                     Button { picking = true } label: {
@@ -142,11 +140,12 @@ struct WorkoutLoggerView: View {
                     setRest(until: nil)
                     dismiss()
                 }
+                Button("Continuer la séance", role: .cancel) {}
             } message: {
                 Text("Ta séance reste enregistrée en brouillon : tu la retrouves en rouvrant « Séance de muscu ».")
             }
             .sheet(isPresented: $picking) {
-                ExercisePicker(known: Self.knownExercises(history)) { name in add(name, history: history) }
+                ExercisePicker { name in add(name, history: history) }
             }
             .sheet(isPresented: $finishing) {
                 FinishWorkoutSheet(draft: draft) { rpe, notes in save(rpe: rpe, notes: notes) }
@@ -157,6 +156,12 @@ struct WorkoutLoggerView: View {
                 loaded = true
                 if let saved = WorkoutDraft.load(), !saved.exercises.isEmpty {
                     draft = saved
+                } else if let routine {
+                    draft = WorkoutDraft(title: routine.name, start: .now, exercises: [], routineID: routine.routineID)
+                    for item in routine.items {
+                        add(item.exercise, history: history, setCount: item.sets, target: item.repText,
+                            rest: item.restSeconds, note: item.note, defaultReps: item.repLow)
+                    }
                 } else {
                     draft = WorkoutDraft(title: Self.suggestedTitle(workouts), start: .now, exercises: [])
                 }
@@ -232,7 +237,8 @@ struct WorkoutLoggerView: View {
 
     // MARK: Actions
 
-    private func add(_ name: String, history: [String: [ExerciseSession]]) {
+    private func add(_ name: String, history: [String: [ExerciseSession]], setCount: Int? = nil, target: String? = nil,
+                     rest: Int? = nil, note: String? = nil, defaultReps: Int? = nil) {
         let sessions: [ExerciseSession] = history[name] ?? []
         var sets: [WorkoutDraft.SetDraft] = []
         if let last = sessions.last {
@@ -242,33 +248,63 @@ struct WorkoutLoggerView: View {
                 sets.append(WorkoutDraft.SetDraft(weight: weight, reps: set.reps, warmup: set.isWarmup))
             }
         }
+        // Nombre de séries de travail imposé par la séance type.
+        if let setCount {
+            let warmups = sets.filter(\.warmup)
+            var working = sets.filter { !$0.warmup }
+            let template = working.last ?? WorkoutDraft.SetDraft(weight: nil, reps: defaultReps)
+            if working.count > setCount { working = Array(working.prefix(setCount)) }
+            while working.count < setCount {
+                working.append(WorkoutDraft.SetDraft(weight: template.weight, reps: template.reps))
+            }
+            sets = warmups + working
+        }
         if sets.isEmpty {
             sets = [WorkoutDraft.SetDraft(), WorkoutDraft.SetDraft(), WorkoutDraft.SetDraft()]
         }
-        draft.exercises.append(WorkoutDraft.ExerciseDraft(name: name, sets: sets))
+        draft.exercises.append(WorkoutDraft.ExerciseDraft(name: name, sets: sets, restSeconds: rest, targetReps: target,
+                                                          note: (note ?? "").isEmpty ? nil : note))
     }
 
     private func remove(_ id: UUID) {
         draft.exercises.removeAll { $0.id == id }
     }
 
-    private func startRest(for exercise: String) {
-        // Exercices polyarticulaires : 2 à 3 min ; isolation : 90 s.
-        let seconds: Double = MuscleMap.isCompound(exercise) ? 150 : 90
+    /// Lance le repos après une série validée : Dynamic Island + notification avec la prochaine série.
+    private func startRest(after setID: UUID, in exerciseID: UUID) {
+        guard let index = draft.exercises.firstIndex(where: { $0.id == exerciseID }) else { return }
+        let exercise = draft.exercises[index]
+        let seconds = Double(exercise.restSeconds ?? (MuscleMap.isCompound(exercise.name) ? 150 : 90))
+        restExercise = exercise.name
+        restNext = nextSetText(from: index)
         setRest(until: Date.now.addingTimeInterval(seconds))
+    }
+
+    private func nextSetText(from index: Int) -> String {
+        for exerciseIndex in index..<draft.exercises.count {
+            let exercise = draft.exercises[exerciseIndex]
+            if let position = exercise.sets.firstIndex(where: { !$0.done }) {
+                let set = exercise.sets[position]
+                var text = exerciseIndex == index ? "Série \(position + 1)/\(exercise.sets.count)" : exercise.name
+                if let weight = set.weight, weight > 0, let reps = set.reps {
+                    text += " · \(weight.formatted()) kg × \(reps)"
+                } else if let reps = set.reps {
+                    text += " · \(reps) reps"
+                }
+                return text
+            }
+        }
+        return "Dernière série faite : termine la séance"
     }
 
     private func setRest(until date: Date?) {
         restEnd = date
-        let center = UNUserNotificationCenter.current()
-        center.removePendingNotificationRequests(withIdentifiers: ["vigor.rest"])
-        guard let date, date > .now else { return }
-        let content = UNMutableNotificationContent()
-        content.title = "Repos terminé"
-        content.body = "Prochaine série."
-        content.sound = .default
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, date.timeIntervalSinceNow), repeats: false)
-        center.add(UNNotificationRequest(identifier: "vigor.rest", content: content, trigger: trigger))
+        guard let date, date > .now else {
+            RestTimer.stop()
+            return
+        }
+        RestTimer.start(end: date, exercise: restExercise, next: restNext,
+                        workout: draft.title.isEmpty ? "Séance" : draft.title)
     }
 
     private func save(rpe: Int?, notes: String) {
@@ -289,12 +325,17 @@ struct WorkoutLoggerView: View {
                 index += 1
             }
         }
+        let records = Self.records(in: draft, history: Self.history(of: workouts))
         workout.sets = models
         try? context.save()
         WorkoutDraft.clear()
         setRest(until: nil)
         app.dataVersion += 1
-        app.statusMessage = "Séance « \(title) » enregistrée : \(models.count) séries."
+        var message = "Séance « \(title) » enregistrée : \(models.count) séries."
+        if !records.isEmpty {
+            message += "\n🏆 Records : " + records.joined(separator: ", ") + "."
+        }
+        app.statusMessage = message
         dismiss()
     }
 
@@ -313,12 +354,23 @@ struct WorkoutLoggerView: View {
         return result
     }
 
-    static func knownExercises(_ history: [String: [ExerciseSession]]) -> [String] {
-        let used: [String] = history.keys.sorted { (history[$0]?.count ?? 0) > (history[$1]?.count ?? 0) }
-        let extra: [String] = ExerciseCatalog.common.filter { name in
-            !used.contains { $0.caseInsensitiveCompare(name) == .orderedSame }
+    /// Exercices où le meilleur 1RM estimé du jour dépasse tout l'historique.
+    static func records(in draft: WorkoutDraft, history: [String: [ExerciseSession]]) -> [String] {
+        var result: [String] = []
+        for exercise in draft.exercises {
+            var best: (e1rm: Double, weight: Double, reps: Int)?
+            for set in exercise.sets where set.done && !set.warmup {
+                guard let weight = set.weight, weight > 0, let reps = set.reps, reps > 0 else { continue }
+                let e1rm = StrengthProgression.estimated1RM(weight: weight, reps: reps)
+                if best == nil || e1rm > best!.e1rm { best = (e1rm, weight, reps) }
+            }
+            guard let best else { continue }
+            let previous = (history[exercise.name] ?? []).map(\.bestEstimated1RM).max() ?? 0
+            if previous > 0 && best.e1rm > previous {
+                result.append("\(exercise.name) \(best.weight.formatted()) kg × \(best.reps)")
+            }
         }
-        return used + extra
+        return result
     }
 
     /// Propose la suite logique du PPL (après Push → Pull → Legs).
@@ -337,8 +389,10 @@ private struct ExerciseLogCard: View {
     @Binding var exercise: WorkoutDraft.ExerciseDraft
     let previous: ExerciseSession?
     let advice: ProgressionAdvice?
-    let onSetDone: () -> Void
+    let onSetDone: (UUID) -> Void
     let onDelete: () -> Void
+
+    private static let restPresets: [Int] = [45, 60, 75, 90, 120, 150, 180, 240]
 
     var body: some View {
         GlassCard {
@@ -352,10 +406,24 @@ private struct ExerciseLogCard: View {
                     Spacer()
                     Menu {
                         Button("Ajouter une série", systemImage: "plus") { addSet() }
+                        Menu("Temps de repos") {
+                            ForEach(Self.restPresets, id: \.self) { seconds in
+                                Button(String(format: "%d:%02d", seconds / 60, seconds % 60)) { exercise.restSeconds = seconds }
+                            }
+                        }
                         Button("Supprimer l'exercice", systemImage: "trash", role: .destructive, action: onDelete)
                     } label: {
                         Image(systemName: "ellipsis.circle").font(.title3)
                     }
+                }
+                HStack(spacing: 6) {
+                    if let target = exercise.targetReps {
+                        StatusPill(text: "Objectif \(target) reps", symbol: "target", color: Theme.sleep)
+                    }
+                    StatusPill(text: restText, symbol: "timer", color: Theme.strain)
+                }
+                if let note = exercise.note {
+                    Text(note).font(.caption).foregroundStyle(.secondary)
                 }
                 if let advice {
                     Label(advice.reason, systemImage: advice.action.symbol)
@@ -374,7 +442,7 @@ private struct ExerciseLogCard: View {
 
                 ForEach($exercise.sets) { $set in
                     let number = (exercise.sets.firstIndex { $0.id == set.id } ?? 0) + 1
-                    SetLogRow(number: number, set: $set, previous: previousText(number - 1), onDone: onSetDone)
+                    SetLogRow(number: number, set: $set, previous: previousText(number - 1), onDone: { onSetDone(set.id) })
                         .contextMenu {
                             Button("Supprimer la série", systemImage: "trash", role: .destructive) {
                                 exercise.sets.removeAll { $0.id == set.id }
@@ -388,6 +456,11 @@ private struct ExerciseLogCard: View {
                 .buttonStyle(.bordered)
             }
         }
+    }
+
+    private var restText: String {
+        let seconds = exercise.restSeconds ?? (MuscleMap.isCompound(exercise.name) ? 150 : 90)
+        return String(format: "Repos %d:%02d", seconds / 60, seconds % 60)
     }
 
     private func previousText(_ index: Int) -> String {
@@ -523,43 +596,20 @@ private struct FinishWorkoutSheet: View {
 
 // MARK: - Choix d'exercice
 
+/// Choix d'un exercice dans la banque (feuille).
 struct ExercisePicker: View {
-    let known: [String]
     let onPick: (String) -> Void
     @Environment(\.dismiss) private var dismiss
-    @State private var query = ""
 
     var body: some View {
-        let trimmed = query.trimmingCharacters(in: .whitespaces)
-        let filtered: [String] = trimmed.isEmpty ? known : known.filter { $0.localizedCaseInsensitiveContains(trimmed) }
         NavigationStack {
-            List {
-                if !trimmed.isEmpty && !known.contains(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) {
-                    Button { pick(trimmed) } label: {
-                        Label("Ajouter « \(trimmed) »", systemImage: "plus.circle.fill")
-                    }
-                }
-                ForEach(filtered, id: \.self) { name in
-                    Button { pick(name) } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(name).foregroundStyle(Color.primary)
-                            Text(MuscleMap.targets(for: name).primary.map(\.label).joined(separator: ", "))
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
-            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Rechercher un exercice")
-            .navigationTitle("Exercice")
-            .navigationBarTitleDisplayMode(.inline)
+            ExerciseLibraryView(onPick: { name in
+                onPick(name)
+                dismiss()
+            })
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Annuler") { dismiss() } }
             }
         }
-    }
-
-    private func pick(_ name: String) {
-        onPick(name)
-        dismiss()
     }
 }

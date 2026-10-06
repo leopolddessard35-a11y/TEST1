@@ -7,8 +7,21 @@ struct MuscleTargets: Equatable {
     static let unknown = MuscleTargets(primary: [], secondary: [])
 }
 
-enum Equipment {
+enum Equipment: String, CaseIterable, Identifiable {
     case barbell, dumbbell, machine, cable, bodyweight, other
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .barbell: "Barre"
+        case .dumbbell: "Haltères"
+        case .machine: "Machine"
+        case .cable: "Poulie"
+        case .bodyweight: "Poids du corps"
+        case .other: "Autre"
+        }
+    }
 }
 
 /// Associe un exercice (nom Hevy, en anglais ou en français) aux muscles sollicités.
@@ -33,11 +46,12 @@ enum MuscleMap {
         rule(["bulgarian", "split squat", "lunge", "fente"], [.quads, .glutes], [.hamstrings, .adductors], compound: true),
         rule(["leg press", "presse à cuisses", "hack squat", "squat"], [.quads, .glutes], [.adductors, .lowerBack], compound: true),
         rule(["leg extension", "extension des jambes"], [.quads]),
+        rule(["step up", "montée sur banc"], [.quads, .glutes], [.hamstrings], compound: true),
         rule(["calf", "mollet"], [.calves]),
         rule(["hip adduction", "adductor", "adducteur"], [.adductors]),
         rule(["hip abduction", "abductor", "abducteur"], [.glutes]),
         rule(["close grip bench", "développé couché prise serrée"], [.triceps], [.chest, .frontDelts], compound: true),
-        rule(["bench press", "chest press", "développé couché", "développé incliné", "push up", "pompe"], [.chest], [.triceps, .frontDelts], compound: true),
+        rule(["bench press", "chest press", "développé couché", "développé incliné", "développé décliné", "push up", "pompe"], [.chest], [.triceps, .frontDelts], compound: true),
         rule(["chest dip", "dip"], [.chest, .triceps], [.frontDelts], compound: true),
         rule(["reverse fly", "rear delt", "face pull", "oiseau"], [.rearDelts], [.upperBack]),
         rule(["fly", "pec deck", "crossover", "écarté"], [.chest], [.frontDelts]),
@@ -45,7 +59,7 @@ enum MuscleMap {
         rule(["lateral raise", "élévation latérale"], [.sideDelts]),
         rule(["front raise", "élévation frontale"], [.frontDelts]),
         rule(["overhead press", "shoulder press", "military press", "arnold", "développé militaire", "développé épaules"], [.frontDelts], [.sideDelts, .triceps], compound: true),
-        rule(["triceps", "skull crusher", "pushdown", "extension nuque"], [.triceps]),
+        rule(["triceps", "skull crusher", "barre au front", "pushdown", "extension nuque"], [.triceps]),
         rule(["hammer curl", "curl marteau"], [.biceps], [.forearms]),
         rule(["wrist curl", "poignet"], [.forearms]),
         rule(["curl"], [.biceps], [.forearms]),
@@ -54,7 +68,7 @@ enum MuscleMap {
         rule(["row", "rowing", "tirage horizontal"], [.upperBack, .lats], [.biceps, .rearDelts], compound: true),
         rule(["shrug", "haussement"], [.upperBack]),
         rule(["russian twist", "woodchop", "side plank", "oblique"], [.obliques], [.abs]),
-        rule(["crunch", "plank", "gainage", "leg raise", "sit up", "situp", "ab wheel", "relevé de jambes"], [.abs], [.obliques]),
+        rule(["crunch", "plank", "gainage", "leg raise", "sit up", "situp", "ab wheel", "roue abdominale", "relevé de jambes"], [.abs], [.obliques]),
     ]
 
     private static func normalized(_ title: String) -> String {
@@ -66,8 +80,12 @@ enum MuscleMap {
         return rules.first { rule in rule.keywords.contains { name.contains($0) } }
     }
 
+    /// Exercices créés par l'utilisateur (nom en minuscules → muscles), prioritaires sur les règles.
+    nonisolated(unsafe) static var custom: [String: MuscleTargets] = [:]
+
     static func targets(for exercise: String) -> MuscleTargets {
-        matchingRule(exercise)?.targets ?? .unknown
+        if let own = custom[normalized(exercise)] { return own }
+        return matchingRule(exercise)?.targets ?? .unknown
     }
 
     static func isCompound(_ exercise: String) -> Bool {
