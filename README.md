@@ -36,6 +36,12 @@ Mode clair / sombre automatique (suit le réglage de l'iPhone).
 
 Pas de gamification, de badges ni de classement.
 
+### Scores quotidiens (inspirés de Whoop / Bevel)
+- **Effort 0–21** (logarithmique) : séances + muscu + hors sport + pas · 1 h facile ≈ 9, 1 h au seuil ≈ 14, 3 h de sortie longue ≈ 18 · **cible du jour** selon la récupération (14–18 / 10–14 / 4–9).
+- **Besoin de sommeil** recalculé chaque jour : base + 4 min par point d'effort au-delà de 10 + ¼ de la dette (max 1 h) · **heure de coucher conseillée** selon ton réveil habituel et ton efficacité de sommeil · **performance de sommeil** (sommeil / besoin).
+- **Fréquence respiratoire nocturne** : + 1 resp/min au-dessus de ta normale (30 j) = signal précoce de maladie, renforcé si la FC de repos monte aussi → intensité supprimée + alerte.
+- **Bilan hebdomadaire** (7 derniers jours vs précédents) : récup, effort, sommeil, performance, volume, calories, faits marquants · notification le dimanche à 19 h.
+
 ### Le coach du jour (`Coach/DailyCoach.swift`)
 Chaque matin, Vigor part de ta séance prévue (plan Traka réparti en semaine type PPL + vélo, ou calendrier Intervals.icu)
 et estime ta **capacité du jour** en croisant :

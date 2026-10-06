@@ -12,7 +12,9 @@ struct TodayView: View {
             ScrollView {
                 SnapshotReader { profile, snapshot in
                     VStack(spacing: 16) {
-                        // La décision du jour en premier : go, adapter ou repos.
+                        ScoreTrio(snapshot: snapshot)
+
+                        // La décision du jour : go, adapter ou repos.
                         NavigationLink {
                             DailyBriefDetailView(brief: snapshot.brief)
                         } label: {
@@ -21,14 +23,6 @@ struct TodayView: View {
                         .buttonStyle(.plain)
 
                         QuickEntryBar()
-
-                        NavigationLink {
-                            ReadinessDetailView(readiness: snapshot.readiness, history: Array(snapshot.readinessHistory.suffix(30)),
-                                                hrvSource: snapshot.hrvSource)
-                        } label: {
-                            ReadinessCard(readiness: snapshot.readiness, advice: snapshot.readiness?.level.advice ?? "")
-                        }
-                        .buttonStyle(.plain)
 
                         NavigationLink {
                             InsightsView(insights: snapshot.insights)
@@ -65,6 +59,9 @@ struct TodayView: View {
                                 ThisWeekCard(week: week)
                             }
                             .buttonStyle(.plain)
+                        }
+                        if let report = snapshot.weeklyReport {
+                            WeeklyReportCard(report: report)
                         }
                         RaceCountdownCard(name: profile.raceName, date: profile.raceDate)
                     }
@@ -173,6 +170,9 @@ private struct WellnessGrid: View {
             tile(.weight, value: weights.last?.value.oneDecimal ?? "–", unit: "kg", series: weights)
             let vo2 = MetricKind.vo2max.series(from: wellness)
             tile(.vo2max, value: vo2.last?.value.oneDecimal ?? "–", unit: "", series: vo2)
+            tile(.respiration, value: snapshot.respirationSeries.last?.value.oneDecimal ?? "–", unit: "resp/min",
+                 series: snapshot.respirationSeries,
+                 note: snapshot.respiratory.map { String(format: "%+.1f resp/min vs ta normale", $0.delta) })
         }
     }
 

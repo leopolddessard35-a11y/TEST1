@@ -44,6 +44,20 @@ struct CoachSnapshot {
     /// Apports par jour (jours renseignés).
     let nutritionDays: [NutritionDay]
 
+    // Scores quotidiens
+    /// Score d'effort du jour (0–21).
+    let effortToday: Double
+    /// Effort des 30 derniers jours.
+    let effortHistory: [DayValue]
+    let effortTarget: ClosedRange<Double>
+    /// Besoin de sommeil de la nuit à venir.
+    let sleepNeed: SleepNeed
+    /// Performance de la nuit dernière (sommeil / besoin).
+    let lastSleepPerformance: Double?
+    let respiratory: RespiratorySignal?
+    let respirationSeries: [DayValue]
+    let weeklyReport: WeeklyReport?
+
     var today: LoadPoint? { load.last }
 
     static func build(profile: AthleteProfile,
@@ -430,6 +444,24 @@ struct CoachSnapshot {
             }
             if lowerSets >= 3, lastLegs.map({ workout.start > $0 }) ?? true { lastLegs = workout.start }
         }
+        // Fréquence respiratoire nocturne : signal précoce de maladie.
+        var respirationSeries: [DayValue] = []
+        for record in sortedWellness {
+            if let value = record.respiration { respirationSeries.append(DayValue(date: record.day, value: value)) }
+        }
+        let respiratory: RespiratorySignal? = RespiratoryMonitor.signal(respiration: respirationSeries, restingHR: restingHR,
+                                                                        today: now, calendar: calendar)
+        if let respiratory, respiratory.isWarning {
+            var evidence = [String(format: "Respiration nocturne : %.1f resp/min (ta normale : %.1f, %+.1f)", respiratory.latest, respiratory.baseline, respiratory.delta)]
+            if respiratory.restingHRUp { evidence.append("FC de repos également au-dessus de ta moyenne") }
+            insights.insert(Insight(id: "illness.respiration", category: .recovery,
+                                    severity: respiratory.restingHRUp ? .warning : .watch,
+                                    title: "Possible début de maladie",
+                                    evidence: evidence,
+                                    recommendation: "La fréquence respiratoire de nuit est très stable chez toi : une hausse d'1 respiration/min ou plus précède souvent une infection, parfois avant les symptômes. Pas d'intensité, hydrate-toi, dors plus. Repos complet si fièvre ou symptômes sous le cou.",
+                                    references: [Science.buchheit2014]), at: 0)
+        }
+
         let coachInput = DailyCoachInput(
             today: now,
             readiness: todayReadiness,
@@ -449,8 +481,70 @@ struct CoachSnapshot {
             lastLegsSession: lastLegs,
             lifeLoadYesterday: lifeByDay[yesterdayStart] ?? 0,
             stepsYesterday: wellnessByDay[yesterdayStart]?.steps,
-            recurrentLegSymptoms: recurrentLeg)
+            recurrentLegSymptoms: recurrentLeg,
+            respiratory: respiratory)
         let brief: DailyBrief = DailyCoach.brief(coachInput, calendar: calendar)
+
+        // Score d'effort (0–21) : tout ce qui fatigue, séances + hors sport + pas.
+        let effortToday: Double = EffortScore.score(load: daily[todayStart] ?? 0)
+        var effortHistory: [DayValue] = []
+        for offset in (0..<30).reversed() {
+            guard let day = calendar.date(byAdding: .day, value: -offset, to: todayStart) else { continue }
+            effortHistory.append(DayValue(date: day, value: EffortScore.score(load: daily[day] ?? 0)))
+        }
+        let effortTarget: ClosedRange<Double> = EffortScore.target(for: todayReadiness?.level, verdict: brief.verdict)
+
+        // Besoin de sommeil de la nuit à venir : effort du jour (fait ou prévu) + dette.
+        var plannedLoad: Double = 0
+        if doneToday == 0 {
+            for session in brief.adapted {
+                let hours: Double = Double(session.minutes) / 60
+                if session.kind.isStrength { plannedLoad += hours * 45 }
+                else if session.kind.isBike { plannedLoad += hours * (session.kind.isIntense ? 70 : 50) }
+            }
+        }
+        let expectedEffort: Double = EffortScore.score(load: (daily[todayStart] ?? 0) + plannedLoad)
+        var wakeTimes: [Date] = []
+        var bedTimes: [Date] = []
+        var sleptHours: [Double] = []
+        for record in sortedWellness where record.day >= twoWeeksAgo {
+            if let wake = record.wakeTime, let bed = record.bedtime, let slept = record.sleepHours {
+                wakeTimes.append(wake)
+                bedTimes.append(bed)
+                sleptHours.append(slept)
+            }
+        }
+        let sleepNeed: SleepNeed = SleepCoach.need(base: profile.sleepNeedHours, effortToday: expectedEffort, debt7: sleepDebt,
+                                                   wakeTimes: wakeTimes, bedTimes: bedTimes, sleptHours: sleptHours, calendar: calendar)
+        let yesterdayEffort: Double = EffortScore.score(load: daily[yesterdayStart] ?? 0)
+        let lastNightNeed: Double = profile.sleepNeedHours + max(0, yesterdayEffort - 10) * 4 / 60
+        let lastSleepPerformance: Double? = wellnessByDay[todayStart]?.sleepHours.map {
+            SleepCoach.performance(slept: $0, need: lastNightNeed)
+        }
+
+        // Bilan hebdomadaire : 7 derniers jours vs 7 précédents.
+        var trainingByDay: [Date: Double] = [:]
+        for activity in activities { trainingByDay[calendar.startOfDay(for: activity.start), default: 0] += activity.durationSeconds }
+        for workout in strength { trainingByDay[calendar.startOfDay(for: workout.start), default: 0] += workout.durationSeconds }
+        var reportDays: [WeeklyReportBuilder.Day] = []
+        for offset in 1...14 {
+            guard let day = calendar.date(byAdding: .day, value: -offset, to: todayStart) else { continue }
+            let previousDay: Date = calendar.date(byAdding: .day, value: -1, to: day) ?? day
+            let previousEffort: Double = EffortScore.score(load: daily[previousDay] ?? 0)
+            var reportDay = WeeklyReportBuilder.Day(date: day, sleepNeed: profile.sleepNeedHours + max(0, previousEffort - 10) * 4 / 60)
+            reportDay.recovery = readinessByDay[day]
+            reportDay.load = daily[day] ?? 0
+            reportDay.effort = EffortScore.score(load: reportDay.load)
+            reportDay.sleep = wellnessByDay[day]?.sleepHours
+            reportDay.trainingSeconds = trainingByDay[day] ?? 0
+            if let nutrition = totalsByDay[day], nutrition.kcal > 800 {
+                reportDay.kcal = nutrition.kcal
+                reportDay.protein = nutrition.protein
+            }
+            reportDay.weight = wellnessByDay[day]?.weightKg
+            reportDays.append(reportDay)
+        }
+        let weeklyReport: WeeklyReport? = WeeklyReportBuilder.build(days: reportDays.sorted { $0.date < $1.date }, today: now, calendar: calendar)
 
         let tomorrow: Date = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? todayStart
         var tomorrowWeek: PlannedWeek? = plan.currentWeek
@@ -497,7 +591,15 @@ struct CoachSnapshot {
             waterToday: waterToday,
             shoeKm: shoeKm,
             lifeLoad7: lifeLoad7,
-            nutritionDays: nutritionDays)
+            nutritionDays: nutritionDays,
+            effortToday: effortToday,
+            effortHistory: effortHistory,
+            effortTarget: effortTarget,
+            sleepNeed: sleepNeed,
+            lastSleepPerformance: lastSleepPerformance,
+            respiratory: respiratory,
+            respirationSeries: respirationSeries,
+            weeklyReport: weeklyReport)
     }
 
     /// Conseil du jour : croise la récupération avec la séance prévue.

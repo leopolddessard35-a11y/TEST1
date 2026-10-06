@@ -156,6 +156,8 @@ struct DailyCoachInput {
     var stepsYesterday: Double?
     /// Symptômes récurrents (14 j) touchant les jambes / pieds.
     var recurrentLegSymptoms: [String] = []
+    /// Fréquence respiratoire nocturne au-dessus de la normale (signal de maladie).
+    var respiratory: RespiratorySignal?
 }
 
 /// Le coach du jour : croise santé, entraînement et nutrition pour adapter concrètement tes séances.
@@ -368,6 +370,18 @@ enum DailyCoach {
             factors.append(CoachFactor(domain: .health, name: "Symptôme récurrent", impact: -0.05,
                                        detail: input.recurrentLegSymptoms.joined(separator: ", ")))
             priorities.append((0.85, "Symptôme récurrent (\(input.recurrentLegSymptoms[0])) : note-le dans le journal s'il réapparaît, et consulte s'il persiste."))
+        }
+
+        // Santé : fréquence respiratoire (signal précoce d'infection).
+        if let signal = input.respiratory, signal.isWarning {
+            noIntensity = true
+            let impact: Double = signal.restingHRUp ? -0.35 : -0.2
+            factors.append(CoachFactor(domain: .health, name: "Respiration nocturne élevée", impact: impact,
+                                       detail: String(format: "%.1f resp/min (normale %.1f)%@", signal.latest, signal.baseline,
+                                                      signal.restingHRUp ? " + FC de repos en hausse" : "")))
+            priorities.append((1.0, signal.restingHRUp
+                ? "Respiration et FC de repos en hausse : possible infection qui commence. Pas d'intensité, hydrate-toi, repos si symptômes."
+                : "Respiration nocturne au-dessus de ta normale : surveille l'apparition de symptômes, pas d'intensité aujourd'hui."))
         }
 
         // Disponibilité et blessures.

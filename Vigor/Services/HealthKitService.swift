@@ -51,7 +51,7 @@ final class HealthKitService {
     private var readTypes: Set<HKObjectType> {
         var types: Set<HKObjectType> = [HKObjectType.workoutType(), HKCategoryType(.sleepAnalysis)]
         let quantities: [HKQuantityTypeIdentifier] = [
-            .heartRateVariabilitySDNN, .restingHeartRate, .heartRate, .stepCount, .activeEnergyBurned,
+            .heartRateVariabilitySDNN, .restingHeartRate, .heartRate, .respiratoryRate, .stepCount, .activeEnergyBurned,
             .bodyMass, .vo2Max, .cyclingPower, .cyclingCadence, .distanceCycling, .distanceWalkingRunning,
             .dietaryEnergyConsumed, .dietaryProtein, .dietaryCarbohydrates, .dietaryFatTotal,
         ]

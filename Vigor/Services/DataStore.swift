@@ -24,12 +24,14 @@ enum DataStore {
         let energy = try await health.daily(.activeEnergyBurned, unit: .kilocalorie(), cumulative: true, days: days)
         let weight = try await health.daily(.bodyMass, unit: .gramUnit(with: .kilo), cumulative: false, days: days)
         let vo2 = try await health.daily(.vo2Max, unit: HKUnit(from: "ml/kg*min"), cumulative: false, days: days)
+        let respiration = (try? await health.daily(.respiratoryRate, unit: HKUnit.count().unitDivided(by: .minute()),
+                                                   cumulative: false, days: days)) ?? [:]
 
         var report = SyncReport()
         let existingDays = try context.fetch(FetchDescriptor<DailyWellness>())
         var byDay = Dictionary(existingDays.map { ($0.day, $0) }, uniquingKeysWith: { first, _ in first })
         let allDays = Set(nights.keys).union(hrv.keys).union(restingHR.keys).union(steps.keys)
-            .union(energy.keys).union(weight.keys).union(vo2.keys)
+            .union(energy.keys).union(weight.keys).union(vo2.keys).union(respiration.keys)
 
         for day in allDays {
             let record: DailyWellness
@@ -51,6 +53,7 @@ enum DataStore {
             if let value = energy[day] { record.activeEnergyKcal = value }
             if let value = weight[day] { record.weightKg = value }
             if let value = vo2[day] { record.vo2Max = value }
+            if let value = respiration[day], record.respiration == nil { record.respiration = value }
         }
         report.days = allDays.count
 

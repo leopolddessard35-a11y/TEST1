@@ -90,3 +90,48 @@ struct AnalyticsTests {
         #expect(renovation.loadEquivalent == 210)
     }
 }
+
+struct DailyScoresTests {
+    @Test func effortScaleIsLogarithmic() {
+        #expect(abs(EffortScore.score(load: 100) - 14) < 0.01)
+        #expect(EffortScore.score(load: 200) > 18 && EffortScore.score(load: 200) < 19)
+        #expect(EffortScore.score(load: 0) == 0)
+        #expect(EffortScore.score(load: 1000) < 21)
+        #expect(abs(EffortScore.load(for: 14) - 100) < 0.5)
+    }
+
+    @Test func sleepNeedGrowsWithEffortAndDebt() {
+        let rested = SleepCoach.need(base: 8, effortToday: 8, debt7: 0, wakeTimes: [], bedTimes: [], sleptHours: [])
+        let tired = SleepCoach.need(base: 8, effortToday: 18, debt7: 6, wakeTimes: [], bedTimes: [], sleptHours: [])
+        #expect(rested.total == 8)
+        #expect(abs(tired.total - (8 + 32.0 / 60 + 1)) < 0.01) // +32 min d'effort, +1 h de dette (plafond)
+        #expect(tired.bedtimeMinutes < rested.bedtimeMinutes) // coucher plus tôt
+    }
+
+    @Test func respiratoryRiseIsFlagged() {
+        var respiration: [DayValue] = []
+        var rhr: [DayValue] = []
+        for day in 0..<30 {
+            respiration.append(DayValue(date: ago(day), value: day < 2 ? 16.4 : 14.6 + Double(day % 3) * 0.1))
+            rhr.append(DayValue(date: ago(day), value: day < 2 ? 55 : 48))
+        }
+        let signal = RespiratoryMonitor.signal(respiration: respiration, restingHR: rhr, today: base)
+        #expect(signal?.isWarning == true)
+        #expect(signal?.restingHRUp == true)
+    }
+
+    @Test func weeklyReportComparesWeeks() {
+        var days: [WeeklyReportBuilder.Day] = []
+        for offset in 1...14 {
+            var day = WeeklyReportBuilder.Day(date: Calendar.current.startOfDay(for: ago(offset)), sleepNeed: 8)
+            day.recovery = offset <= 7 ? 75 : 55
+            day.load = 60
+            day.sleep = 7.5
+            days.append(day)
+        }
+        let report = WeeklyReportBuilder.build(days: days, today: base)
+        #expect(report?.current.recovery == 75)
+        #expect(report?.previous.recovery == 55)
+        #expect(report?.highlights.first?.contains("hausse") == true)
+    }
+}

@@ -76,6 +76,7 @@ enum NotificationScheduler {
             schedule(id: morningID, content: content, at: tomorrow, minutes: morningMinutes)
         }
         scheduleMeals(snapshot, now: now)
+        scheduleWeeklyReport(snapshot, now: now)
         await sendThresholdAlerts(snapshot, now: now)
         if eveningEnabled, let content = evening(snapshot) {
             let todayAt = calendar.date(byAdding: .minute, value: eveningMinutes, to: calendar.startOfDay(for: now)) ?? now
@@ -140,9 +141,7 @@ enum NotificationScheduler {
         } else if let key = tomorrowBike.first(where: { $0.kind.isIntense }) {
             lines.append("Demain : \(key.title). Au lit tôt : une nuit de moins de 6 h supprimerait l'intensité.")
         }
-        if snapshot.readiness?.level == .low {
-            lines.append("Récupération basse aujourd'hui : vise 8 h de sommeil cette nuit.")
-        }
+        lines.append("Besoin de sommeil cette nuit : \(snapshot.sleepNeed.total.hoursText). Couche-toi vers \(snapshot.sleepNeed.bedtimeText).")
         guard !lines.isEmpty else { return nil }
         let content = UNMutableNotificationContent()
         content.title = "Bilan du soir"
@@ -151,10 +150,34 @@ enum NotificationScheduler {
         return content
     }
 
+    // MARK: Bilan hebdomadaire
+
+    /// Le dimanche à 19 h : bilan des 7 derniers jours.
+    private static func scheduleWeeklyReport(_ snapshot: CoachSnapshot, now: Date) {
+        guard eveningEnabled, let report = snapshot.weeklyReport else { return }
+        let calendar = Calendar.current
+        var components = DateComponents()
+        components.weekday = 1
+        components.hour = 19
+        components.minute = 0
+        guard let next = calendar.nextDate(after: now, matching: components, matchingPolicy: .nextTime) else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "Ton bilan de la semaine"
+        var lines: [String] = []
+        if let recovery = report.current.recovery { lines.append(String(format: "Récup moyenne %.0f", recovery)) }
+        if let effort = report.current.effort { lines.append(String(format: "effort moyen %.1f/21", effort)) }
+        if let sleep = report.current.sleepHours { lines.append(String(format: "sommeil %.1f h", sleep)) }
+        content.body = ([lines.joined(separator: " · ")] + report.highlights.prefix(2)).joined(separator: "\n")
+        content.sound = .default
+        let trigger = UNCalendarNotificationTrigger(dateMatching: calendar.dateComponents([.year, .month, .day, .hour, .minute], from: next), repeats: false)
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["vigor.weekly"])
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "vigor.weekly", content: content, trigger: trigger))
+    }
+
     // MARK: Alertes de seuil
 
     /// Seuils importants seulement : surcharge, surmenage, dette de sommeil, symptôme récurrent.
-    static let alertIDs: [String] = ["load.acwr", "load.form", "recovery.overreaching", "sleep.debt", "discipline.", "symptom."]
+    static let alertIDs: [String] = ["load.acwr", "load.form", "recovery.overreaching", "sleep.debt", "discipline.", "symptom.", "illness."]
 
     private static func sendThresholdAlerts(_ snapshot: CoachSnapshot, now: Date) async {
         guard UserDefaults.standard.object(forKey: Keys.alertsEnabled) as? Bool ?? true else { return }

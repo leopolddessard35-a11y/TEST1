@@ -2,7 +2,7 @@ import SwiftUI
 import Charts
 
 enum MetricKind: String, Identifiable, CaseIterable {
-    case sleep, hrv, restingHR, steps, weight, vo2max
+    case sleep, hrv, restingHR, steps, weight, vo2max, respiration
 
     var id: String { rawValue }
 
@@ -14,6 +14,7 @@ enum MetricKind: String, Identifiable, CaseIterable {
         case .steps: "Pas"
         case .weight: "Poids"
         case .vo2max: "VO2max"
+        case .respiration: "Respiration"
         }
     }
 
@@ -25,6 +26,7 @@ enum MetricKind: String, Identifiable, CaseIterable {
         case .steps: ""
         case .weight: "kg"
         case .vo2max: "ml/kg/min"
+        case .respiration: "resp/min"
         }
     }
 
@@ -35,7 +37,8 @@ enum MetricKind: String, Identifiable, CaseIterable {
         case .restingHR: "heart.fill"
         case .steps: "figure.walk"
         case .weight: "scalemass.fill"
-        case .vo2max: "lungs.fill"
+        case .vo2max: "figure.run.circle"
+        case .respiration: "lungs.fill"
         }
     }
 
@@ -46,6 +49,7 @@ enum MetricKind: String, Identifiable, CaseIterable {
         case .restingHR: Theme.warning
         case .steps, .weight: Theme.nutrition
         case .vo2max: Theme.strain
+        case .respiration: Theme.sleep
         }
     }
 
@@ -53,7 +57,7 @@ enum MetricKind: String, Identifiable, CaseIterable {
     var higherIsBetter: Bool? {
         switch self {
         case .sleep, .hrv, .steps, .vo2max: true
-        case .restingHR: false
+        case .restingHR, .respiration: false
         case .weight: nil
         }
     }
@@ -61,7 +65,7 @@ enum MetricKind: String, Identifiable, CaseIterable {
     func format(_ value: Double) -> String {
         switch self {
         case .sleep: value.hoursText
-        case .weight, .vo2max: value.oneDecimal
+        case .weight, .vo2max, .respiration: value.oneDecimal
         default: value.noDecimal
         }
     }
@@ -76,6 +80,7 @@ enum MetricKind: String, Identifiable, CaseIterable {
             case .steps: value = record.steps
             case .weight: value = record.weightKg
             case .vo2max: value = record.vo2Max
+            case .respiration: value = record.respiration
             }
             return value.map { DayValue(date: record.day, value: $0) }
         }
@@ -93,6 +98,8 @@ enum MetricKind: String, Identifiable, CaseIterable {
             "Activité quotidienne hors entraînement (NEAT). Elle compte dans ta dépense énergétique et donc dans tes besoins caloriques."
         case .weight:
             "Le poids varie de ±1 kg d'un jour à l'autre (eau, glycogène, transit). Vigor lisse la courbe (moyenne exponentielle) pour voir la vraie tendance."
+        case .respiration:
+            "Nombre de respirations par minute pendant le sommeil. Elle varie très peu d'une nuit à l'autre chez toi : une hausse d'1 respiration/min ou plus est un des signaux les plus précoces d'une infection."
         case .vo2max:
             "Consommation maximale d'oxygène estimée par Garmin à partir de la relation puissance / FC. C'est le plafond de ton moteur aérobie."
         }
@@ -105,6 +112,7 @@ enum MetricKind: String, Identifiable, CaseIterable {
         case .restingHR: "25 % du score de récupération : dernière valeur comparée à ta moyenne et ta variabilité sur 30 jours."
         case .steps: "Intégrés à la dépense énergétique (via l'énergie active) pour calculer tes calories cibles."
         case .weight: "La tendance sert à piloter la prise de masse (+0,25 à 0,5 %/semaine) et à mesurer ta dépense énergétique réelle."
+        case .respiration: "Comparée à ta moyenne des 30 derniers jours. Au-delà de +1 resp/min (surtout avec une FC de repos en hausse), le coach supprime l'intensité et t'alerte."
         case .vo2max: "Indicateur de progression de fond : elle doit monter pendant les phases Foncier et Développement."
         }
     }
@@ -116,6 +124,7 @@ enum MetricKind: String, Identifiable, CaseIterable {
         case .restingHR: "Elle baisse avec l'endurance de fond. Si elle monte plusieurs jours : allège, hydrate-toi, surveille les signes de maladie."
         case .steps: "Marcher 20–30 min par jour aide la récupération active sans fatiguer."
         case .weight: "Pèse-toi le matin, à jeun, après être allé aux toilettes, au moins 3 fois par semaine."
+        case .respiration: "Tu n'as pas à l'améliorer : c'est un témoin. Si elle monte, repos, hydratation, et surveille fièvre et gorge."
         case .vo2max: "Séances VO2max (ex. 5 × 4 min à 110–120 % FTP) en phase Développement + volume d'endurance."
         }
     }
@@ -128,6 +137,7 @@ enum MetricKind: String, Identifiable, CaseIterable {
         case .steps: [Science.mifflin1990]
         case .weight: [Science.iraki2019, Science.hall2008]
         case .vo2max: [Science.seiler2010]
+        case .respiration: [Science.buchheit2014]
         }
     }
 }

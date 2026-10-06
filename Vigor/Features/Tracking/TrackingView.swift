@@ -46,7 +46,12 @@ private struct TrendsSection: View {
 
     var body: some View {
         VStack(spacing: 16) {
+            if let report = snapshot.weeklyReport {
+                WeeklyReportCard(report: report)
+            }
             RangePicker(days: $days)
+            TrendChart(title: "Effort (0–21)", color: Theme.strain, points: snapshot.effortHistory, days: days)
+            TrendChart(title: "Respiration nocturne (resp/min)", color: Theme.sleep, points: snapshot.respirationSeries, days: days)
             TrendChart(title: "Sommeil (h)", color: Theme.sleep, points: MetricKind.sleep.series(from: snapshot.wellness), days: days)
             TrendChart(title: "VFC (ms)", color: Theme.recovery, points: snapshot.hrvSeries, days: days)
             TrendChart(title: "FC au repos (bpm)", color: Theme.warning, points: MetricKind.restingHR.series(from: snapshot.wellness), days: days)

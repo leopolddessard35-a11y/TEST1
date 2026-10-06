@@ -20,6 +20,7 @@ enum DemoData {
             record.hrvMs = Double.random(in: 52...72, using: &random)
             record.hrvRMSSD = Double.random(in: 48...66, using: &random)
             record.sleepScore = Double.random(in: 62...90, using: &random)
+            record.respiration = Double.random(in: 14.2...15.2, using: &random)
             let vo2Drift: Double = Double(120 - offset) * 0.008
             record.vo2Max = 52 + vo2Drift
             record.restingHeartRate = Double.random(in: 46...53, using: &random)
