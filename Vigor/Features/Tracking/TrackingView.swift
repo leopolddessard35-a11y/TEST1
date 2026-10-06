@@ -40,7 +40,7 @@ struct TrackingView: View {
 
 // MARK: - Tendances
 
-private struct TrendsSection: View {
+struct TrendsSection: View {
     let snapshot: CoachSnapshot
     @State private var days = 90
 
@@ -76,14 +76,16 @@ private struct TrendsSection: View {
                                 Text(String(format: "r = %+.2f", correlation.r)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                             }
                             AnimatedBar(fraction: abs(correlation.r), color: correlation.r >= 0 ? Theme.recovery : Theme.strain, height: 6)
-                            Text("\(correlation.strength.capitalized) · \(correlation.interpretation)").font(.caption)
-                            Text("Sur \(correlation.n) jours").font(.caption2).foregroundStyle(.secondary)
+                            Text("\(correlation.isHint ? "Indice" : "Résultat") · \(correlation.strength) (\(correlation.lagLabel)) · \(correlation.interpretation)").font(.caption)
+                            Text("n = \(correlation.n) jours" + (correlation.confidence.map { String(format: " · IC 95 %% : %+.2f à %+.2f", $0.lowerBound, $0.upperBound) } ?? ""))
+                                .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
                         }
                     }
-                    Text("r va de −1 à +1 : plus il est loin de 0, plus le lien est marqué. Un lien n'est pas forcément une cause, mais il indique quoi tester.")
+                    Text("Spearman, de −1 à +1. « Indice » = moins de 30 jours ou intervalle de confiance qui inclut 0 : à confirmer. Un lien n'est pas une cause : teste-le avec une expérience N = 1 ci-dessous.")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
             }
+            ExperimentsCard(snapshot: snapshot)
         }
     }
 }
@@ -100,6 +102,9 @@ struct TrendChart: View {
         let visible: [DayValue] = Stats.lastDays(days, of: points.sorted { $0.date < $1.date }, today: .now)
         let average: [DayValue] = smooth ? TrendChart.movingAverage(visible, window: days > 120 ? 28 : 7) : []
         let mean: Double? = Stats.mean(visible.map(\.value))
+        let center: Double? = visible.count >= 7 ? Robust.median(visible.map(\.value)) : nil
+        let spread: Double = Robust.mad(visible.map(\.value)) ?? 0
+        let segments: [[DayValue]] = DataGaps.segments(visible)
         GlassCard {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -111,14 +116,23 @@ struct TrendChart: View {
                     Text("Pas assez de données.").font(.caption).foregroundStyle(.secondary)
                 } else {
                     Chart {
-                        ForEach(visible, id: \.date) { point in
-                            if smooth {
+                        if let center, spread > 0, let first = visible.first?.date, let last = visible.last?.date {
+                            RectangleMark(xStart: .value("Début", first), xEnd: .value("Fin", last),
+                                          yStart: .value("Bas", center - spread), yEnd: .value("Haut", center + spread))
+                                .foregroundStyle(color.opacity(0.1))
+                        }
+                        if smooth {
+                            ForEach(visible, id: \.date) { point in
                                 PointMark(x: .value("Jour", point.date), y: .value(title, point.value))
                                     .foregroundStyle(color.opacity(0.35))
                                     .symbolSize(12)
-                            } else {
-                                LineMark(x: .value("Jour", point.date), y: .value(title, point.value))
-                                    .foregroundStyle(color)
+                            }
+                        } else {
+                            ForEach(segments.indices, id: \.self) { index in
+                                ForEach(segments[index], id: \.date) { point in
+                                    LineMark(x: .value("Jour", point.date), y: .value(title, point.value), series: .value("Segment", index))
+                                        .foregroundStyle(color)
+                                }
                             }
                         }
                         ForEach(average, id: \.date) { point in
@@ -152,13 +166,14 @@ struct TrendChart: View {
 
 // MARK: - Journal de symptômes
 
-private struct JournalSection: View {
+struct JournalSection: View {
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
     @Query(sort: \Symptom.date, order: .reverse) private var symptoms: [Symptom]
     @Query private var shoes: [Shoe]
     let patterns: [SymptomPattern]
     @State private var adding = false
+    @State private var pdf: URL?
 
     var body: some View {
         VStack(spacing: 16) {
@@ -167,6 +182,20 @@ private struct JournalSection: View {
             }
             .buttonStyle(.glassProminent)
             .controlSize(.large)
+
+            if !symptoms.isEmpty {
+                Button {
+                    pdf = try? Exporter.symptomReport(symptoms: symptoms, patterns: patterns, shoes: shoes)
+                } label: {
+                    Label("Préparer le PDF pour ton podologue / médecin", systemImage: "doc.richtext")
+                }
+                .buttonStyle(.glass)
+                if let pdf {
+                    ShareLink(item: pdf) { Label("Partager le PDF", systemImage: "square.and.arrow.up") }
+                }
+                Text("L'app repère des corrélations, elle ne pose pas de diagnostic. Un engourdissement récurrent mérite un avis podologue ou médical.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
 
             if symptoms.isEmpty {
                 EmptyStateCard(title: "Journal vide",
@@ -256,7 +285,7 @@ private struct JournalSection: View {
 
 // MARK: - Charge hors sport
 
-private struct LifeSection: View {
+struct LifeSection: View {
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
     @Query(sort: \LifeActivity.date, order: .reverse) private var activities: [LifeActivity]

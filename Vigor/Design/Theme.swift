@@ -94,7 +94,7 @@ struct ScoreRing: View {
                 .rotationEffect(.degrees(-90))
                 .shadow(color: color.opacity(0.45), radius: 8)
             VStack(spacing: 2) {
-                CountingText(value: shown).font(.system(size: 40, weight: .bold, design: .rounded))
+                CountingText(value: shown).font(.system(.largeTitle, design: .rounded).weight(.bold))
                 Text(label).font(.caption).foregroundStyle(.secondary)
             }
         }

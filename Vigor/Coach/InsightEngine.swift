@@ -146,7 +146,7 @@ enum InsightEngine {
             return [Insight(id: "recovery.low", category: .recovery, severity: .watch,
                             title: "VFC sous ta zone normale",
                             evidence: evidence,
-                            recommendation: "Ton système nerveux récupère moins bien que d'habitude. Garde les séances clés seulement si les sensations sont bonnes, sinon décale l'intensité de 48 h.",
+                            recommendation: "VFC sous ta zone normale : séance clé seulement si les sensations suivent, sinon intensité décalée de 48 h.",
                             references: references)]
         }
         if delta > swc {
@@ -212,19 +212,17 @@ enum InsightEngine {
                                     references: [Science.gabbett2016, Science.allenCoggan]))
         }
 
-        let last28 = points.suffix(28).map(\.tss)
         let last7 = points.suffix(7).map(\.tss)
-        let chronic = last28.reduce(0, +) / 28
-        let acute = last7.reduce(0, +) / 7
-        if chronic > 10 {
-            let ratio = acute / chronic
-            let evidence = [String(format: "Charge 7 j : %.0f TSS/j · charge 28 j : %.0f TSS/j", acute, chronic),
+        if let ratio = Robust.acuteChronicRatio(points.map(\.tss)) {
+            let acute = Robust.ewma(points.map(\.tss), days: 7)
+            let chronic = Robust.ewma(points.map(\.tss), days: 28)
+            let evidence = [String(format: "Charge 7 j : %.0f TSS/j · charge 28 j : %.0f TSS/j (moyennes exponentielles)", acute, chronic),
                             String(format: "Ratio aigu / chronique : %.2f (zone sûre : 0,8–1,3)", ratio)]
             if ratio > 1.5 {
                 insights.append(Insight(id: "load.acwr", category: .load, severity: .warning,
                                         title: "Pic de charge inhabituel",
                                         evidence: evidence,
-                                        recommendation: "Tu fais beaucoup plus que ce à quoi ton corps est habitué. Réduis la semaine à venir d'environ 30 %.",
+                                        recommendation: "Charge nettement au-dessus de ton habitude des 4 dernières semaines : semaine à venir −30 % conseillée.",
                                         references: [Science.gabbett2016]))
             } else if ratio < 0.7 {
                 insights.append(Insight(id: "load.detraining", category: .load, severity: .info,
@@ -260,7 +258,7 @@ enum InsightEngine {
             insights.append(Insight(id: "load.ignoredReadiness", category: .recovery, severity: .watch,
                                     title: "Grosse séance malgré une récupération basse",
                                     evidence: ["Récupération : \(readiness.score)/100", String(format: "Charge du jour : %.0f TSS", today.tss)],
-                                    recommendation: "Ce n'est pas grave ponctuellement, mais si ça se répète, la fatigue s'accumule. Demain : endurance facile ou repos.",
+                                    recommendation: "Ponctuellement sans conséquence ; répété, la fatigue s'accumule. Demain : endurance facile ou repos conseillés.",
                                     references: [Science.kiviniemi2007]))
         }
         return insights
@@ -285,7 +283,7 @@ enum InsightEngine {
             return [Insight(id: "intensity.grey", category: .load, severity: .watch,
                             title: "Trop de « zone grise »",
                             evidence: evidence,
-                            recommendation: "Tu roules souvent trop vite pour récupérer et trop lentement pour vraiment progresser. Rends les sorties faciles vraiment faciles (zone 2, tu peux parler) et garde 1 à 2 vraies séances intenses.",
+                            recommendation: "Une grande partie du temps se situe entre les deux intensités utiles. Rends les sorties faciles vraiment faciles (zone 2, tu peux parler) et garde 1 à 2 vraies séances intenses.",
                             references: [Science.seiler2010])]
         }
         if easyShare >= 0.78 {
@@ -326,18 +324,27 @@ enum InsightEngine {
                                     references: [Science.schoenfeld2017]))
         }
 
-        // Stagnation : 1RM estimé qui ne progresse plus sur 4 séances.
+        // Stagnation : pente du 1RM estimé sur 6 semaines, non significativement positive.
         let byExercise = Dictionary(grouping: input.strength, by: \.exercise)
-        let stalled = byExercise.compactMap { exercise, sessions -> String? in
-            let ordered = sessions.sorted { $0.date < $1.date }.suffix(4)
-            guard ordered.count == 4, let first = ordered.first?.bestEstimated1RM, first > 0 else { return nil }
-            let best = ordered.dropFirst().map(\.bestEstimated1RM).max() ?? 0
-            return best <= first ? exercise : nil
-        }.sorted()
+        guard let sixWeeksAgo = calendar.date(byAdding: .day, value: -42, to: input.today) else { return insights }
+        var stalled: [String] = []
+        for (exercise, sessions) in byExercise {
+            let points: [DayValue] = sessions.filter { $0.date >= sixWeeksAgo && $0.bestEstimated1RM > 0 }
+                .sorted { $0.date < $1.date }
+                .map { DayValue(date: $0.date, value: $0.bestEstimated1RM) }
+            guard points.count >= 4, let fit = Robust.regression(points) else { continue }
+            let perWeek = fit.slopePerDay * 7
+            // Progression < 0,25 % / semaine et non significative (t < 2) = stagnation.
+            let mean = Stats.mean(points.map(\.value)) ?? 1
+            if perWeek / mean < 0.0025 && fit.t < 2 {
+                stalled.append(String(format: "%@ : %+.1f kg/sem de 1RM estimé sur %d séances", exercise, perWeek, points.count))
+            }
+        }
+        stalled.sort()
         if !stalled.isEmpty {
             insights.append(Insight(id: "strength.stalled", category: .strength, severity: .watch,
                                     title: "Stagnation détectée",
-                                    evidence: stalled.map { "\($0) : pas de progrès sur les 4 dernières séances" },
+                                    evidence: stalled,
                                     recommendation: "Causes fréquentes : manque de sommeil, calories insuffisantes ou fatigue du vélo. Essaie une semaine de décharge, puis repars 5 % plus léger avec plus de répétitions.",
                                     references: [Science.epley1985, Science.helms2016]))
         }

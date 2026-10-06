@@ -30,7 +30,7 @@ enum NotificationScheduler {
     }
 
     static func mealEnabled(_ meal: Meal) -> Bool {
-        UserDefaults.standard.object(forKey: Keys.mealEnabled(meal)) as? Bool ?? true
+        UserDefaults.standard.object(forKey: Keys.mealEnabled(meal)) as? Bool ?? false
     }
 
     static func mealMinutes(_ meal: Meal) -> Int {
@@ -49,7 +49,7 @@ enum NotificationScheduler {
     }
 
     static var morningEnabled: Bool { UserDefaults.standard.object(forKey: Keys.morningEnabled) as? Bool ?? true }
-    static var eveningEnabled: Bool { UserDefaults.standard.object(forKey: Keys.eveningEnabled) as? Bool ?? true }
+    static var eveningEnabled: Bool { UserDefaults.standard.object(forKey: Keys.eveningEnabled) as? Bool ?? false }
     /// Minutes après minuit (7 h 15 par défaut).
     static var morningMinutes: Int { UserDefaults.standard.object(forKey: Keys.morningMinutes) as? Int ?? 7 * 60 + 15 }
     /// Minutes après minuit (21 h 30 par défaut).
@@ -154,7 +154,7 @@ enum NotificationScheduler {
 
     /// Le dimanche à 19 h : bilan des 7 derniers jours.
     private static func scheduleWeeklyReport(_ snapshot: CoachSnapshot, now: Date) {
-        guard eveningEnabled, let report = snapshot.weeklyReport else { return }
+        guard morningEnabled, let report = snapshot.weeklyReport else { return }
         let calendar = Calendar.current
         var components = DateComponents()
         components.weekday = 1
@@ -162,12 +162,18 @@ enum NotificationScheduler {
         components.minute = 0
         guard let next = calendar.nextDate(after: now, matching: components, matchingPolicy: .nextTime) else { return }
         let content = UNMutableNotificationContent()
-        content.title = "Ton bilan de la semaine"
+        content.title = "Revue de la semaine"
         var lines: [String] = []
         if let recovery = report.current.recovery { lines.append(String(format: "Récup moyenne %.0f", recovery)) }
         if let effort = report.current.effort { lines.append(String(format: "effort moyen %.1f/21", effort)) }
         if let sleep = report.current.sleepHours { lines.append(String(format: "sommeil %.1f h", sleep)) }
-        content.body = ([lines.joined(separator: " · ")] + report.highlights.prefix(2)).joined(separator: "\n")
+        var body = [lines.joined(separator: " · ")]
+        if let review = snapshot.weeklyReview {
+            body.append("Point fort : \(review.strongPoint)")
+            body.append("Vigilance : \(review.vigilance)")
+            body.append(review.adjustment)
+        }
+        content.body = body.joined(separator: "\n")
         content.sound = .default
         let trigger = UNCalendarNotificationTrigger(dateMatching: calendar.dateComponents([.year, .month, .day, .hour, .minute], from: next), repeats: false)
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["vigor.weekly"])

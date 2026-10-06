@@ -148,14 +148,21 @@ struct MetricDetailView: View {
     var sourceNote: String?
     /// Tuiles supplémentaires (ex. régularité du coucher pour le sommeil).
     var extraTiles: [(title: String, value: String, caption: String)] = []
+    /// Événements à annoter (maladie, voyage, travaux, chaussures…).
+    var events: [ChartEvent] = []
     @State private var days = 30
 
     var body: some View {
         let sorted = series.sorted { $0.date < $1.date }
         let visible = Stats.lastDays(days, of: sorted, today: .now)
         let baseline = Stats.lastDays(60, of: sorted, today: .now).map(\.value)
-        let mean = Stats.mean(baseline)
-        let sd = Stats.standardDeviation(baseline) ?? 0
+        // Bande de normalité personnelle robuste : médiane ± MAD sur 60 jours.
+        let mean: Double? = baseline.count >= 7 ? Robust.median(baseline) : nil
+        let sd: Double = baseline.count >= 7 ? (Robust.mad(baseline) ?? 0) : 0
+        let segments: [[DayValue]] = DataGaps.segments(visible)
+        let missing: Int = DataGaps.missingDays(sorted, days: days)
+        let firstVisible: Date = Calendar.current.date(byAdding: .day, value: -(days - 1), to: Calendar.current.startOfDay(for: .now)) ?? .now
+        let visibleEvents: [ChartEvent] = events.filter { $0.end >= firstVisible }
         let week = Stats.mean(Stats.lastDays(7, of: sorted, today: .now).map(\.value))
         let month = Stats.mean(Stats.lastDays(30, of: sorted, today: .now).map(\.value))
         let slope = Stats.slopePerDay(Stats.lastDays(28, of: sorted, today: .now)).map { $0 * 7 }
@@ -167,7 +174,7 @@ struct MetricDetailView: View {
                         Label(kind.title, systemImage: kind.symbol).font(.headline).foregroundStyle(kind.color)
                         if let latest = sorted.last {
                             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                                Text(kind.format(latest.value)).font(.system(size: 44, weight: .bold, design: .rounded))
+                                Text(kind.format(latest.value)).font(.system(.largeTitle, design: .rounded).weight(.bold)).monospacedDigit()
                                 Text(kind == .sleep ? "" : kind.unit).foregroundStyle(.secondary)
                             }
                             Text(latest.date.formatted(date: .complete, time: .omitted)).font(.caption).foregroundStyle(.secondary)
@@ -191,18 +198,31 @@ struct MetricDetailView: View {
                                     .foregroundStyle(kind.color.opacity(0.5))
                                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
                             }
-                            ForEach(visible, id: \.date) { point in
-                                if kind == .steps {
+                            ForEach(visibleEvents) { event in
+                                RectangleMark(xStart: .value("Début", max(event.start, firstVisible)),
+                                              xEnd: .value("Fin", event.end.addingTimeInterval(86_400)))
+                                    .foregroundStyle(Color.primary.opacity(0.06))
+                                    .annotation(position: .top, alignment: .leading) {
+                                        Image(systemName: event.symbol).font(.caption2).foregroundStyle(.secondary)
+                                    }
+                            }
+                            if kind == .steps {
+                                ForEach(visible, id: \.date) { point in
                                     BarMark(x: .value("Jour", point.date, unit: .day), y: .value(kind.title, point.value))
                                         .foregroundStyle(kind.color.gradient)
-                                } else {
-                                    LineMark(x: .value("Jour", point.date), y: .value(kind.title, point.value))
-                                        .foregroundStyle(kind.color)
-                                        .interpolationMethod(.catmullRom)
-                                    if days <= 30 {
-                                        PointMark(x: .value("Jour", point.date), y: .value(kind.title, point.value))
+                                }
+                            } else {
+                                // Une série par segment continu : un jour sans donnée laisse un trou visible.
+                                ForEach(segments.indices, id: \.self) { index in
+                                    ForEach(segments[index], id: \.date) { point in
+                                        LineMark(x: .value("Jour", point.date), y: .value(kind.title, point.value),
+                                                 series: .value("Segment", index))
                                             .foregroundStyle(kind.color)
-                                            .symbolSize(18)
+                                        if days <= 30 {
+                                            PointMark(x: .value("Jour", point.date), y: .value(kind.title, point.value))
+                                                .foregroundStyle(kind.color)
+                                                .symbolSize(18)
+                                        }
                                     }
                                 }
                             }
@@ -210,7 +230,7 @@ struct MetricDetailView: View {
                         .chartYScale(domain: .automatic(includesZero: kind == .steps))
                         .frame(height: 220)
                         if kind != .steps {
-                            Text("Bande colorée : ta zone normale (moyenne ± 1 écart-type sur 60 jours).")
+                            Text("Bande colorée : ta zone normale (médiane ± écart robuste sur 60 jours). Trous = jours sans donnée\(missing > 0 ? " (\(missing) sur la période)" : ""). Zones grisées : événements (maladie, voyage, travaux, chaussures).")
                                 .font(.caption2).foregroundStyle(.secondary)
                         }
                     }
@@ -219,7 +239,7 @@ struct MetricDetailView: View {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                     StatTile(title: "Moyenne 7 j", value: week.map { kind.format($0) } ?? "–")
                     StatTile(title: "Moyenne 30 j", value: month.map { kind.format($0) } ?? "–")
-                    StatTile(title: "Zone normale", value: mean.map { "\(kind.format($0 - sd))–\(kind.format($0 + sd))" } ?? "–", caption: "60 derniers jours")
+                    StatTile(title: "Zone normale", value: mean.map { "\(kind.format($0 - sd))–\(kind.format($0 + sd))" } ?? "–", caption: "médiane ± écart, 60 j")
                     StatTile(title: "Tendance", value: slope.map { String(format: "%+.1f", kind == .sleep ? $0 * 60 : $0) } ?? "–",
                              caption: kind == .sleep ? "min / semaine" : "\(kind.unit) / semaine")
                     ForEach(extraTiles.indices, id: \.self) { index in

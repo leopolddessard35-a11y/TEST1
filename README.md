@@ -119,3 +119,28 @@ Puis Vigor → Entraînement → **Importer l'export Hevy**. Tu peux réimporter
 - [ ] **Étape 4** — Programmes PPL dans l'app (prévu vs réalisé), carte du corps, tests FTP / VO2max, alertes croisées (jambes lourdes la veille d'une séance vélo intense, déficit calorique en semaine chargée…)
 
 ⚠️ Les conseils de l'app ne remplacent pas un avis médical, en particulier pour la blessure aux ischios.
+
+
+## Architecture et méthodes (v0.6)
+
+**Design** : 5 onglets au pouce — Aujourd'hui (verdict → 3–4 raisons → détail au tap), Charge, Récup, Journal, Plan.
+Chaque chiffre est accompagné de son écart à ta base et d'une tendance. Courbes avec bande de normalité (médiane ± MAD),
+événements annotés (maladie, voyage, travaux, chaussures, blessure), trous de données visibles, explorateur jour par jour
+à axe synchronisé. Chiffres à chasse fixe, Dynamic Type, états jamais codés par la seule couleur.
+Notifications rares par défaut : verdict du matin, alertes de seuil, revue du dimanche (repas et soir : optionnels).
+
+**Moteur** :
+- Récupération : médiane / MAD 60 j, score z (ln VFC 7 j, FC repos), contributions affichées.
+- Charge : TSS (puissance / FC / RPE), sRPE = RPE × minutes, TRIMP d'Edwards (zones), tonnage ; ACWR en moyennes exponentielles 7/28 j par discipline ; monotonie et strain de Foster ; Banister CTL/ATL/TSB.
+- Sommeil : besoin dynamique, dette 14 j pondérée (× 0,85/jour), régularité (coucher, lever week-end vs semaine).
+- Endurance : zones de FC, % Z2, découplage, Efficiency Factor à conditions comparables.
+- Muscu : 1RM (Epley), stagnation par régression 6 semaines avec test de significativité, règle d'interférence Legs → sortie longue.
+- Nutrition : tendance de poids exponentielle, dépense adaptative, alerte déficit (poids ↓ et charge ↑).
+- Symptômes : délai d'apparition médian par chaussure, terrain, fatigue, sommeil, charge de la veille ; export PDF.
+- Décision : capacité + règles hiérarchisées (2 signaux rouges → adapter, 3 ou douleur → repos), agenda par jour, semaine allégée automatique si fatigue accumulée ; règles déclenchées affichées.
+- Statistiques : Spearman décalé J/J+1/J+2, n et IC 95 %, « indice » si < 30 points ; expériences N = 1 (avant / pendant, d de Cohen).
+- Qualité : score de confiance du jour, parsing strict (« 1:23:45 », « -- », virgules), dédoublonnage multi-sources, journées physiques non déclarées.
+- Technique : 100 % local (SwiftData), formules versionnées, export CSV/JSON, Raccourcis Siri (plan du jour, effort, eau),
+  narration de la revue par le modèle Apple Intelligence local (il reformule, il ne calcule pas).
+
+Non inclus (compte développeur payant nécessaire) : widgets écran verrouillé et complication Apple Watch.

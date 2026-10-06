@@ -23,7 +23,7 @@ enum ReadinessLevel: String {
         case .moderate:
             "Séance prévue OK, mais garde l'intensité maîtrisée et écoute tes sensations."
         case .low:
-            "Ton corps récupère mal : remplace l'intensité par de l'endurance très facile, de la mobilité ou du repos."
+            "Récupération sous ta normale : endurance très facile, mobilité ou repos conseillés."
         }
     }
 }
@@ -33,6 +33,11 @@ struct ReadinessComponent: Identifiable, Equatable {
     let name: String
     let score: Double
     let detail: String
+    /// Poids dans le score final (0–1).
+    var weight: Double = 0
+
+    /// Points apportés au score final.
+    var contribution: Double { score * weight }
 }
 
 struct ReadinessResult: Equatable {
@@ -70,7 +75,11 @@ enum ReadinessCalculator {
         let totalWeight = weighted.reduce(0) { $0 + $1.weight }
         var score = weighted.reduce(0) { $0 + $1.component.score * $1.weight } / totalWeight
 
-        var components = weighted.map(\.component)
+        var components: [ReadinessComponent] = weighted.map { item in
+            var component = item.component
+            component.weight = item.weight / totalWeight
+            return component
+        }
         if let form, form < -25 {
             let penalty = form < -35 ? 20.0 : 10.0
             score -= penalty
@@ -85,35 +94,36 @@ enum ReadinessCalculator {
         return ReadinessResult(score: rounded, level: level, components: components)
     }
 
-    /// VFC : moyenne des 3 derniers jours (en log) comparée aux 60 derniers jours.
+    /// VFC : tendance 7 jours (moyenne du ln) comparée à ta base 60 jours (médiane ± MAD, robuste).
     static func hrvComponent(_ values: [DayValue], today: Date, calendar: Calendar) -> ReadinessComponent? {
         let baseline = values.filter { $0.value > 0 && isWithin(days: 60, $0.date, of: today, calendar: calendar) }
-        let recent = baseline.filter { isWithin(days: 3, $0.date, of: today, calendar: calendar) }
+        let recent = baseline.filter { isWithin(days: 7, $0.date, of: today, calendar: calendar) }
         guard baseline.count >= 14, !recent.isEmpty else { return nil }
 
         let logBaseline = baseline.map { log($0.value) }
-        let mean = logBaseline.reduce(0, +) / Double(logBaseline.count)
-        let sd = max(standardDeviation(logBaseline, mean: mean), 0.05)
+        guard let center = Robust.median(logBaseline) else { return nil }
+        let spread = max(Robust.mad(logBaseline) ?? 0, 0.05)
         let recentLog = recent.map { log($0.value) }.reduce(0, +) / Double(recent.count)
-        let z = (recentLog - mean) / sd
+        let z = (recentLog - center) / spread
+        let deltaPercent = (exp(recentLog - center) - 1) * 100
 
-        let low = exp(mean - sd), high = exp(mean + sd)
-        let detail = String(format: "%.0f ms (ta normale : %.0f–%.0f ms)", exp(recentLog), low, high)
+        let detail = String(format: "%.0f ms sur 7 j · %+.0f %% vs ta base (%.0f–%.0f ms)",
+                            exp(recentLog), deltaPercent, exp(center - spread), exp(center + spread))
         return ReadinessComponent(name: "VFC", score: clamp(70 + 20 * z), detail: detail)
     }
 
-    /// FC au repos : dernière valeur comparée aux 30 derniers jours (plus haute = moins bien).
+    /// FC au repos : dernière valeur comparée à ta base 60 jours (médiane ± MAD). Plus haute = moins bien.
     static func restingHRComponent(_ values: [DayValue], today: Date, calendar: Calendar) -> ReadinessComponent? {
-        let baseline = values.filter { $0.value > 0 && isWithin(days: 30, $0.date, of: today, calendar: calendar) }
+        let baseline = values.filter { $0.value > 0 && isWithin(days: 60, $0.date, of: today, calendar: calendar) }
             .sorted { $0.date < $1.date }
         guard baseline.count >= 7, let latest = baseline.last,
               isWithin(days: 2, latest.date, of: today, calendar: calendar) else { return nil }
 
         let samples = baseline.map(\.value)
-        let mean = samples.reduce(0, +) / Double(samples.count)
-        let sd = max(standardDeviation(samples, mean: mean), 1)
-        let z = (latest.value - mean) / sd
-        let detail = String(format: "%.0f bpm (moyenne : %.0f bpm)", latest.value, mean)
+        guard let center = Robust.median(samples) else { return nil }
+        let spread = max(Robust.mad(samples) ?? 0, 1)
+        let z = (latest.value - center) / spread
+        let detail = String(format: "%.0f bpm · %+.0f bpm vs ta base (%.0f)", latest.value, latest.value - center, center)
         return ReadinessComponent(name: "FC au repos", score: clamp(70 - 15 * z), detail: detail)
     }
 

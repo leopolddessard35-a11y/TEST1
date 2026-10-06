@@ -14,6 +14,7 @@ struct SnapshotReader<Content: View>: View {
     @Query(sort: \LifeActivity.date) private var lifeActivities: [LifeActivity]
     @Query(sort: \Symptom.date) private var symptoms: [Symptom]
     @Query private var shoes: [Shoe]
+    @Query(sort: \PlanBaseline.weekStart) private var baselines: [PlanBaseline]
     @Query private var profiles: [AthleteProfile]
 
     private let content: (AthleteProfile, CoachSnapshot) -> Content
@@ -27,7 +28,8 @@ struct SnapshotReader<Content: View>: View {
             let snapshot = app.snapshotCache.snapshot(for: cacheKey(profile)) {
                 CoachSnapshot.build(profile: profile, wellness: wellness, activities: activities, strength: strength,
                                     unavailabilities: unavailabilities, injuries: injuries, foods: foods, planned: planned,
-                                    lifeActivities: lifeActivities, symptoms: symptoms, shoes: shoes)
+                                    lifeActivities: lifeActivities, symptoms: symptoms, shoes: shoes,
+                                    baselines: baselines)
             }
             content(profile, snapshot)
         } else {

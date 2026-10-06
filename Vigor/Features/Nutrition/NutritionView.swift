@@ -2,7 +2,21 @@ import SwiftUI
 import SwiftData
 import Charts
 
+/// Écran autonome (conservé) : enveloppe le contenu nutrition.
 struct NutritionView: View {
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                NutritionContent().padding(.horizontal, 16).padding(.bottom, 24)
+            }
+            .background(AppBackground())
+            .navigationTitle("Nutrition")
+        }
+    }
+}
+
+/// Contenu nutrition (utilisé dans l'onglet Journal).
+struct NutritionContent: View {
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
     @Query(sort: \FoodEntry.date) private var entries: [FoodEntry]
@@ -10,8 +24,7 @@ struct NutritionView: View {
     @State private var addingMeal: Meal?
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
+        Group {
                 SnapshotReader { profile, snapshot in
                     let dayEntries = entries.filter { Calendar.current.isDate($0.date, inSameDayAs: day) }
                     let totals: NutritionDay = NutritionView.totals(of: dayEntries, day: day)
@@ -58,15 +71,10 @@ struct NutritionView: View {
                             ExplanationCard(title: "Objectif de la phase \(phase.label)", symbol: "flag.checkered", text: phase.nutritionFocus)
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 24)
                 }
-            }
-            .background(AppBackground())
-            .navigationTitle("Nutrition")
-            .sheet(item: $addingMeal) { meal in
-                AddFoodView(meal: meal, day: day) { app.dataVersion += 1 }
-            }
+        }
+        .sheet(item: $addingMeal) { meal in
+            AddFoodView(meal: meal, day: day) { app.dataVersion += 1 }
         }
     }
 }

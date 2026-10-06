@@ -35,16 +35,18 @@ struct DailyBriefCard: View {
                     SessionRow(session: session, changed: !brief.planned.contains(session))
                 }
 
-                if !brief.priorities.isEmpty {
+                // Niveau 2 : les 3–4 raisons qui justifient le verdict.
+                let reasons = brief.factors.filter { $0.impact != 0 }.sorted { abs($0.impact) > abs($1.impact) }.prefix(4)
+                if !reasons.isEmpty {
                     Divider()
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Tes priorités du jour").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                        ForEach(Array(brief.priorities.enumerated()), id: \.offset) { index, priority in
-                            HStack(alignment: .top, spacing: 8) {
-                                Text("\(index + 1)").font(.caption.weight(.bold)).frame(width: 18, height: 18)
-                                    .background(brief.verdict.color.opacity(0.25), in: .circle)
-                                Text(priority).font(.footnote)
-                            }
+                    Text("Pourquoi").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    ForEach(Array(reasons)) { factor in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Image(systemName: factor.impact < 0 ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
+                                .foregroundStyle(factor.impact < 0 ? Theme.warning : Theme.recovery)
+                                .accessibilityLabel(factor.impact < 0 ? "défavorable" : "favorable")
+                            Text(factor.name).font(.footnote.weight(.semibold))
+                            Text(factor.detail).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
                         }
                     }
                 }
@@ -93,6 +95,33 @@ struct DailyBriefDetailView: View {
                         EnergyGauge(value: brief.capacity, color: brief.verdict.color, label: "de ta forme habituelle")
                             .frame(maxWidth: 260)
                             .frame(maxWidth: .infinity)
+                    }
+                }
+
+                GlassCard {
+                    VStack(alignment: .leading, spacing: 8) {
+                        SectionTitle(title: "Règles déclenchées", symbol: "list.number")
+                        if !brief.redSignals.isEmpty {
+                            Text("Signaux rouges : " + brief.redSignals.joined(separator: " · ")).font(.footnote.weight(.semibold))
+                        } else {
+                            Text("Aucun signal rouge.").font(.footnote)
+                        }
+                        ForEach(Array(brief.rules.enumerated()), id: \.offset) { index, rule in
+                            Text("\(index + 1). \(rule)").font(.footnote.monospacedDigit())
+                        }
+                        Text("Règle générale : 2 signaux rouges (VFC, sommeil, ratio de charge, fatigue, respiration) → séance adaptée ; 3 signaux ou une douleur déclarée → repos.")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+
+                if !brief.priorities.isEmpty {
+                    GlassCard {
+                        VStack(alignment: .leading, spacing: 6) {
+                            SectionTitle(title: "Priorités du jour", symbol: "checklist")
+                            ForEach(Array(brief.priorities.enumerated()), id: \.offset) { index, priority in
+                                Text("\(index + 1). \(priority)").font(.footnote)
+                            }
+                        }
                     }
                 }
 

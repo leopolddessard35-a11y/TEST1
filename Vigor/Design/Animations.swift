@@ -42,7 +42,7 @@ struct EnergyGauge: View {
             }
             .frame(height: 110)
             CountingText(value: progress * 110, suffix: " %")
-                .font(.system(size: 28, weight: .bold, design: .rounded))
+                .font(.system(.title, design: .rounded).weight(.bold))
             Text(label).font(.caption).foregroundStyle(.secondary)
         }
         .onAppear {

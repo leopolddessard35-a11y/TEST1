@@ -5,11 +5,12 @@ import UniformTypeIdentifiers
 
 struct TrainingView: View {
     enum Segment: String, CaseIterable {
-        case strength = "Muscu"
+        case summary = "Synthèse"
         case endurance = "Endurance"
+        case strength = "Muscu"
     }
 
-    @State private var segment: Segment = .strength
+    @State private var segment: Segment = .summary
 
     var body: some View {
         NavigationStack {
@@ -21,6 +22,7 @@ struct TrainingView: View {
                     .pickerStyle(.segmented)
 
                     switch segment {
+                    case .summary: SnapshotReader { _, snapshot in LoadSummarySection(snapshot: snapshot) }
                     case .strength: StrengthSection()
                     case .endurance: EnduranceSection()
                     }
@@ -29,7 +31,7 @@ struct TrainingView: View {
                 .padding(.bottom, 24)
             }
             .background(AppBackground())
-            .navigationTitle("Entraînement")
+            .navigationTitle("Charge")
         }
     }
 }
@@ -365,5 +367,58 @@ private struct ExerciseListCard: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Synthèse de charge
+
+/// Monnaie commune (TSS / sRPE), ratio 7 j / 28 j exponentiel par discipline, monotonie, strain, volume.
+private struct LoadSummarySection: View {
+    let snapshot: CoachSnapshot
+
+    var body: some View {
+        let global = snapshot.disciplineLoads.first { $0.name == "Global" }
+        VStack(spacing: 16) {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                StatTile(title: "Ratio 7 j / 28 j", value: global?.ratio.map { String(format: "%.2f", $0) } ?? "–",
+                         caption: ratioCaption(global?.ratio))
+                StatTile(title: "Forme (TSB)", value: snapshot.today?.form.noDecimal ?? "–", caption: "condition − fatigue")
+                StatTile(title: "Monotonie 7 j", value: snapshot.monotony.map { String(format: "%.1f", $0) } ?? "–",
+                         caption: (snapshot.monotony ?? 0) > 2 ? "⚠︎ trop uniforme (> 2)" : "repère : < 2")
+                StatTile(title: "Strain (Foster)", value: snapshot.fosterStrain.map { $0.noDecimal } ?? "–", caption: "charge × monotonie")
+                StatTile(title: "sRPE 7 j", value: snapshot.srpeWeek.noDecimal, caption: "RPE × minutes")
+                StatTile(title: "Hors sport 7 j", value: snapshot.lifeLoad7.noDecimal, caption: "points de charge")
+            }
+            NavigationLink {
+                LoadDetailView(load: snapshot.load, disciplines: snapshot.disciplineLoads, volumes: snapshot.weeklyVolumes,
+                               alerts: snapshot.volumeAlerts, lifeLoad7: snapshot.lifeLoad7)
+            } label: {
+                HStack {
+                    Label("Courbe de forme, détail par discipline et volume", systemImage: "chart.xyaxis.line")
+                    Spacer()
+                    DetailChevron()
+                }
+                .font(.subheadline.weight(.medium))
+                .padding(14)
+                .glassEffect(.regular, in: .rect(cornerRadius: 18))
+            }
+            .buttonStyle(.plain)
+            ForEach(snapshot.volumeAlerts, id: \.self) { alert in
+                Label(alert, systemImage: "exclamationmark.triangle.fill").font(.footnote)
+            }
+            if snapshot.efSeries.count >= 3 {
+                TrendChart(title: "Efficiency Factor vélo (NP / FC)", color: Theme.recovery, points: snapshot.efSeries, days: 120)
+                Text("À conditions comparables (endurance, ≥ 45 min, peu de dénivelé). Il monte quand ta base aérobie progresse : c'est l'indicateur de progrès sans chrono.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func ratioCaption(_ ratio: Double?) -> String {
+        guard let ratio else { return "moyennes exponentielles" }
+        if ratio > 1.5 { return "⚠︎ pic (> 1,5)" }
+        if ratio > 1.3 { return "↗ haut (1,3–1,5)" }
+        if ratio < 0.8 { return "↘ bas (< 0,8)" }
+        return "✓ zone sûre"
     }
 }

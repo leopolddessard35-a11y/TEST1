@@ -113,6 +113,9 @@ struct PlannerInput {
     var strengthSessionsPerWeek: Int
     var unavailabilities: [UnavailabilityPeriod] = []
     var injuries: [InjuryStatus] = []
+    /// Fatigue accumulée détectée (forme très basse plusieurs jours, VFC + FC repos dégradées) :
+    /// la semaine en cours devient une semaine allégée.
+    var fatigueDetected = false
 }
 
 struct PlannedWeek: Identifiable, Equatable {
@@ -285,6 +288,10 @@ enum SeasonPlanner {
             if week.byReason[.fatigue] != nil, kind == .load {
                 kind = .recovery
                 notes.append("Grosse fatigue déclarée : semaine transformée en récupération.")
+            }
+            if index == 0, input.fatigueDetected, kind == .load {
+                kind = .recovery
+                notes.append("Fatigue accumulée détectée (forme, VFC, FC de repos) : semaine allégée automatiquement.")
             }
             if kind == .recovery { loadStreak = 0 } else if kind == .load, phase != .reprise { loadStreak += 1 }
 

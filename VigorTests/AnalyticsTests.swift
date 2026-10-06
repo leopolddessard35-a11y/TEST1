@@ -21,14 +21,14 @@ struct AnalyticsTests {
 
     @Test func disciplineLoadsAndGlobal() {
         var items: [LoadItem] = []
-        for day in 0..<28 { items.append(LoadItem(date: ago(day), tss: 50, discipline: "Vélo")) }
+        for day in 0..<90 { items.append(LoadItem(date: ago(day), tss: 50, discipline: "Vélo")) }
         for day in 0..<7 { items.append(LoadItem(date: ago(day), tss: 40, discipline: "Hors sport")) }
         let loads = LoadAnalytics.disciplineLoads(items, today: base)
         #expect(loads.first?.name == "Global")
         let bike = loads.first { $0.name == "Vélo" }
         #expect(abs((bike?.ratio ?? 0) - 1) < 0.01)
         let life = loads.first { $0.name == "Hors sport" }
-        #expect((life?.ratio ?? 0) > 3)
+        #expect((life?.ratio ?? 0) > 2)
     }
 
     @Test func volumeAlertAbove10Percent() {
@@ -133,5 +133,69 @@ struct DailyScoresTests {
         #expect(report?.current.recovery == 75)
         #expect(report?.previous.recovery == 55)
         #expect(report?.highlights.first?.contains("hausse") == true)
+    }
+}
+
+struct RobustAndDecisionTests {
+    @Test func medianAndMAD() {
+        #expect(Robust.median([1, 3, 2, 100]) == 2.5)
+        #expect(abs((Robust.mad([1, 2, 3, 4, 100]) ?? 0) - 1.4826) < 0.001)
+    }
+
+    @Test func spearmanHandlesMonotonicNonLinear() {
+        let xs: [Double] = Array(1...20).map(Double.init)
+        let ys: [Double] = xs.map { $0 * $0 * $0 }
+        #expect(abs((Robust.spearman(xs, ys) ?? 0) - 1) < 0.0001)
+        let ci = Robust.confidenceInterval(r: 0.5, n: 30)
+        #expect(ci != nil && ci!.contains(0.5) && !ci!.contains(0))
+    }
+
+    @Test func regressionDetectsTrend() {
+        let points = (0..<8).map { DayValue(date: ago(56 - $0 * 7), value: 100 + Double($0) * 2) }
+        let fit = Robust.regression(points)
+        #expect(abs((fit?.slopePerDay ?? 0) * 7 - 2) < 0.01)
+    }
+
+    @Test func decayedDebtWeightsRecentNights() {
+        let recent = Robust.decayedSleepDebt(need: 8, sleeps: [(daysAgo: 0, hours: 6)])
+        let old = Robust.decayedSleepDebt(need: 8, sleeps: [(daysAgo: 10, hours: 6)])
+        #expect(recent == 2)
+        #expect(old < 0.5)
+    }
+
+    @Test func twoRedSignalsAdaptAndThreeRest() {
+        let week = PlannedWeek(id: 0, start: base, phase: .build, kind: .load, targetTSS: 450, targetHours: 8,
+                               longRideHours: 3, intensitySessions: 2, strengthSessions: 3, runningAllowed: true,
+                               availableDays: 7, projectedCTL: 45, notes: [])
+        var input = DailyCoachInput(today: DateComponents(calendar: .current, year: 2026, month: 10, day: 13, hour: 8).date!,
+                                    readiness: ReadinessResult(score: 75, level: .ready, components: []),
+                                    lastNightSleep: 5.5, sleepNeed: 8, sleepDebt7: nil, load: nil, acuteChronicRatio: 1.6,
+                                    yesterdayNutrition: nil, expenditure: nil, weightKg: 72, week: week, ftp: 206)
+        let adapted = DailyCoach.brief(input)
+        #expect(adapted.redSignals.count == 2)
+        #expect(adapted.verdict == .easy)
+        input.hrvZ = -1.5
+        input.hrvDeltaPercent = -14
+        let rest = DailyCoach.brief(input)
+        #expect(rest.verdict == .rest)
+        #expect(rest.headline.contains("VFC -14 %") || rest.headline.contains("VFC −14 %") || rest.headline.contains("-14"))
+    }
+
+    @Test func experimentEffect() {
+        var series: [DayValue] = []
+        for day in 0..<28 { series.append(DayValue(date: ago(27 - day), value: day < 14 ? 50 + Double(day % 3) : 60 + Double(day % 3))) }
+        let result = ExperimentAnalysis.analyze(series: series, start: ago(13), end: nil, today: base)
+        #expect((result.changePercent ?? 0) > 15)
+        #expect(result.verdict == "Effet net.")
+    }
+}
+
+struct StrictParsingTests {
+    @Test func parsesDurationsMissingAndCommas() {
+        #expect(HevyImporter.number("1:23:45") == 5025)
+        #expect(HevyImporter.number("23:45") == 1425)
+        #expect(HevyImporter.number("--") == nil)
+        #expect(HevyImporter.number("72,5") == 72.5)
+        #expect(HevyImporter.number("") == nil)
     }
 }

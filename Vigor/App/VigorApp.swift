@@ -8,14 +8,8 @@ struct VigorApp: App {
     let container: ModelContainer
 
     init() {
-        do {
-            container = try ModelContainer(for: DailyWellness.self, CardioActivity.self, StrengthWorkout.self, StrengthSet.self,
-                                           Unavailability.self, Injury.self, AthleteProfile.self, PlannedWorkout.self,
-                                           FoodItem.self, FoodEntry.self, LifeActivity.self, Symptom.self, Shoe.self,
-                                           Goal.self, PlanBaseline.self)
-        } catch {
-            fatalError("Base de données impossible à ouvrir : \(error)")
-        }
+        container = SharedStore.container
+        VigorShortcuts.updateAppShortcutParameters()
     }
 
     var body: some Scene {
@@ -28,6 +22,20 @@ struct VigorApp: App {
             await app.backgroundRefresh(container: container)
         }
     }
+}
+
+/// Base de données unique, partagée entre l'app et les Raccourcis Siri.
+enum SharedStore {
+    static let container: ModelContainer = {
+        do {
+            return try ModelContainer(for: DailyWellness.self, CardioActivity.self, StrengthWorkout.self, StrengthSet.self,
+                                      Unavailability.self, Injury.self, AthleteProfile.self, PlannedWorkout.self,
+                                      FoodItem.self, FoodEntry.self, LifeActivity.self, Symptom.self, Shoe.self,
+                                      Goal.self, PlanBaseline.self, Experiment.self)
+        } catch {
+            fatalError("Base de données impossible à ouvrir : \(error)")
+        }
+    }()
 }
 
 /// État partagé de l'app (synchronisation, messages).
@@ -101,7 +109,8 @@ final class AppModel {
             planned: (try? context.fetch(FetchDescriptor<PlannedWorkout>())) ?? [],
             lifeActivities: (try? context.fetch(FetchDescriptor<LifeActivity>())) ?? [],
             symptoms: (try? context.fetch(FetchDescriptor<Symptom>())) ?? [],
-            shoes: (try? context.fetch(FetchDescriptor<Shoe>())) ?? [])
+            shoes: (try? context.fetch(FetchDescriptor<Shoe>())) ?? [],
+            baselines: (try? context.fetch(FetchDescriptor<PlanBaseline>())) ?? [])
     }
 
     func refreshNotifications(context: ModelContext) async {

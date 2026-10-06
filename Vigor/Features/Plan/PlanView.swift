@@ -15,6 +15,9 @@ struct PlanView: View {
                 SnapshotReader { profile, snapshot in
                     VStack(spacing: 16) {
                         PlanHeaderCard(plan: snapshot.plan, raceName: profile.raceName)
+                        if let report = snapshot.weeklyReport, let review = snapshot.weeklyReview {
+                            WeeklyReviewCard(report: report, review: review)
+                        }
                         GoalsCard(plan: snapshot.plan)
                         if !snapshot.weekStatus.isEmpty {
                             WeekStatusCard(days: snapshot.weekStatus)

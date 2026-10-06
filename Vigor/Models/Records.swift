@@ -204,6 +204,19 @@ final class AthleteProfile {
     var birthYear: Int = 0
     var sexRaw: String = Sex.male.rawValue
     var intervalsAthleteID: String = "0"
+    /// Minutes disponibles par jour, du dimanche au samedi, séparées par des virgules (0 = pas de limite).
+    var weekdayMinutesRaw: String = "0,0,0,0,0,0,0"
+
+    var weekdayMinutes: [Int] {
+        let values = weekdayMinutesRaw.split(separator: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+        return values.count == 7 ? values : [0, 0, 0, 0, 0, 0, 0]
+    }
+
+    /// Minutes disponibles pour un jour (calendrier : 1 = dimanche), nil = pas de contrainte.
+    func availableMinutes(weekday: Int) -> Int? {
+        let minutes = weekdayMinutes[min(max(weekday - 1, 0), 6)]
+        return minutes > 0 ? minutes : nil
+    }
 
     var sex: Sex { Sex(rawValue: sexRaw) ?? .male }
 
@@ -443,5 +456,23 @@ final class PlanBaseline {
         self.weekStart = weekStart
         self.projectedCTL = projectedCTL
         self.targetHours = targetHours
+    }
+}
+
+/// Expérience N = 1 : tester un changement (dîner plus tôt, autre chaussure…) et comparer avant / pendant.
+@Model
+final class Experiment {
+    var name: String
+    var start: Date
+    var end: Date?
+    /// Métrique suivie (MetricKind.rawValue ou "readiness").
+    var metricRaw: String
+    var note: String
+
+    init(name: String, start: Date, metricRaw: String, note: String = "") {
+        self.name = name
+        self.start = start
+        self.metricRaw = metricRaw
+        self.note = note
     }
 }

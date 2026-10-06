@@ -89,26 +89,40 @@ struct WeeklyVolume: Identifiable, Equatable {
 }
 
 enum LoadAnalytics {
+    /// Charge aiguë / chronique par discipline en moyennes exponentielles 7 j / 28 j (sur 90 jours).
     static func disciplineLoads(_ items: [LoadItem], today: Date, calendar: Calendar = .current) -> [DisciplineLoad] {
         let end = calendar.startOfDay(for: today)
-        guard let start7 = calendar.date(byAdding: .day, value: -6, to: end),
-              let start28 = calendar.date(byAdding: .day, value: -27, to: end) else { return [] }
-        var acute: [String: Double] = [:]
-        var chronic: [String: Double] = [:]
+        let window = 90
+        guard let start = calendar.date(byAdding: .day, value: -(window - 1), to: end) else { return [] }
+        var perDiscipline: [String: [Double]] = [:]
         for item in items {
             let day = calendar.startOfDay(for: item.date)
-            guard day <= end else { continue }
-            if day >= start28 { chronic[item.discipline, default: 0] += item.tss }
-            if day >= start7 { acute[item.discipline, default: 0] += item.tss }
+            guard day >= start, day <= end,
+                  let index = calendar.dateComponents([.day], from: start, to: day).day, index >= 0, index < window else { continue }
+            if perDiscipline[item.discipline] == nil { perDiscipline[item.discipline] = [Double](repeating: 0, count: window) }
+            perDiscipline[item.discipline]?[index] += item.tss
+        }
+        func loads(_ daily: [Double]) -> (acute: Double, chronic: Double) {
+            // Amorçage sur la moyenne des 28 premiers jours pour éviter l'effet de bord du départ à zéro.
+            let seed = Stats.mean(Array(daily.prefix(28))) ?? 0
+            var acute = seed, chronic = seed
+            let alphaAcute = 1 - exp(-1 / 7.0), alphaChronic = 1 - exp(-1 / 28.0)
+            for load in daily {
+                acute += alphaAcute * (load - acute)
+                chronic += alphaChronic * (load - chronic)
+            }
+            return (acute, chronic)
         }
         var result: [DisciplineLoad] = []
-        let names = Set(acute.keys).union(chronic.keys).sorted()
-        for name in names {
-            result.append(DisciplineLoad(name: name, acute: (acute[name] ?? 0) / 7, chronic: (chronic[name] ?? 0) / 28))
+        var total = [Double](repeating: 0, count: window)
+        for name in perDiscipline.keys.sorted() {
+            let daily = perDiscipline[name] ?? []
+            for index in daily.indices { total[index] += daily[index] }
+            let value = loads(daily)
+            result.append(DisciplineLoad(name: name, acute: value.acute, chronic: value.chronic))
         }
-        let totalAcute = result.reduce(0.0) { $0 + $1.acute }
-        let totalChronic = result.reduce(0.0) { $0 + $1.chronic }
-        result.insert(DisciplineLoad(name: "Global", acute: totalAcute, chronic: totalChronic), at: 0)
+        let global = loads(total)
+        result.insert(DisciplineLoad(name: "Global", acute: global.acute, chronic: global.chronic), at: 0)
         return result
     }
 
@@ -204,14 +218,28 @@ struct DayRecord: Equatable {
     var carbs: Double?
     var readiness: Double?
     var rpe: Double?
+    /// Efficiency Factor moyen des séances d'endurance du jour.
+    var ef: Double?
 }
 
 struct Correlation: Identifiable, Equatable {
     let id: String
     let title: String
+    /// Coefficient de Spearman.
     let r: Double
     let n: Int
     let interpretation: String
+    /// Décalage en jours (0 = même jour, 1 = lendemain, 2 = surlendemain).
+    var lag: Int = 0
+    var confidence: ClosedRange<Double>?
+
+    /// Moins de 30 points ou intervalle qui contient 0 : simple indice, pas un résultat.
+    var isHint: Bool {
+        guard n >= 30, let confidence else { return true }
+        return confidence.contains(0)
+    }
+
+    var lagLabel: String { lag == 0 ? "même jour" : (lag == 1 ? "J+1" : "J+2") }
 
     var strength: String {
         switch abs(r) {
@@ -247,7 +275,7 @@ enum Correlations {
         let negative: String
     }
 
-    /// Croise tes données jour par jour (lag = 1 : effet sur le lendemain). Minimum 14 paires.
+    /// Croise tes données jour par jour, en Spearman, avec décalage J / J+1 / J+2 (on garde le plus marqué).
     static func analyze(_ records: [DayRecord], minimum: Int = 14) -> [Correlation] {
         let sorted = records.sorted { $0.date < $1.date }
         let pairs: [Pair] = [
@@ -263,6 +291,9 @@ enum Correlations {
             Pair(id: "sleep-rpe", title: "Sommeil → effort ressenti des séances", lag: 0, x: { $0.sleep }, y: { $0.rpe },
                  positive: "Bizarrement, tes séances semblent plus dures après une longue nuit.",
                  negative: "Mieux tu dors, plus tes séances te paraissent faciles."),
+            Pair(id: "sleep-ef", title: "Sommeil → efficacité aérobie (EF)", lag: 1, x: { $0.sleep }, y: { $0.ef },
+                 positive: "Après une bonne nuit, tu produis plus de puissance pour la même FC.",
+                 negative: "Pas de bénéfice visible du sommeil sur ton efficacité aérobie."),
             Pair(id: "carbs-readiness", title: "Glucides → récupération du lendemain", lag: 1, x: { $0.carbs }, y: { $0.readiness },
                  positive: "Les jours où tu manges plus de glucides, tu récupères mieux le lendemain.",
                  negative: "Pas de bénéfice visible des glucides sur ta récupération du lendemain."),
@@ -276,16 +307,23 @@ enum Correlations {
 
         var results: [Correlation] = []
         for pair in pairs {
-            var xs: [Double] = []
-            var ys: [Double] = []
-            for index in sorted.indices where index + pair.lag < sorted.count {
-                guard let x = pair.x(sorted[index]), let y = pair.y(sorted[index + pair.lag]) else { continue }
-                xs.append(x)
-                ys.append(y)
+            var best: Correlation?
+            let lags: [Int] = pair.lag == 0 ? [0, 1] : [1, 2]
+            for lag in lags {
+                var xs: [Double] = []
+                var ys: [Double] = []
+                for index in sorted.indices where index + lag < sorted.count {
+                    guard let x = pair.x(sorted[index]), let y = pair.y(sorted[index + lag]) else { continue }
+                    xs.append(x)
+                    ys.append(y)
+                }
+                guard xs.count >= minimum, let r = Robust.spearman(xs, ys) else { continue }
+                if let current = best, abs(current.r) >= abs(r) { continue }
+                let text = abs(r) < 0.2 ? "Aucun lien net pour l'instant dans tes données." : (r > 0 ? pair.positive : pair.negative)
+                best = Correlation(id: pair.id, title: pair.title, r: r, n: xs.count, interpretation: text,
+                                   lag: lag, confidence: Robust.confidenceInterval(r: r, n: xs.count))
             }
-            guard xs.count >= minimum, let r = pearson(xs, ys) else { continue }
-            let text = abs(r) < 0.2 ? "Aucun lien net pour l'instant dans tes données." : (r > 0 ? pair.positive : pair.negative)
-            results.append(Correlation(id: pair.id, title: pair.title, r: r, n: xs.count, interpretation: text))
+            if let best { results.append(best) }
         }
         return results.sorted { abs($0.r) > abs($1.r) }
     }
@@ -302,6 +340,8 @@ struct SymptomRecord: Equatable {
     let terrain: String?
     let fatigue: Int
     let previousSleep: Double?
+    /// Charge (TSS) de la veille.
+    var previousLoad: Double?
 }
 
 struct SymptomPattern: Identifiable, Equatable {
@@ -328,15 +368,17 @@ enum SymptomAnalysis {
             guard let last = sorted.last else { continue }
             var findings: [String] = []
             let onsets = sorted.compactMap(\.onsetMinutes).map(Double.init)
+            // Médianes (robustes) plutôt que moyennes.
+            func medianOnset(_ items: [SymptomRecord]) -> Double? { Robust.median(items.compactMap(\.onsetMinutes).map(Double.init)) }
 
             // Par chaussure : apparition et fréquence.
             let byShoe = Dictionary(grouping: sorted.filter { $0.shoe != nil }, by: { $0.shoe ?? "" })
             if byShoe.count >= 2 || (byShoe.count == 1 && !runsByShoe.isEmpty) {
                 for (shoe, items) in byShoe.sorted(by: { $0.key < $1.key }) {
-                    let onset = Stats.mean(items.compactMap(\.onsetMinutes).map(Double.init))
+                    let onset = medianOnset(items)
                     var line = "\(shoe) : \(items.count) épisode\(items.count > 1 ? "s" : "")"
                     if let runs = runsByShoe[shoe], runs > 0 { line += " sur \(runs) sortie\(runs > 1 ? "s" : "")" }
-                    if let onset { line += String(format: ", apparition vers %.0f min", onset) }
+                    if let onset { line += String(format: ", apparition médiane à %.0f min", onset) }
                     findings.append(line)
                 }
             }
@@ -344,21 +386,25 @@ enum SymptomAnalysis {
             let byTerrain = Dictionary(grouping: sorted.filter { $0.terrain != nil }, by: { $0.terrain ?? "" })
             if byTerrain.count >= 2 {
                 for (terrain, items) in byTerrain.sorted(by: { $0.value.count > $1.value.count }) {
-                    let onset = Stats.mean(items.compactMap(\.onsetMinutes).map(Double.init))
-                    findings.append("\(terrain) : \(items.count) épisode(s)" + (onset.map { String(format: ", vers %.0f min", $0) } ?? ""))
+                    let onset = medianOnset(items)
+                    findings.append("\(terrain) : \(items.count) épisode(s)" + (onset.map { String(format: ", médiane %.0f min", $0) } ?? ""))
                 }
             }
             // Fatigue : le symptôme arrive-t-il plus tôt quand tu es fatigué ?
-            let tired = sorted.filter { $0.fatigue >= 4 }.compactMap(\.onsetMinutes).map(Double.init)
-            let fresh = sorted.filter { $0.fatigue <= 2 }.compactMap(\.onsetMinutes).map(Double.init)
-            if let a = Stats.mean(tired), let b = Stats.mean(fresh), abs(a - b) >= 5 {
+            if let a = medianOnset(sorted.filter { $0.fatigue >= 4 }), let b = medianOnset(sorted.filter { $0.fatigue <= 2 }), abs(a - b) >= 5 {
                 findings.append(String(format: "Fatigué : apparition vers %.0f min · frais : vers %.0f min", a, b))
             }
             // Sommeil de la veille.
-            let shortNight = sorted.filter { ($0.previousSleep ?? 99) < 7 }.compactMap(\.onsetMinutes).map(Double.init)
-            let goodNight = sorted.filter { ($0.previousSleep ?? 0) >= 7 }.compactMap(\.onsetMinutes).map(Double.init)
-            if let a = Stats.mean(shortNight), let b = Stats.mean(goodNight), abs(a - b) >= 5 {
+            if let a = medianOnset(sorted.filter { ($0.previousSleep ?? 99) < 7 }),
+               let b = medianOnset(sorted.filter { ($0.previousSleep ?? 0) >= 7 }), abs(a - b) >= 5 {
                 findings.append(String(format: "Après une nuit < 7 h : vers %.0f min · après une bonne nuit : vers %.0f min", a, b))
+            }
+            // Charge de la veille.
+            let loads = sorted.compactMap(\.previousLoad)
+            if loads.count >= 4, let middle = Robust.median(loads),
+               let heavy = medianOnset(sorted.filter { ($0.previousLoad ?? 0) > middle }),
+               let light = medianOnset(sorted.filter { ($0.previousLoad ?? .infinity) <= middle }), abs(heavy - light) >= 5 {
+                findings.append(String(format: "Veille chargée : médiane %.0f min · veille légère : %.0f min", heavy, light))
             }
             // Évolution de l'intensité.
             if sorted.count >= 4 {
@@ -378,7 +424,7 @@ enum SymptomAnalysis {
                 recentCount: sorted.filter { $0.date >= recentStart }.count,
                 last: last.date,
                 averageIntensity: Stats.mean(sorted.map { Double($0.intensity) }) ?? 0,
-                averageOnset: Stats.mean(onsets),
+                averageOnset: Robust.median(onsets),
                 findings: findings))
         }
         return result.sorted { $0.last > $1.last }

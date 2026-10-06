@@ -88,9 +88,17 @@ enum HevyImporter {
         return order.compactMap { workouts[$0] }
     }
 
+    /// Parsing strict : vide, « -- », « – » ou « N/A » = valeur manquante (jamais 0) ;
+    /// virgule décimale acceptée ; « 1:23:45 » ou « 23:45 » convertis en secondes.
     static func number(_ raw: String) -> Double? {
-        guard !raw.isEmpty else { return nil }
-        return Double(raw.replacingOccurrences(of: ",", with: "."))
+        let text = raw.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty, !["--", "-", "–", "—", "n/a", "na", "null"].contains(text.lowercased()) else { return nil }
+        if text.contains(":") {
+            let parts = text.split(separator: ":").compactMap { Double($0.replacingOccurrences(of: ",", with: ".")) }
+            guard parts.count >= 2, parts.count <= 3 else { return nil }
+            return parts.reduce(0) { $0 * 60 + $1 }
+        }
+        return Double(text.replacingOccurrences(of: ",", with: ".").replacingOccurrences(of: " ", with: ""))
     }
 
     private static let formatters: [DateFormatter] = {

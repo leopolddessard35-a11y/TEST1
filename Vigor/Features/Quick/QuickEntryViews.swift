@@ -138,26 +138,43 @@ struct RPERow: View {
     }
 }
 
+/// Effort ressenti en un seul geste (slider 1–10). Enregistré au relâchement.
 struct RPEPicker: View {
     let value: Int?
     let onSelect: (Int) -> Void
+    @State private var current: Double = 5
+    @State private var touched = false
 
     var body: some View {
-        HStack(spacing: 4) {
-            ForEach(1...10, id: \.self) { rpe in
-                Button {
-                    onSelect(rpe)
-                } label: {
-                    Text("\(rpe)")
-                        .font(.footnote.weight(.semibold).monospacedDigit())
-                        .frame(maxWidth: .infinity, minHeight: 30)
-                        .background(value == rpe ? RPEPicker.color(rpe) : Color.primary.opacity(0.06), in: .rect(cornerRadius: 8))
-                        .foregroundStyle(value == rpe ? .white : .primary)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(value == nil && !touched ? "Glisse pour noter" : "RPE \(Int(current)) · \(RPEPicker.label(Int(current)))")
+                    .font(.footnote.weight(.semibold)).monospacedDigit()
+                Spacer()
+                if value != nil || touched {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(RPEPicker.color(Int(current)))
                 }
-                .buttonStyle(.plain)
             }
+            Slider(value: $current, in: 1...10, step: 1) { editing in
+                if !editing {
+                    touched = true
+                    onSelect(Int(current))
+                }
+            }
+            .tint(RPEPicker.color(Int(current)))
         }
-        .sensoryFeedback(.selection, trigger: value)
+        .onAppear { if let value { current = Double(value) } }
+        .sensoryFeedback(.selection, trigger: Int(current))
+    }
+
+    static func label(_ rpe: Int) -> String {
+        switch rpe {
+        case ..<3: "très facile"
+        case 3...4: "facile"
+        case 5...6: "soutenu"
+        case 7...8: "dur"
+        default: "maximal"
+        }
     }
 
     static func color(_ rpe: Int) -> Color {
@@ -196,6 +213,22 @@ struct SymptomForm: View {
         NavigationStack {
             Form {
                 Section {
+                    VStack(alignment: .leading) {
+                        Text("Intensité : \(Int(intensity)) / 10")
+                        Slider(value: $intensity, in: 0...10, step: 1)
+                            .tint(RPEPicker.color(Int(intensity)))
+                    }
+                    Button {
+                        save()
+                    } label: {
+                        Label("Comme la dernière fois : \(lastSummary)", systemImage: "arrow.counterclockwise.circle.fill")
+                    }
+                } header: {
+                    Text("Saisie express")
+                } footer: {
+                    Text("Règle l'intensité puis touche ce bouton : enregistré en 3 gestes. Sinon, précise ci-dessous.")
+                }
+                Section("Détails") {
                     Picker("Zone", selection: $zoneRaw) {
                         ForEach(BodyZone.allCases) { Text($0.label).tag($0.rawValue) }
                     }
@@ -205,11 +238,6 @@ struct SymptomForm: View {
                     .pickerStyle(.segmented)
                     Picker("Type", selection: $typeRaw) {
                         ForEach(SymptomType.allCases) { Text($0.label).tag($0.rawValue) }
-                    }
-                    VStack(alignment: .leading) {
-                        Text("Intensité : \(Int(intensity)) / 10")
-                        Slider(value: $intensity, in: 0...10, step: 1)
-                            .tint(RPEPicker.color(Int(intensity)))
                     }
                 }
                 Section("Contexte") {
@@ -247,6 +275,13 @@ struct SymptomForm: View {
         }
     }
 
+    private var lastSummary: String {
+        let type = SymptomType(rawValue: typeRaw)?.label ?? ""
+        let zone = BodyZone(rawValue: zoneRaw)?.label.lowercased() ?? ""
+        let side = BodySide(rawValue: sideRaw).map { $0 == .center ? "" : " " + $0.label.lowercased() } ?? ""
+        return "\(type) · \(zone)\(side)\(duringEffort ? ", après \(onset) min" : "")"
+    }
+
     private func save() {
         let symptom = Symptom(date: date, zone: BodyZone(rawValue: zoneRaw) ?? .other, side: BodySide(rawValue: sideRaw) ?? .center,
                               type: SymptomType(rawValue: typeRaw) ?? .other, intensity: Int(intensity), fatigue: fatigue)
@@ -268,6 +303,23 @@ struct SymptomForm: View {
 // MARK: - Activité hors sport
 
 struct LifeActivityForm: View {
+    struct Preset: Identifiable {
+        var id: String { title }
+        let title: String
+        let kind: LifeActivityKind
+        let minutes: Int
+        let intensity: Int
+    }
+
+    static let presets: [Preset] = [
+        Preset(title: "4 h de manutention lourde", kind: .carrying, minutes: 240, intensity: 3),
+        Preset(title: "3 h de travaux modérés", kind: .renovation, minutes: 180, intensity: 2),
+        Preset(title: "6 h de chantier", kind: .renovation, minutes: 360, intensity: 3),
+        Preset(title: "Journée debout (8 h)", kind: .standing, minutes: 480, intensity: 1),
+        Preset(title: "2 h de jardinage", kind: .gardening, minutes: 120, intensity: 2),
+        Preset(title: "Déménagement (6 h)", kind: .moving, minutes: 360, intensity: 3),
+    ]
+
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Environment(AppModel.self) private var app
@@ -280,6 +332,18 @@ struct LifeActivityForm: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("En un geste") {
+                    ForEach(LifeActivityForm.presets) { preset in
+                        Button {
+                            context.insert(LifeActivity(date: .now, kind: preset.kind, minutes: preset.minutes, intensity: preset.intensity))
+                            try? context.save()
+                            app.dataVersion += 1
+                            dismiss()
+                        } label: {
+                            Label(preset.title, systemImage: preset.kind.symbol)
+                        }
+                    }
+                }
                 Picker("Activité", selection: $kindRaw) {
                     ForEach(LifeActivityKind.allCases) { Label($0.label, systemImage: $0.symbol).tag($0.rawValue) }
                 }

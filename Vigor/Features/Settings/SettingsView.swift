@@ -27,16 +27,16 @@ private struct ProfileForm: View {
     @State private var apiKey = ""
     @AppStorage(NotificationScheduler.Keys.morningEnabled) private var morningEnabled = true
     @AppStorage(NotificationScheduler.Keys.morningMinutes) private var morningMinutes = 7 * 60 + 15
-    @AppStorage(NotificationScheduler.Keys.eveningEnabled) private var eveningEnabled = true
+    @AppStorage(NotificationScheduler.Keys.eveningEnabled) private var eveningEnabled = false
     @AppStorage(NotificationScheduler.Keys.alertsEnabled) private var alertsEnabled = true
     @AppStorage(NotificationScheduler.Keys.eveningMinutes) private var eveningMinutes = 21 * 60 + 30
-    @AppStorage(NotificationScheduler.Keys.mealEnabled(.breakfast)) private var breakfastEnabled = true
+    @AppStorage(NotificationScheduler.Keys.mealEnabled(.breakfast)) private var breakfastEnabled = false
     @AppStorage(NotificationScheduler.Keys.mealMinutes(.breakfast)) private var breakfastMinutes = NotificationScheduler.defaultMinutes(for: .breakfast)
-    @AppStorage(NotificationScheduler.Keys.mealEnabled(.lunch)) private var lunchEnabled = true
+    @AppStorage(NotificationScheduler.Keys.mealEnabled(.lunch)) private var lunchEnabled = false
     @AppStorage(NotificationScheduler.Keys.mealMinutes(.lunch)) private var lunchMinutes = NotificationScheduler.defaultMinutes(for: .lunch)
-    @AppStorage(NotificationScheduler.Keys.mealEnabled(.snack)) private var snackEnabled = true
+    @AppStorage(NotificationScheduler.Keys.mealEnabled(.snack)) private var snackEnabled = false
     @AppStorage(NotificationScheduler.Keys.mealMinutes(.snack)) private var snackMinutes = NotificationScheduler.defaultMinutes(for: .snack)
-    @AppStorage(NotificationScheduler.Keys.mealEnabled(.dinner)) private var dinnerEnabled = true
+    @AppStorage(NotificationScheduler.Keys.mealEnabled(.dinner)) private var dinnerEnabled = false
     @AppStorage(NotificationScheduler.Keys.mealMinutes(.dinner)) private var dinnerMinutes = NotificationScheduler.defaultMinutes(for: .dinner)
 
     var body: some View {
@@ -113,7 +113,9 @@ private struct ProfileForm: View {
             } footer: {
                 Text("Matin : verdict du jour, séance adaptée à ta nuit et ta récup, priorité n° 1. Repas : quantités visées (ce qu'il reste à manger aujourd'hui) et conseil selon tes séances ; pas de rappel si le repas est déjà noté. Soir : protéines ou calories manquantes, préparation du lendemain. Alertes importantes : uniquement les seuils critiques (surcharge, dette de sommeil, symptôme récurrent, surmenage), une fois par jour au maximum.")
             }
+            AgendaSection(profile: profile)
             ShoesSection()
+            ExportSection()
             Section("Synchronisation") {
                 Button {
                     Task { await app.syncAll(context: context, profile: profile) }
@@ -238,5 +240,61 @@ private struct ShoesSection: View {
     private func save() {
         try? context.save()
         app.dataVersion += 1
+    }
+}
+
+/// Disponibilités par jour de la semaine : le coach raccourcit les séances au-delà.
+private struct AgendaSection: View {
+    @Environment(AppModel.self) private var app
+    @Bindable var profile: AthleteProfile
+    private let names = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
+
+    var body: some View {
+        Section {
+            ForEach(0..<7, id: \.self) { index in
+                let minutes = profile.weekdayMinutes[index]
+                Stepper("\(names[index]) : \(minutes == 0 ? "sans limite" : (Double(minutes) / 60).hoursText)",
+                        value: Binding(get: { minutes }, set: { update(index, $0) }), in: 0...360, step: 15)
+            }
+        } header: {
+            Text("Disponibilités par jour")
+        } footer: {
+            Text("Ex. mercredi et jeudi à 45 min : les séances de ces jours sont raccourcies automatiquement.")
+        }
+    }
+
+    private func update(_ index: Int, _ value: Int) {
+        var values = profile.weekdayMinutes
+        values[index] = value
+        profile.weekdayMinutesRaw = values.map(String.init).joined(separator: ",")
+        app.dataVersion += 1
+    }
+}
+
+/// Export complet CSV / JSON, et versions des formules.
+private struct ExportSection: View {
+    @Environment(\.modelContext) private var context
+    @State private var files: [URL] = []
+    @State private var error: String?
+
+    var body: some View {
+        Section {
+            Button("Préparer l'export (CSV + JSON)") {
+                do { files = try Exporter.exportAll(context: context) } catch { self.error = error.localizedDescription }
+            }
+            if !files.isEmpty {
+                ShareLink(items: files) {
+                    Label("Partager \(files.count) fichiers", systemImage: "square.and.arrow.up")
+                }
+            }
+            if let error { Text(error).foregroundStyle(Theme.warning) }
+            DisclosureGroup("Versions des formules") {
+                ForEach(FormulaVersion.all, id: \.self) { Text($0).font(.caption.monospaced()) }
+            }
+        } header: {
+            Text("Mes données")
+        } footer: {
+            Text("Toutes tes données restent sur ton iPhone. L'export contient santé quotidienne, séances, séries de muscu, repas, symptômes, activités hors sport, et les versions des formules utilisées.")
+        }
     }
 }

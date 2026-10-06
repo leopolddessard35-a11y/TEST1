@@ -124,6 +124,10 @@ struct DailyBrief: Equatable {
     /// Les 3 actions les plus importantes du jour.
     let priorities: [String]
     let references: [Reference]
+    /// Signaux rouges détectés (VFC, sommeil, ACWR, douleur, respiration, fatigue).
+    var redSignals: [String] = []
+    /// Règles de décision déclenchées, dans l'ordre.
+    var rules: [String] = []
 }
 
 struct PlannedSessionInput: Equatable {
@@ -158,6 +162,15 @@ struct DailyCoachInput {
     var recurrentLegSymptoms: [String] = []
     /// Fréquence respiratoire nocturne au-dessus de la normale (signal de maladie).
     var respiratory: RespiratorySignal?
+    /// VFC 7 j vs base : écart en % et score z robuste.
+    var hrvDeltaPercent: Double?
+    var hrvZ: Double?
+    /// Sommeil de la nuit / besoin.
+    var sleepPerformance: Double?
+    /// Douleur déclarée aujourd'hui (journal de symptômes, intensité ≥ 4).
+    var painToday: String?
+    /// Minutes disponibles aujourd'hui (nil = pas de contrainte).
+    var availableMinutesToday: Int?
 }
 
 /// Le coach du jour : croise santé, entraînement et nutrition pour adapter concrètement tes séances.
@@ -288,7 +301,7 @@ enum DailyCoach {
                 noIntensity = true
                 factors.append(CoachFactor(domain: .health, name: "Nuit courte", impact: -0.2,
                                            detail: String(format: "%.1f h : la puissance et la force maximales baissent après moins de 6 h", sleep)))
-                priorities.append((0.9, "Nuit courte : sieste de 20 min si possible, et au lit 1 h plus tôt ce soir."))
+                priorities.append((0.9, "Nuit < 6 h : sieste de 20 min si possible, coucher avancé d'1 h ce soir."))
             } else if sleep < input.sleepNeed - 1 {
                 factors.append(CoachFactor(domain: .health, name: "Nuit un peu courte", impact: -0.08,
                                            detail: String(format: "%.1f h pour un besoin de %.1f h", sleep, input.sleepNeed)))
@@ -339,7 +352,7 @@ enum DailyCoach {
                 let deficit = expenditure - yesterday.kcal
                 factors.append(CoachFactor(domain: .nutrition, name: "Déficit calorique hier", impact: -0.1,
                                            detail: String(format: "−%.0f kcal par rapport à ta dépense", deficit)))
-                priorities.append((0.8, String(format: "Tu as mangé %.0f kcal de moins que ta dépense hier : rattrape aujourd'hui, sinon la récupération et la prise de muscle en pâtissent.", deficit)))
+                priorities.append((0.8, String(format: "Apport d'hier : −%.0f kcal vs ta dépense. Aujourd'hui, un apport un peu plus élevé soutient récupération et prise de muscle.", deficit)))
             }
             if carbsPerKg < 5 {
                 lowCarbs = true
@@ -391,21 +404,55 @@ enum DailyCoach {
         var totalImpact: Double = 0
         for factor in factors { totalImpact += factor.impact }
         let capacity: Double = min(1.1, max(0, 1 + totalImpact))
-        let verdict: Verdict
+
+        // Signaux rouges, décrits factuellement.
+        var redSignals: [String] = []
+        if let z = input.hrvZ, z < -1 {
+            redSignals.append(String(format: "VFC %+.0f %% vs ta base", input.hrvDeltaPercent ?? 0))
+        }
+        if let sleep = input.lastNightSleep, sleep < 6 {
+            redSignals.append("sommeil \(sleep.hoursText)")
+        } else if let performance = input.sleepPerformance, performance < 0.75 {
+            redSignals.append(String(format: "sommeil à %.0f %% du besoin", performance * 100))
+        }
+        if let ratio = input.acuteChronicRatio, ratio > 1.5 {
+            redSignals.append(String(format: "ratio de charge %.2f", ratio))
+        }
+        if let form = input.load?.form, form < -30 {
+            redSignals.append(String(format: "forme %.0f", form))
+        }
+        if let signal = input.respiratory, signal.isWarning {
+            redSignals.append(String(format: "respiration %+.1f/min", signal.delta))
+        }
+        if let pain = input.painToday {
+            redSignals.append(pain)
+        }
+
+        // Décision : capacité d'abord, puis règles explicites et hiérarchisées.
+        var rules: [String] = []
+        var verdict: Verdict
+        if capacity < 0.45 { verdict = .rest }
+        else if capacity < 0.65 { verdict = .easy }
+        else if capacity < 0.85 || noIntensity { verdict = .adjust }
+        else if capacity >= 1.0, input.readiness?.level == .ready { verdict = .push }
+        else { verdict = .go }
+        rules.append(String(format: "Capacité estimée %.0f %% → %@", capacity * 100, verdict.label.lowercased()))
+
         if let reason = input.unavailableToday, [UnavailabilityReason.illness, .injury].contains(reason) {
             verdict = .rest
+            rules.append("\(reason.label) déclarée aujourd'hui → repos")
             changes.append("\(reason.label) déclarée aujourd'hui : repos complet.")
-        } else if capacity < 0.45 {
+        } else if input.painToday != nil || redSignals.count >= 3 {
             verdict = .rest
-        } else if capacity < 0.65 {
-            verdict = .easy
-        } else if capacity < 0.85 || noIntensity {
-            verdict = .adjust
-        } else if capacity >= 1.0, input.readiness?.level == .ready {
-            verdict = .push
-        } else {
+            rules.append(input.painToday != nil ? "Douleur déclarée → repos" : "\(redSignals.count) signaux rouges (≥ 3) → repos")
+        } else if redSignals.count == 2 {
+            if verdict == .go || verdict == .push || verdict == .adjust { verdict = .easy }
+            rules.append("2 signaux rouges → séance adaptée (endurance facile)")
+        } else if redSignals.count == 1, verdict == .push {
             verdict = .go
+            rules.append("1 signal rouge → pas de séance au maximum")
         }
+
         if input.unavailableToday != nil, verdict != .rest {
             changes.append("Journée indisponible déclarée : séance courte uniquement si tu en as l'occasion.")
         }
@@ -416,6 +463,19 @@ enum DailyCoach {
             adapted += adapt(session, verdict: verdict, noIntensity: noIntensity, legsRecent: legsRecent,
                              legInjury: legInjury, hamstring: hamstring, ftp: input.ftp,
                              phase: input.week?.phase ?? .base, changes: &changes)
+        }
+
+        // Contrainte d'agenda : minutes disponibles aujourd'hui.
+        if let available = input.availableMinutesToday, available > 0 {
+            let total = adapted.reduce(0) { $0 + $1.minutes }
+            if total > available {
+                let ratio = Double(available) / Double(total)
+                adapted = adapted.map { session in
+                    session.minutes == 0 ? session : SessionPrescription(kind: session.kind, minutes: max(20, Int(Double(session.minutes) * ratio / 5) * 5), detail: session.detail)
+                }
+                changes.append("Disponibilité du jour : \(available) min, séances raccourcies en conséquence.")
+                rules.append("Agenda : \(available) min disponibles → durée ajustée")
+            }
         }
 
         // Ravitaillement selon la séance retenue.
@@ -444,7 +504,7 @@ enum DailyCoach {
         return DailyBrief(
             verdict: verdict,
             capacity: capacity,
-            headline: headline(verdict: verdict, factors: factors),
+            headline: headline(verdict: verdict, redSignals: redSignals, factors: factors, adapted: adapted),
             planned: planned,
             adapted: adapted,
             changes: changes,
@@ -452,7 +512,9 @@ enum DailyCoach {
             fueling: fueling,
             priorities: Array(topPriorities),
             references: [Science.kiviniemi2007, Science.fullagar2015, Science.burke2011, Science.jeukendrup2014,
-                         Science.mountjoy2018, Science.wilson2012, Science.morton2018])
+                         Science.mountjoy2018, Science.wilson2012, Science.morton2018],
+            redSignals: redSignals,
+            rules: rules)
     }
 
     static func external(from planned: PlannedSessionInput, ftp: Double?) -> SessionPrescription {
@@ -525,6 +587,11 @@ enum DailyCoach {
             if verdict == .adjust && session.kind.isIntense {
                 changes.append("\(session.kind.label) : une répétition de moins, au bas de la fourchette de watts.")
             }
+            if legsRecent && session.kind == .longRide {
+                let shorter = Int(Double(session.minutes) * 0.85 / 15) * 15
+                changes.append("Séance Legs il y a moins de 30 h : sortie longue réduite à \((Double(shorter) / 60).hoursText), strictement en zone 2.")
+                return [SessionPrescription(kind: .longRide, minutes: shorter, detail: session.detail)]
+            }
             if verdict == .adjust && session.kind == .longRide {
                 changes.append("Sortie longue maintenue, mais strictement en zone 2 et bien ravitaillée.")
             }
@@ -535,14 +602,24 @@ enum DailyCoach {
         }
     }
 
-    private static func headline(verdict: Verdict, factors: [CoachFactor]) -> String {
-        let negatives = factors.filter { $0.impact < 0 }.sorted { $0.impact < $1.impact }.prefix(2).map { $0.name.lowercased() }
+    /// Phrase factuelle : les signaux (chiffrés) puis la séance retenue. Jamais de jugement.
+    private static func headline(verdict: Verdict, redSignals: [String], factors: [CoachFactor], adapted: [SessionPrescription]) -> String {
+        let session = adapted.first.map { $0.title.lowercased() } ?? "repos"
+        if redSignals.isEmpty {
+            let positives = factors.filter { $0.impact > 0 }.map { $0.detail }.prefix(2)
+            let context = positives.isEmpty ? "Indicateurs dans ta normale" : positives.joined(separator: ", ")
+            switch verdict {
+            case .push: return "\(context) : jour adapté à ta séance clé (\(session))."
+            case .rest: return "\(context), mais capacité basse : repos conseillé."
+            default: return "\(context) : \(session) comme prévu."
+            }
+        }
+        let signals = redSignals.prefix(3).joined(separator: ", ")
         switch verdict {
-        case .push: return "Tout est au vert : sommeil, récupération et fraîcheur. Jour idéal pour ta séance clé."
-        case .go: return negatives.isEmpty ? "Bonne journée pour suivre le plan." : "Plan maintenu, malgré : \(negatives.joined(separator: ", "))."
-        case .adjust: return "On garde la séance mais on l'ajuste (\(negatives.joined(separator: ", ")))."
-        case .easy: return "Ton corps a besoin de récupérer (\(negatives.joined(separator: ", "))) : journée facile."
-        case .rest: return "Repos aujourd'hui : c'est ce qui te fera progresser."
+        case .rest: return "\(signals) : repos conseillé."
+        case .easy: return "\(signals) : \(session) conseillée."
+        case .adjust: return "\(signals) : \(session), intensité réduite."
+        case .go, .push: return "\(signals) : \(session) maintenue, à surveiller."
         }
     }
 }

@@ -10,10 +10,10 @@ struct ContentView: View {
     var body: some View {
         TabView {
             Tab("Aujourd'hui", systemImage: "sun.max.fill") { TodayView() }
-            Tab("Entraînement", systemImage: "figure.strengthtraining.traditional") { TrainingView() }
+            Tab("Charge", systemImage: "figure.outdoor.cycle") { TrainingView() }
+            Tab("Récup", systemImage: "heart.fill") { RecoveryView() }
+            Tab("Journal", systemImage: "square.and.pencil") { JournalView() }
             Tab("Plan", systemImage: "calendar") { PlanView() }
-            Tab("Nutrition", systemImage: "fork.knife") { NutritionView() }
-            Tab("Suivi", systemImage: "chart.xyaxis.line") { TrackingView() }
         }
         .task {
             if profiles.isEmpty {

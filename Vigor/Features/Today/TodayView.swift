@@ -10,11 +10,11 @@ struct TodayView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                SnapshotReader { profile, snapshot in
+                SnapshotReader { _, snapshot in
+                    // Niveau 1 : le verdict. Niveau 2 : ses 3–4 raisons. Niveau 3 : le détail, au tap.
                     VStack(spacing: 16) {
                         ScoreTrio(snapshot: snapshot)
 
-                        // La décision du jour : go, adapter ou repos.
                         NavigationLink {
                             DailyBriefDetailView(brief: snapshot.brief)
                         } label: {
@@ -22,48 +22,14 @@ struct TodayView: View {
                         }
                         .buttonStyle(.plain)
 
+                        ConfidenceRow(confidence: snapshot.confidence)
+
                         QuickEntryBar()
 
-                        NavigationLink {
-                            InsightsView(insights: snapshot.insights)
-                        } label: {
-                            CoachCard(insights: snapshot.insights)
+                        if let report = snapshot.weeklyReport, let review = snapshot.weeklyReview,
+                           [1, 2].contains(Calendar.current.component(.weekday, from: .now)) {
+                            WeeklyReviewCard(report: report, review: review)
                         }
-                        .buttonStyle(.plain)
-
-                        WellnessGrid(snapshot: snapshot)
-
-                        if let targets = snapshot.macroTargets {
-                            NavigationLink {
-                                MacroTargetsDetailView(targets: targets, today: snapshot.todayNutrition)
-                            } label: {
-                                NutritionSummaryCard(targets: targets, today: snapshot.todayNutrition)
-                            }
-                            .buttonStyle(.plain)
-                        }
-
-                        HydrationCard(target: snapshot.hydrationTarget, today: snapshot.waterToday)
-
-                        NavigationLink {
-                            LoadDetailView(load: snapshot.load, disciplines: snapshot.disciplineLoads, volumes: snapshot.weeklyVolumes,
-                                           alerts: snapshot.volumeAlerts, lifeLoad7: snapshot.lifeLoad7)
-                        } label: {
-                            LoadCard(point: snapshot.today)
-                        }
-                        .buttonStyle(.plain)
-
-                        if let week = snapshot.plan.currentWeek {
-                            NavigationLink {
-                                WeekDetailView(week: week)
-                            } label: {
-                                ThisWeekCard(week: week)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        if let report = snapshot.weeklyReport {
-                            WeeklyReportCard(report: report)
-                        }
-                        RaceCountdownCard(name: profile.raceName, date: profile.raceDate)
                     }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 24)
@@ -323,7 +289,7 @@ private struct RaceCountdownCard: View {
                 }
                 Spacer()
                 VStack(alignment: .trailing) {
-                    Text("J-\(max(days, 0))").font(.system(size: 34, weight: .bold, design: .rounded))
+                    Text("J-\(max(days, 0))").font(.system(.largeTitle, design: .rounded).weight(.bold)).monospacedDigit()
                     Text("\(max(days, 0) / 7) semaines").font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -360,5 +326,26 @@ struct HydrationCard: View {
                 Text("Objectif : 35 ml/kg + 600 ml par heure d'entraînement prévue.").font(.caption2).foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+/// Indique si le verdict repose sur des données complètes ou partielles.
+struct ConfidenceRow: View {
+    let confidence: DataConfidence
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: confidence.ratio >= 0.8 ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
+            VStack(alignment: .leading, spacing: 1) {
+                Text("\(confidence.label) · \(confidence.present.count)/\(confidence.present.count + confidence.missing.count) sources")
+                    .font(.caption.weight(.semibold))
+                if !confidence.missing.isEmpty {
+                    Text("Manquant : " + confidence.missing.joined(separator: ", ")).font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+        }
+        .foregroundStyle(confidence.ratio >= 0.8 ? Theme.recovery : Theme.nutrition)
+        .padding(.horizontal, 4)
     }
 }

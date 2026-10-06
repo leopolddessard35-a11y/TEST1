@@ -57,6 +57,21 @@ struct CoachSnapshot {
     let respiratory: RespiratorySignal?
     let respirationSeries: [DayValue]
     let weeklyReport: WeeklyReport?
+    let weeklyReview: WeeklyReport.Review?
+
+    // Qualité et contexte
+    /// Score de confiance du jour (sources présentes).
+    let confidence: DataConfidence
+    /// Événements à annoter sur les courbes (maladie, voyage, travaux, chaussures, blessure).
+    let chartEvents: [ChartEvent]
+    /// Efficiency Factor des sorties d'endurance comparables (Z2, ≥ 45 min, peu de dénivelé).
+    let efSeries: [DayValue]
+    /// Charge sRPE (RPE × minutes) des 7 derniers jours.
+    let srpeWeek: Double
+    let monotony: Double?
+    let fosterStrain: Double?
+    /// Écart d'heure de lever week-end / semaine (minutes).
+    let socialJetlag: Double?
 
     var today: LoadPoint? { load.last }
 
@@ -71,6 +86,7 @@ struct CoachSnapshot {
                       lifeActivities: [LifeActivity] = [],
                       symptoms: [Symptom] = [],
                       shoes: [Shoe] = [],
+                      baselines: [PlanBaseline] = [],
                       now: Date = .now) -> CoachSnapshot {
         let calendar = Calendar.current
         let thresholds = profile.thresholds
@@ -154,6 +170,11 @@ struct CoachSnapshot {
                                                affectsCycling: injury.affectsCycling, severity: injury.severity))
         }
         let currentCTL: Double = load.last?.ctl ?? 0
+        // Fatigue accumulée : forme < −25 au moins 5 jours sur 7, ou VFC et FC de repos dégradées ensemble.
+        let tiredDays: Int = load.suffix(7).filter { $0.form < -25 }.count
+        let hrvScore: Double = todayReadiness?.components.first { $0.name == "VFC" }?.score ?? 70
+        let rhrScore: Double = todayReadiness?.components.first { $0.name == "FC au repos" }?.score ?? 70
+        let fatigueDetected: Bool = tiredDays >= 5 || (hrvScore < 50 && rhrScore < 55)
         let plannerInput = PlannerInput(
             today: now,
             raceDate: profile.raceDate,
@@ -163,7 +184,8 @@ struct CoachSnapshot {
             weeklyHoursAvailable: profile.weeklyHoursAvailable,
             strengthSessionsPerWeek: profile.strengthSessionsPerWeek,
             unavailabilities: periods,
-            injuries: injuryStatuses)
+            injuries: injuryStatuses,
+            fatigueDetected: fatigueDetected)
         let plan: SeasonPlan = SeasonPlanner.makePlan(plannerInput)
 
         // Nutrition (boucles explicites : plus rapides à compiler).
@@ -325,7 +347,8 @@ struct CoachSnapshot {
             symptomRecords.append(SymptomRecord(date: symptom.date, key: symptom.key, intensity: symptom.intensity,
                                                 onsetMinutes: symptom.onsetMinutes, shoe: shoeName,
                                                 terrain: symptom.terrain?.label, fatigue: symptom.fatigue,
-                                                previousSleep: wellnessByDay[day]?.sleepHours))
+                                                previousSleep: wellnessByDay[day]?.sleepHours,
+                                                previousLoad: calendar.date(byAdding: .day, value: -1, to: day).flatMap { daily[$0] }))
         }
         let symptomPatterns: [SymptomPattern] = SymptomAnalysis.patterns(symptomRecords, runsByShoe: runsByShoe, today: now)
         let legZones: Set<BodyZone> = [.foot, .ankle, .calf, .shin, .knee, .hamstring, .quad, .hip, .glute]
@@ -415,16 +438,15 @@ struct CoachSnapshot {
         } ?? []
         let milestones: [Milestone] = PlanTracking.milestones(plan: plan)
         // Coach du jour : croisement santé × entraînement × nutrition.
-        var sleepDebt: Double = 0
-        var nightsCounted = 0
-        for offset in 0..<7 {
+        var nights: [(daysAgo: Int, hours: Double)] = []
+        for offset in 0..<14 {
             guard let day = calendar.date(byAdding: .day, value: -offset, to: todayStart),
                   let sleep = wellnessByDay[day]?.sleepHours else { continue }
-            sleepDebt += max(0, profile.sleepNeedHours - sleep)
-            nightsCounted += 1
+            nights.append((daysAgo: offset, hours: sleep))
         }
-        let acuteLoad: Double = load.suffix(7).reduce(0) { $0 + $1.tss } / 7
-        let chronicLoad: Double = load.suffix(28).reduce(0) { $0 + $1.tss } / 28
+        let nightsCounted: Int = nights.filter { $0.daysAgo < 7 }.count
+        // Dette sur 14 jours, les nuits anciennes pesant moins (× 0,85 par jour).
+        let sleepDebt: Double = Robust.decayedSleepDebt(need: profile.sleepNeedHours, sleeps: nights)
         let yesterdayStart: Date = calendar.date(byAdding: .day, value: -1, to: todayStart) ?? todayStart
         var externalPlan: [PlannedSessionInput] = []
         for workout in plannedToday {
@@ -462,6 +484,26 @@ struct CoachSnapshot {
                                     references: [Science.buchheit2014]), at: 0)
         }
 
+        let yesterdayEffort: Double = EffortScore.score(load: daily[yesterdayStart] ?? 0)
+        let lastNightNeed: Double = profile.sleepNeedHours + max(0, yesterdayEffort - 10) * 4 / 60
+        let lastSleepPerformance: Double? = wellnessByDay[todayStart]?.sleepHours.map {
+            SleepCoach.performance(slept: $0, need: lastNightNeed)
+        }
+
+        // Tendance VFC 7 j vs base 60 j (médiane / MAD sur le ln).
+        let hrvTrend: (deltaPercent: Double, z: Double)? = {
+            let base: [Double] = Stats.lastDays(60, of: hrvSeries, today: now, calendar: calendar).filter { $0.value > 0 }.map { log($0.value) }
+            let week: [Double] = Stats.lastDays(7, of: hrvSeries, today: now, calendar: calendar).filter { $0.value > 0 }.map { log($0.value) }
+            guard base.count >= 14, let weekMean = Stats.mean(week), let center = Robust.median(base) else { return nil }
+            let spread = max(Robust.mad(base) ?? 0, 0.05)
+            return ((exp(weekMean - center) - 1) * 100, (weekMean - center) / spread)
+        }()
+        // Douleur déclarée aujourd'hui dans le journal.
+        var painToday: String?
+        for symptom in symptoms where calendar.isDate(symptom.date, inSameDayAs: now) && symptom.type == .pain && symptom.intensity >= 4 {
+            painToday = "douleur \(symptom.zone.label.lowercased()) \(symptom.intensity)/10"
+        }
+
         let coachInput = DailyCoachInput(
             today: now,
             readiness: todayReadiness,
@@ -469,7 +511,7 @@ struct CoachSnapshot {
             sleepNeed: profile.sleepNeedHours,
             sleepDebt7: nightsCounted >= 4 ? sleepDebt : nil,
             load: load.last,
-            acuteChronicRatio: chronicLoad > 10 ? acuteLoad / chronicLoad : nil,
+            acuteChronicRatio: Robust.acuteChronicRatio(load.map(\.tss)),
             yesterdayNutrition: totalsByDay[yesterdayStart],
             expenditure: macroTargets?.expenditure,
             weightKg: currentWeight,
@@ -482,7 +524,12 @@ struct CoachSnapshot {
             lifeLoadYesterday: lifeByDay[yesterdayStart] ?? 0,
             stepsYesterday: wellnessByDay[yesterdayStart]?.steps,
             recurrentLegSymptoms: recurrentLeg,
-            respiratory: respiratory)
+            respiratory: respiratory,
+            hrvDeltaPercent: hrvTrend?.deltaPercent,
+            hrvZ: hrvTrend?.z,
+            sleepPerformance: lastSleepPerformance,
+            painToday: painToday,
+            availableMinutesToday: profile.availableMinutes(weekday: calendar.component(.weekday, from: now)))
         let brief: DailyBrief = DailyCoach.brief(coachInput, calendar: calendar)
 
         // Score d'effort (0–21) : tout ce qui fatigue, séances + hors sport + pas.
@@ -516,11 +563,6 @@ struct CoachSnapshot {
         }
         let sleepNeed: SleepNeed = SleepCoach.need(base: profile.sleepNeedHours, effortToday: expectedEffort, debt7: sleepDebt,
                                                    wakeTimes: wakeTimes, bedTimes: bedTimes, sleptHours: sleptHours, calendar: calendar)
-        let yesterdayEffort: Double = EffortScore.score(load: daily[yesterdayStart] ?? 0)
-        let lastNightNeed: Double = profile.sleepNeedHours + max(0, yesterdayEffort - 10) * 4 / 60
-        let lastSleepPerformance: Double? = wellnessByDay[todayStart]?.sleepHours.map {
-            SleepCoach.performance(slept: $0, need: lastNightNeed)
-        }
 
         // Bilan hebdomadaire : 7 derniers jours vs 7 précédents.
         var trainingByDay: [Date: Double] = [:]
@@ -554,6 +596,110 @@ struct CoachSnapshot {
         let tomorrowPlan: [SessionPrescription] = tomorrowWeek.map {
             DailyCoach.template(for: $0, weekday: calendar.component(.weekday, from: tomorrow), ftp: thresholds.ftp)
         } ?? []
+
+        // Score de confiance du jour : quelles sources sont présentes ?
+        var present: [String] = []
+        var missing: [String] = []
+        let todayWellness = wellnessByDay[todayStart]
+        func check(_ name: String, _ ok: Bool) { if ok { present.append(name) } else { missing.append(name) } }
+        check("Sommeil", todayWellness?.sleepHours != nil)
+        check("VFC", (useGarmin ? todayWellness?.hrvRMSSD : todayWellness?.hrvMs) != nil
+              || !Stats.lastDays(2, of: hrvSeries, today: now, calendar: calendar).isEmpty)
+        check("FC repos", !Stats.lastDays(2, of: restingHR, today: now, calendar: calendar).isEmpty)
+        check("Séances synchronisées", !activities.isEmpty || !strength.isEmpty)
+        check("Repas d'hier", (totalsByDay[yesterdayStart]?.kcal ?? 0) > 800)
+        let confidence = DataConfidence(present: present, missing: missing)
+
+        // Événements pour annoter les courbes.
+        var chartEvents: [ChartEvent] = []
+        for item in unavailabilities {
+            chartEvents.append(ChartEvent(start: item.start, end: item.end, label: item.reason.label, symbol: item.reason.symbol))
+        }
+        for life in lifeActivities where life.minutes >= 120 {
+            chartEvents.append(ChartEvent(start: life.date, end: life.date, label: life.kind.label, symbol: life.kind.symbol))
+        }
+        for injury in injuries {
+            chartEvents.append(ChartEvent(start: injury.start, end: injury.resolvedAt ?? injury.start, label: "Blessure : \(injury.title)", symbol: "bandage.fill"))
+        }
+        for shoe in shoes {
+            chartEvents.append(ChartEvent(start: shoe.addedAt, end: shoe.addedAt, label: "Chaussures : \(shoe.name)", symbol: "shoeprints.fill"))
+        }
+
+        // Efficiency Factor à conditions comparables : endurance stable, ≥ 45 min, < 15 m de D+ par km.
+        var efByDay: [Date: [Double]] = [:]
+        for (index, activity) in activities.enumerated() {
+            guard activity.durationSeconds >= 45 * 60, (samples[index].intensityFactor ?? 0.7) < 0.85 else { continue }
+            if let elevation = activity.elevationGain, let meters = activity.distanceMeters, meters > 0, elevation / (meters / 1000) > 15 { continue }
+            if let ef = Robust.efficiencyFactor(sport: activity.sport, normalizedPower: activity.normalizedPower,
+                                                averagePower: activity.averagePower, meters: activity.distanceMeters,
+                                                seconds: activity.durationSeconds, averageHeartRate: activity.averageHeartRate),
+               activity.sport.isCycling {
+                efByDay[calendar.startOfDay(for: activity.start), default: []].append(ef)
+            }
+        }
+        let efSeries: [DayValue] = efByDay.keys.sorted().compactMap { day in
+            Stats.mean(efByDay[day] ?? []).map { DayValue(date: day, value: $0) }
+        }
+
+        // sRPE (RPE × minutes), monotonie et strain de Foster sur 7 jours.
+        var srpeWeek: Double = 0
+        for activity in activities where activity.start >= weekAgo {
+            if let rpe = activity.rpe { srpeWeek += Double(rpe) * activity.durationSeconds / 60 }
+        }
+        for workout in strength where workout.start >= weekAgo {
+            if let rpe = workout.rpe { srpeWeek += Double(rpe) * workout.durationSeconds / 60 }
+        }
+        let last7Loads: [Double] = load.suffix(7).map(\.tss)
+        var monotony: Double?
+        if let mean = Stats.mean(last7Loads), let sd = Stats.standardDeviation(last7Loads), sd > 0 { monotony = mean / sd }
+        let fosterStrain: Double? = monotony.map { $0 * last7Loads.reduce(0, +) }
+
+        let socialJetlag: Double? = Robust.socialJetlag(wakeTimes: wakeTimes, calendar: calendar)
+
+        // Alerte déficit : la tendance du poids baisse alors que la charge monte.
+        let recentWeightTrend: [DayValue] = Stats.exponentialTrend(Stats.lastDays(21, of: weights, today: now, calendar: calendar))
+        if let first = recentWeightTrend.first, let last = recentWeightTrend.last, recentWeightTrend.count >= 8,
+           last.value - first.value <= -0.5, let ramp = TrainingLoad.rampRate(load), ramp > 2 {
+            insights.insert(Insight(id: "nutrition.deficit", category: .nutrition, severity: .warning,
+                                    title: "Déficit énergétique probable",
+                                    evidence: [String(format: "Poids lissé : %.1f kg en 3 semaines", last.value - first.value),
+                                               String(format: "Condition : %+.1f points sur 7 j", ramp)],
+                                    recommendation: "Ton poids baisse pendant que ta charge monte : apports en dessous de ta dépense. Ajoute 300 à 400 kcal par jour, surtout en glucides autour des séances.",
+                                    references: [Science.mountjoy2018, Science.hall2008]), at: 0)
+        }
+
+        // Journée physique probablement sous-déclarée : beaucoup de pas / d'énergie active, rien de déclaré.
+        if let yesterday = wellnessByDay[yesterdayStart] {
+            let activeValues: [Double] = Stats.lastDays(30, of: activeEnergy, today: now, calendar: calendar).map(\.value)
+            let activeHigh: Bool = {
+                guard let active = yesterday.activeEnergyKcal, let center = Robust.median(activeValues),
+                      let spread = Robust.mad(activeValues), spread > 0 else { return false }
+                return (active - center) / spread > 2.5
+            }()
+            let declared: Bool = lifeActivities.contains { calendar.isDate($0.date, inSameDayAs: yesterdayStart) }
+            let trained: Double = trainingByDay[yesterdayStart] ?? 0
+            if !declared, trained < 3600, (yesterday.steps ?? 0) > 18_000 || activeHigh {
+                insights.insert(Insight(id: "life.undeclared", category: .data, severity: .info,
+                                        title: "Journée physique non déclarée ?",
+                                        evidence: [String(format: "Hier : %.0f pas, %.0f kcal actives, sans séance ni activité hors sport déclarée",
+                                                          yesterday.steps ?? 0, yesterday.activeEnergyKcal ?? 0)],
+                                        recommendation: "Si tu as fait des travaux ou une journée debout, ajoute-la dans Journal → Hors sport : elle compte dans ta fatigue.",
+                                        references: []), at: 0)
+            }
+        }
+
+        // Revue hebdomadaire : prévu vs réalisé.
+        var plannedLastWeek: Double?
+        if let lastWeekStart = calendar.date(byAdding: .day, value: -7, to: plan.currentWeek?.start ?? todayStart) {
+            plannedLastWeek = baselines.first { calendar.isDate($0.weekStart, inSameDayAs: lastWeekStart) }?.targetHours
+        }
+        let doneStrength: Int = strength.filter { $0.start >= weekAgo }.count
+        let missed: Int = weekStatus.filter { $0.status == .missed }.count
+        let weeklyReview: WeeklyReport.Review? = weeklyReport.map {
+            WeeklyReport.review(report: $0, plannedHours: plannedLastWeek, plannedStrength: profile.strengthSessionsPerWeek,
+                                doneStrength: doneStrength, acuteChronic: Robust.acuteChronicRatio(load.map(\.tss)),
+                                missedSessions: missed)
+        }
 
         var loggedMeals = Set<Meal>()
         for entry in foods where calendar.isDate(entry.date, inSameDayAs: now) {
@@ -599,7 +745,15 @@ struct CoachSnapshot {
             lastSleepPerformance: lastSleepPerformance,
             respiratory: respiratory,
             respirationSeries: respirationSeries,
-            weeklyReport: weeklyReport)
+            weeklyReport: weeklyReport,
+            weeklyReview: weeklyReview,
+            confidence: confidence,
+            chartEvents: chartEvents.sorted { $0.start < $1.start },
+            efSeries: efSeries,
+            srpeWeek: srpeWeek,
+            monotony: monotony,
+            fosterStrain: fosterStrain,
+            socialJetlag: socialJetlag)
     }
 
     /// Conseil du jour : croise la récupération avec la séance prévue.

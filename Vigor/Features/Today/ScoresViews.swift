@@ -65,7 +65,7 @@ struct Dial: View {
                     .rotationEffect(.degrees(-90))
                     .shadow(color: color.opacity(0.4), radius: 6)
                 HStack(alignment: .firstTextBaseline, spacing: 1) {
-                    Text(text).font(.system(size: 22, weight: .bold, design: .rounded)).monospacedDigit()
+                    Text(text).font(.system(.title2, design: .rounded).weight(.bold)).monospacedDigit().minimumScaleFactor(0.6).lineLimit(1)
                     if !suffix.isEmpty { Text(suffix).font(.caption2.weight(.semibold)).foregroundStyle(.secondary) }
                 }
             }
@@ -152,7 +152,7 @@ struct SleepNeedDetailView: View {
                 GlassCard {
                     VStack(spacing: 10) {
                         Text("Besoin de sommeil cette nuit").font(.subheadline).foregroundStyle(.secondary)
-                        Text(need.total.hoursText).font(.system(size: 44, weight: .bold, design: .rounded))
+                        Text(need.total.hoursText).font(.system(.largeTitle, design: .rounded).weight(.bold)).monospacedDigit()
                         HStack(spacing: 6) {
                             Image(systemName: "moon.zzz.fill").foregroundStyle(Theme.sleep)
                             Text("Couche-toi vers \(need.bedtimeText)").font(.headline)
@@ -238,5 +238,39 @@ struct WeeklyReportCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// MARK: - Revue du dimanche
+
+/// Prévu vs réalisé, charge, 1 point fort, 1 point de vigilance, ajustement proposé.
+struct WeeklyReviewCard: View {
+    let report: WeeklyReport
+    let review: WeeklyReport.Review
+    @State private var narration: String?
+
+    var body: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 10) {
+                SectionTitle(title: "Revue de la semaine", symbol: "calendar.badge.checkmark")
+                HStack {
+                    StatTile(title: "Prévu / réalisé",
+                             value: "\(review.doneHours.oneDecimal) / \(review.plannedHours.map { $0.oneDecimal } ?? "–") h")
+                    StatTile(title: "Muscu", value: "\(review.doneStrength) / \(review.plannedStrength)")
+                    StatTile(title: "Charge", value: report.current.load.noDecimal, caption: "TSS sur 7 j")
+                }
+                Label(review.strongPoint, systemImage: "hand.thumbsup.fill").font(.footnote)
+                Label(review.vigilance, systemImage: "eye.fill").font(.footnote)
+                Label(review.adjustment, systemImage: "arrow.triangle.turn.up.right.circle.fill").font(.footnote.weight(.semibold))
+                if let narration {
+                    Divider()
+                    Text(narration).font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .task {
+            // Reformulation par le modèle local d'Apple si disponible : il ne calcule rien, il raconte.
+            narration = await WeeklyNarrator.narrate(report: report, review: review)
+        }
     }
 }
