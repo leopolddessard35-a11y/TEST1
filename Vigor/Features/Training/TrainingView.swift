@@ -12,6 +12,7 @@ struct TrainingView: View {
     }
 
     @State private var segment: Segment = .summary
+    @State private var showPlan = false
 
     var body: some View {
         NavigationStack {
@@ -23,7 +24,14 @@ struct TrainingView: View {
                     .pickerStyle(.segmented)
 
                     switch segment {
-                    case .summary: SnapshotReader { _, snapshot in LoadSummarySection(snapshot: snapshot) }
+                    case .summary:
+                        SnapshotReader { _, snapshot in
+                            VStack(spacing: 12) {
+                                ActivityOverview(snapshot: snapshot)
+                                SectionHeader(title: "Charge d'entraînement")
+                                LoadSummarySection(snapshot: snapshot)
+                            }
+                        }
                     case .strength: StrengthSection()
                     case .life: SnapshotReader { _, snapshot in LifeSection(lifeLoad7: snapshot.lifeLoad7) }
                     case .endurance: EnduranceSection()
@@ -33,7 +41,13 @@ struct TrainingView: View {
                 .padding(.bottom, 24)
             }
             .background(AppBackground())
-            .navigationTitle("Charge")
+            .navigationTitle("Activité")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showPlan = true } label: { Label("Plan", systemImage: "calendar") }
+                }
+            }
+            .sheet(isPresented: $showPlan) { PlanView(presentedAsSheet: true) }
         }
     }
 }

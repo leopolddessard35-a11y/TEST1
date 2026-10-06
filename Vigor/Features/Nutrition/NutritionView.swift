@@ -91,16 +91,29 @@ private struct MacroSummaryTile: View {
 
     var body: some View {
         GlassCard {
-            HStack(spacing: 16) {
-                ScoreRing(value: min(100, totals.kcal / max(targets.kcal, 1) * 100), color: Theme.nutrition, lineWidth: 10,
-                          label: "\(totals.kcal.noDecimal) / \(targets.kcal.noDecimal)")
-                    .frame(width: 110, height: 110)
-                VStack(alignment: .leading, spacing: 8) {
-                    MacroBar(label: "Protéines", value: totals.protein, target: targets.protein, unit: "g", color: Theme.recovery)
-                    MacroBar(label: "Glucides", value: totals.carbs, target: targets.carbs, unit: "g", color: Theme.sleep)
-                    MacroBar(label: "Lipides", value: totals.fat, target: targets.fat, unit: "g", color: Theme.strain)
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 16) {
+                    ZStack {
+                        GradientRing(fraction: totals.kcal / max(targets.kcal, 1), colors: Theme.nutritionGradient, lineWidth: 10)
+                        VStack(spacing: 0) {
+                            Text(totals.kcal.noDecimal).font(.system(.title3, design: .rounded).weight(.bold)).monospacedDigit()
+                            Text("kcal").font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(width: 92, height: 92)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Calories").font(.headline)
+                        Text("\(max(0, targets.kcal - totals.kcal).noDecimal) kcal restantes").font(.subheadline).foregroundStyle(.secondary)
+                        Text("objectif \(targets.kcal.noDecimal) kcal").font(.caption).foregroundStyle(.tertiary)
+                    }
+                    Spacer(minLength: 0)
+                    DetailChevron()
                 }
-                DetailChevron()
+                HStack(alignment: .top, spacing: 12) {
+                    MacroDots(label: "Protéines", value: totals.protein, target: targets.protein, color: Theme.recovery)
+                    MacroDots(label: "Glucides", value: totals.carbs, target: targets.carbs, color: Theme.sleep)
+                    MacroDots(label: "Lipides", value: totals.fat, target: targets.fat, color: Theme.strain)
+                }
             }
         }
     }

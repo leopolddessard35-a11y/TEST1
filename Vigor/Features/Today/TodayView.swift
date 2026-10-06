@@ -12,33 +12,39 @@ struct TodayView: View {
         NavigationStack {
             ScrollView {
                 SnapshotReader { _, snapshot in
-                    // Niveau 1 : le verdict. Niveau 2 : ses 3–4 raisons. Niveau 3 : le détail, au tap.
-                    VStack(spacing: 16) {
-                        ScoreTrio(snapshot: snapshot)
+                    // Niveau 1 : les trois anneaux + le coaching. Niveau 2 : le moniteur. Niveau 3 : le détail, au tap.
+                    VStack(spacing: 12) {
+                        RingsCoachingCard(snapshot: snapshot)
 
+                        SectionHeader(title: "Moniteur de santé", trailing: "vs ta normale")
+                        HealthMonitorGrid(snapshot: snapshot)
+
+                        SectionHeader(title: "Énergie")
                         NavigationLink {
                             DailyBriefDetailView(brief: snapshot.brief, confidence: snapshot.confidence)
                         } label: {
-                            DailyBriefCard(brief: snapshot.brief)
+                            EnergyCard(brief: snapshot.brief)
                         }
                         .buttonStyle(.plain)
 
-                        Button { addingFood = true } label: {
-                            Label("Ajouter un repas", systemImage: "fork.knife.circle.fill")
-                                .font(.headline)
-                                .frame(maxWidth: .infinity)
+                        SectionHeader(title: "Aliments du jour")
+                        if let targets = snapshot.macroTargets {
+                            TodayNutritionCard(targets: targets, today: snapshot.todayNutrition) { addingFood = true }
+                        } else {
+                            Button { addingFood = true } label: {
+                                Label("Ajouter un repas", systemImage: "plus").font(.headline).frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.glassProminent)
+                            .controlSize(.large)
                         }
-                        .buttonStyle(.glassProminent)
-                        .controlSize(.large)
-
-                        QuickEntryBar()
 
                         if let report = snapshot.weeklyReport, let review = snapshot.weeklyReview,
                            [1, 2].contains(Calendar.current.component(.weekday, from: .now)) {
+                            SectionHeader(title: "Revue de la semaine")
                             NavigationLink {
                                 DetailPage(title: "Revue de la semaine") { WeeklyReviewCard(report: report, review: review) }
                             } label: {
-                                SimpleTile(title: "Revue de la semaine", value: review.strongPoint, caption: review.adjustment,
+                                SimpleTile(title: "Point fort", value: review.strongPoint, caption: review.adjustment,
                                            symbol: "calendar.badge.checkmark", tint: Theme.sleep)
                             }
                             .buttonStyle(.plain)
@@ -49,7 +55,7 @@ struct TodayView: View {
                 }
             }
             .background(AppBackground())
-            .navigationTitle("Aujourd'hui")
+            .navigationTitle("Aujourd'hui, \(Date.now.formatted(.dateTime.day().month(.abbreviated)))")
             .sheet(isPresented: $showSettings) { SettingsView() }
             .sheet(isPresented: $addingFood) { AddFoodView { app.dataVersion += 1 } }
             .toolbar {
@@ -65,6 +71,192 @@ struct TodayView: View {
                 }
             }
             .refreshable { await app.syncAll(context: context, profile: profiles.first) }
+        }
+    }
+}
+
+/// Carte principale façon Bevel : effort, récupération, sommeil en anneaux, puis le coaching du jour.
+private struct RingsCoachingCard: View {
+    let snapshot: CoachSnapshot
+
+    var body: some View {
+        let brief = snapshot.brief
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 4) {
+                NavigationLink {
+                    EffortDetailView(today: snapshot.effortToday, target: snapshot.effortTarget, history: snapshot.effortHistory,
+                                     verdict: brief.verdict)
+                } label: {
+                    RingStat(title: "Effort", fraction: snapshot.effortToday / 21, text: snapshot.effortToday.oneDecimal,
+                             colors: Theme.strainGradient)
+                }
+                NavigationLink {
+                    ReadinessDetailView(readiness: snapshot.readiness, history: Array(snapshot.readinessHistory.suffix(30)),
+                                        hrvSource: snapshot.hrvSource)
+                } label: {
+                    RingStat(title: "Récupération", fraction: Double(snapshot.readiness?.score ?? 0) / 100,
+                             text: snapshot.readiness.map { "\($0.score)" } ?? "–", suffix: "%", colors: Theme.recoveryGradient)
+                }
+                NavigationLink {
+                    SleepNeedDetailView(need: snapshot.sleepNeed, performance: snapshot.lastSleepPerformance,
+                                        lastNight: snapshot.wellness.last.flatMap { Calendar.current.isDateInToday($0.day) ? $0.sleepHours : nil },
+                                        regularity: snapshot.bedtimeRegularity)
+                } label: {
+                    RingStat(title: "Sommeil", fraction: snapshot.lastSleepPerformance ?? 0,
+                             text: snapshot.lastSleepPerformance.map { "\(Int(($0 * 100).rounded()))" } ?? "–", suffix: "%",
+                             colors: Theme.sleepGradient)
+                }
+            }
+            .buttonStyle(.plain)
+
+            Divider()
+
+            NavigationLink {
+                DailyBriefDetailView(brief: brief, confidence: snapshot.confidence)
+            } label: {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("COACHING").font(.caption.weight(.bold)).tracking(1.2).foregroundStyle(.secondary)
+                        Spacer()
+                        DetailChevron()
+                    }
+                    Label(brief.verdict.label, systemImage: brief.verdict.symbol)
+                        .font(.headline)
+                        .foregroundStyle(brief.verdict.color)
+                    Text(brief.headline).font(.subheadline).foregroundStyle(.primary).lineLimit(3)
+                        .multilineTextAlignment(.leading)
+                    ForEach(brief.adapted) { session in
+                        SessionRow(session: session, changed: !brief.planned.contains(session), compact: true)
+                    }
+                }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card()
+        .scrollAppear()
+    }
+}
+
+/// Grille 2 colonnes : chaque mesure du matin comparée à ta normale des 30 derniers jours.
+private struct HealthMonitorGrid: View {
+    let snapshot: CoachSnapshot
+
+    var body: some View {
+        let wellness = snapshot.wellness
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+            tile(.respiration, series: snapshot.respirationSeries,
+                 note: snapshot.respiratory.map { String(format: "%+.1f resp/min vs ta normale", $0.delta) })
+            tile(.restingHR, series: MetricKind.restingHR.series(from: wellness))
+            tile(.hrv, series: snapshot.hrvSeries, note: snapshot.hrvSource)
+            tile(.sleep, series: MetricKind.sleep.series(from: wellness), extra: sleepTiles)
+            tile(.weight, series: MetricKind.weight.series(from: wellness))
+            tile(.vo2max, series: MetricKind.vo2max.series(from: wellness))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var sleepTiles: [(title: String, value: String, caption: String)] {
+        guard let regularity = snapshot.bedtimeRegularity else { return [] }
+        return [(title: "Coucher moyen", value: regularity.average, caption: "14 dernières nuits"),
+                (title: "Régularité", value: String(format: "±%.0f min", regularity.sd), caption: "repère : ±30 min")]
+    }
+
+    private func tile(_ kind: MetricKind, series: [DayValue], note: String? = nil,
+                      extra: [(title: String, value: String, caption: String)] = []) -> some View {
+        let reading = HealthReading.evaluate(series, higherIsBetter: kind.higherIsBetter)
+        let unit = kind == .sleep ? "" : kind.unit
+        return NavigationLink {
+            MetricDetailView(kind: kind, series: series, sourceNote: note, extraTiles: extra, events: snapshot.chartEvents)
+        } label: {
+            HealthMonitorTile(title: kind.shortTitle, symbol: kind.symbol, value: reading.latest.map { kind.format($0) } ?? "–",
+                              unit: unit, reading: reading)
+        }
+    }
+}
+
+extension MetricKind {
+    /// Titre court pour les tuiles du moniteur.
+    var shortTitle: String {
+        switch self {
+        case .respiration: "Respiration"
+        case .restingHR: "FC repos"
+        default: title
+        }
+    }
+}
+
+/// Énergie disponible du jour (capacité estimée par le coach), en barre à dégradé.
+private struct EnergyCard: View {
+    let brief: DailyBrief
+
+    var body: some View {
+        let percent = Int((min(1.2, max(0, brief.capacity)) * 100).rounded())
+        GlassCard {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    Image(systemName: "bolt.fill").foregroundStyle(Theme.recovery)
+                    Text("\(percent) %").font(.system(.title, design: .rounded).weight(.bold)).monospacedDigit()
+                    Text("de ta capacité").font(.subheadline).foregroundStyle(.secondary)
+                    Spacer()
+                    DetailChevron()
+                }
+                GradientBar(fraction: min(1, brief.capacity), colors: [Theme.warning, Theme.nutrition, Theme.recovery], height: 12)
+                if let first = brief.priorities.first {
+                    Text(first).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+                }
+            }
+        }
+    }
+}
+
+/// Aliments du jour façon Bevel : anneau des calories, grilles de points pour les macros, ajout en un tap.
+struct TodayNutritionCard: View {
+    let targets: MacroTargets
+    let today: NutritionDay
+    let onAdd: () -> Void
+
+    var body: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 14) {
+                NavigationLink {
+                    MacroTargetsDetailView(targets: targets, today: today)
+                } label: {
+                    HStack(spacing: 16) {
+                        ZStack {
+                            GradientRing(fraction: today.kcal / max(targets.kcal, 1), colors: Theme.nutritionGradient, lineWidth: 10)
+                            VStack(spacing: 0) {
+                                Text(today.kcal.noDecimal).font(.system(.title3, design: .rounded).weight(.bold)).monospacedDigit()
+                                Text("kcal").font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+                        .frame(width: 92, height: 92)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Calories").font(.headline)
+                            Text("\(max(0, targets.kcal - today.kcal).noDecimal) kcal restantes").font(.subheadline).foregroundStyle(.secondary)
+                            Text("objectif \(targets.kcal.noDecimal) kcal").font(.caption).foregroundStyle(.tertiary)
+                        }
+                        Spacer(minLength: 0)
+                        DetailChevron()
+                    }
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+
+                HStack(alignment: .top, spacing: 12) {
+                    MacroDots(label: "Protéines", value: today.protein, target: targets.protein, color: Theme.recovery)
+                    MacroDots(label: "Glucides", value: today.carbs, target: targets.carbs, color: Theme.sleep)
+                    MacroDots(label: "Lipides", value: today.fat, target: targets.fat, color: Theme.strain)
+                }
+
+                Button(action: onAdd) {
+                    Label("Ajouter un aliment", systemImage: "plus").font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.glassProminent)
+                .tint(Theme.nutrition)
+            }
         }
     }
 }

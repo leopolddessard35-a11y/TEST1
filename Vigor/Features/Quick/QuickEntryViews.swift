@@ -46,7 +46,7 @@ struct QuickEntryBar: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 10)
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 18))
+        .card(cornerRadius: 18)
     }
 
     private func addWater(_ ml: Double) {

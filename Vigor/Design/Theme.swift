@@ -1,11 +1,20 @@
 import SwiftUI
 
 enum Theme {
-    static let recovery = Color(red: 0.30, green: 0.89, blue: 0.78)
-    static let strain = Color(red: 1.00, green: 0.56, blue: 0.30)
-    static let sleep = Color(red: 0.55, green: 0.55, blue: 1.00)
-    static let nutrition = Color(red: 0.98, green: 0.80, blue: 0.30)
-    static let warning = Color(red: 1.00, green: 0.38, blue: 0.40)
+    // Palette inspirée de Bevel : couleurs franches, lisibles sur fond clair comme sombre.
+    static let recovery = Color(red: 0.20, green: 0.78, blue: 0.47)
+    static let strain = Color(red: 1.00, green: 0.52, blue: 0.22)
+    static let sleep = Color(red: 0.42, green: 0.45, blue: 0.98)
+    static let nutrition = Color(red: 0.98, green: 0.72, blue: 0.18)
+    static let warning = Color(red: 0.96, green: 0.30, blue: 0.33)
+
+    /// Dégradés des anneaux (clair → saturé), comme les cadrans de Bevel.
+    static let recoveryGradient = [Color(red: 0.62, green: 0.93, blue: 0.55), recovery]
+    static let strainGradient = [Color(red: 1.00, green: 0.80, blue: 0.36), strain]
+    static let sleepGradient = [Color(red: 0.62, green: 0.80, blue: 1.00), sleep]
+    static let nutritionGradient = [Color(red: 1.00, green: 0.88, blue: 0.45), nutrition]
+
+    static let cardRadius: CGFloat = 26
 
     static func color(for level: ReadinessLevel) -> Color {
         switch level {
@@ -16,27 +25,32 @@ enum Theme {
     }
 }
 
-/// Fond dégradé qui suit le mode clair / sombre de l'iPhone : le verre Liquid Glass réfracte ces couleurs.
+/// Fond uni gris très clair (blanc cassé) en mode clair, noir en mode sombre : les cartes blanches ressortent.
 struct AppBackground: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
-        let dark = colorScheme == .dark
-        ZStack {
-            LinearGradient(
-                colors: dark
-                    ? [Color(red: 0.04, green: 0.05, blue: 0.10), Color(red: 0.02, green: 0.10, blue: 0.14)]
-                    : [Color(red: 0.95, green: 0.97, blue: 0.99), Color(red: 0.90, green: 0.95, blue: 0.96)],
-                startPoint: .top, endPoint: .bottom)
-            Circle().fill(Theme.recovery.opacity(dark ? 0.35 : 0.30)).frame(width: 320).blur(radius: 120).offset(x: -140, y: -300)
-            Circle().fill(Theme.sleep.opacity(dark ? 0.30 : 0.25)).frame(width: 300).blur(radius: 120).offset(x: 160, y: 40)
-            Circle().fill(Theme.strain.opacity(dark ? 0.22 : 0.18)).frame(width: 260).blur(radius: 120).offset(x: -100, y: 380)
-        }
-        .ignoresSafeArea()
+        Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
     }
 }
 
-/// Carte en verre (Liquid Glass d'iOS 26+).
+/// Surface de carte : blanc arrondi + ombre douce (gris foncé en mode sombre).
+struct CardBackground: ViewModifier {
+    var cornerRadius: CGFloat = Theme.cardRadius
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content
+            .background(Color(uiColor: .secondarySystemGroupedBackground), in: .rect(cornerRadius: cornerRadius))
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0 : 0.06), radius: 14, y: 4)
+    }
+}
+
+extension View {
+    func card(cornerRadius: CGFloat = Theme.cardRadius) -> some View {
+        modifier(CardBackground(cornerRadius: cornerRadius))
+    }
+}
+
+/// Carte standard (nom historique conservé : plus de verre, une carte blanche façon Bevel).
 struct GlassCard<Content: View>: View {
     private let content: Content
 
@@ -48,8 +62,26 @@ struct GlassCard<Content: View>: View {
         content
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .glassEffect(.regular, in: .rect(cornerRadius: 24))
+            .card()
             .scrollAppear()
+    }
+}
+
+/// Titre de section en dehors des cartes (« Moniteur de santé », « Activité »…).
+struct SectionHeader: View {
+    let title: String
+    var trailing: String?
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title).font(.title3.weight(.bold))
+            Spacer()
+            if let trailing {
+                Text(trailing).font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 4)
+        .padding(.top, 8)
     }
 }
 
@@ -89,10 +121,10 @@ struct ScoreRing: View {
             Circle().stroke(color.opacity(0.18), lineWidth: lineWidth)
             Circle()
                 .trim(from: 0, to: max(0.001, min(1, shown / 100)))
-                .stroke(AngularGradient(colors: [color.opacity(0.5), color], center: .center),
+                .stroke(AngularGradient(colors: [color.opacity(0.55), color], center: .center,
+                                        startAngle: .degrees(0), endAngle: .degrees(360 * max(0.001, min(1, shown / 100)))),
                         style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-                .shadow(color: color.opacity(0.45), radius: 8)
             VStack(spacing: 2) {
                 CountingText(value: shown).font(.system(.largeTitle, design: .rounded).weight(.bold))
                 Text(label).font(.caption).foregroundStyle(.secondary)
@@ -126,7 +158,7 @@ struct MetricTile: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular, in: .rect(cornerRadius: 20))
+        .card(cornerRadius: 22)
     }
 }
 
@@ -180,7 +212,7 @@ struct SimpleTile: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular, in: .rect(cornerRadius: 20))
+        .card(cornerRadius: 22)
     }
 }
 

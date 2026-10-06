@@ -8,6 +8,9 @@ struct PlanView: View {
     @Query(sort: \Injury.start, order: .reverse) private var injuries: [Injury]
     @State private var showUnavailability = false
     @State private var showInjury = false
+    @Environment(\.dismiss) private var dismiss
+    /// Ouvert en feuille depuis l'onglet Activité : affiche un bouton OK.
+    var presentedAsSheet = false
 
     var body: some View {
         NavigationStack {
@@ -84,6 +87,11 @@ struct PlanView: View {
             }
             .background(AppBackground())
             .navigationTitle("Plan")
+            .toolbar {
+                if presentedAsSheet {
+                    ToolbarItem(placement: .confirmationAction) { Button("OK") { dismiss() } }
+                }
+            }
             .sheet(isPresented: $showUnavailability) { UnavailabilityForm() }
             .sheet(isPresented: $showInjury) { InjuryForm() }
         }

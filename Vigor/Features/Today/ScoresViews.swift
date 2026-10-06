@@ -74,7 +74,7 @@ struct Dial: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
-        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        .card(cornerRadius: 22)
         .onAppear { withAnimation(.spring(response: 1.1, dampingFraction: 0.8).delay(0.1)) { shown = value } }
         .onChange(of: value) { withAnimation(.spring(response: 0.8, dampingFraction: 0.8)) { shown = value } }
     }

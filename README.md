@@ -77,6 +77,13 @@ Réglables dans *Réglages → Notifications*.
 Tu récupères : séances complètes (TSS, puissance normalisée, IF), VFC nocturne (rMSSD), score de sommeil, readiness Garmin,
 FC de repos, SpO2, respiration, VO2max, poids, et le calendrier des séances prévues.
 
+## Design (v0.7, style Bevel)
+
+- Fond gris très clair, cartes blanches très arrondies avec ombre douce ; mode sombre automatique (cartes gris foncé sur fond noir).
+- Accueil : trois anneaux à dégradé (Effort, Récupération, Sommeil) et le « Coaching » du jour dessous ; « Moniteur de santé » en grille (respiration, FC repos, VFC, sommeil, poids, VO2max), avec une mini-jauge verticale et un statut Normal / Supérieur / Inférieur par rapport à ta médiane sur 30 jours ; énergie du jour ; aliments du jour (anneau des calories et grilles de points pour les macros).
+- Activité : calendrier de la semaine, effort du jour, fraîcheur musculaire par muscle (fatigue qui s'efface en 48 à 72 h, sorties vélo et course comptées pour les jambes). Le Plan s'ouvre avec le bouton calendrier.
+- Barre d'onglets flottante (Aujourd'hui, Activité, Santé, Nutrition) et bouton « + » rond : repas, eau, effort ressenti, symptôme, hors sport, imprévu, blessure.
+
 ## Installer l'app sur ton iPhone (gratuit, sans compte développeur payant)
 
 1. **Installe Xcode** sur ton Mac depuis l'App Store (gratuit, ~10 Go).

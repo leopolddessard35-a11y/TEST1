@@ -34,7 +34,7 @@ struct RecoveryView: View {
                 .padding(.bottom, 24)
             }
             .background(AppBackground())
-            .navigationTitle("Récup")
+            .navigationTitle("Santé")
         }
     }
 }
@@ -76,7 +76,7 @@ struct ContextTile: View {
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .glassEffect(.regular, in: .rect(cornerRadius: 20))
+            .card(cornerRadius: 20)
         }
         .buttonStyle(.plain)
     }

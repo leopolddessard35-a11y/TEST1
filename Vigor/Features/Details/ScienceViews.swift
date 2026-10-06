@@ -45,7 +45,7 @@ struct StatTile: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular, in: .rect(cornerRadius: 18))
+        .card(cornerRadius: 18)
     }
 }
 
