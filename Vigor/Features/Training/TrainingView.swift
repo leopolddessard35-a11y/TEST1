@@ -28,7 +28,7 @@ struct TrainingView: View {
                         SnapshotReader { _, snapshot in
                             VStack(spacing: 12) {
                                 ActivityOverview(snapshot: snapshot)
-                                SectionHeader(title: "Charge d'entraînement")
+                                SectionHeader(title: "Charge d'entraînement", symbol: "chart.line.uptrend.xyaxis", tint: Theme.strain)
                                 LoadSummarySection(snapshot: snapshot)
                             }
                         }

@@ -156,12 +156,13 @@ struct HealthMonitorTile: View {
     let value: String
     let unit: String
     let reading: HealthReading
+    var tint: Color = Theme.sleep
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 5) {
-                    Image(systemName: symbol).font(.caption.weight(.semibold))
+                HStack(spacing: 6) {
+                    IconBadge(symbol: symbol, tint: tint, size: 22)
                     Text(title).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
@@ -179,7 +180,7 @@ struct HealthMonitorTile: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .card(cornerRadius: 22)
+        .card(cornerRadius: 22, tint: tint)
     }
 }
 

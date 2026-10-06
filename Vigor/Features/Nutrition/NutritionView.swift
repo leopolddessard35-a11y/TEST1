@@ -90,7 +90,7 @@ private struct MacroSummaryTile: View {
     let totals: NutritionDay
 
     var body: some View {
-        GlassCard {
+        GlassCard(tint: Theme.nutrition) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 16) {
                     ZStack {

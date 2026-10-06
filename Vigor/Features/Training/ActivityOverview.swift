@@ -27,9 +27,10 @@ struct ActivityOverview: View {
             NavigationLink {
                 DetailPage(title: "Fraîcheur musculaire") { MuscleFreshnessList(entries: entries) }
             } label: {
-                GlassCard {
+                GlassCard(tint: Theme.recovery) {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
+                            IconBadge(symbol: "figure.strengthtraining.traditional", tint: Theme.recovery, size: 24)
                             Text("Fraîcheur musculaire").font(.headline)
                             Spacer()
                             DetailChevron()
@@ -46,9 +47,10 @@ struct ActivityOverview: View {
     }
 
     private var weekCard: some View {
-        GlassCard {
+        GlassCard(tint: Theme.sleep) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
+                    IconBadge(symbol: "calendar", tint: Theme.sleep, size: 24)
                     Text("Cette semaine").font(.headline)
                     Spacer()
                     if let week = snapshot.plan.currentWeek {
@@ -63,7 +65,7 @@ struct ActivityOverview: View {
 
     private var effortCard: some View {
         let target = snapshot.effortTarget
-        return GlassCard {
+        return GlassCard(tint: Theme.strain) {
             HStack(spacing: 16) {
                 ZStack {
                     GradientRing(fraction: snapshot.effortToday / 21, colors: Theme.strainGradient, lineWidth: 10)

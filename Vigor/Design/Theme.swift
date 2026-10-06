@@ -25,36 +25,98 @@ enum Theme {
     }
 }
 
-/// Fond uni gris très clair (blanc cassé) en mode clair, noir en mode sombre : les cartes blanches ressortent.
+/// Fond clair avec un voile de couleur pastel en haut et un grain très fin : du relief sans perdre la propreté.
 struct AppBackground: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
-        Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
+        let dark = colorScheme == .dark
+        ZStack {
+            Color(uiColor: .systemGroupedBackground)
+            // Halo coloré en haut de l'écran, qui s'efface vers le milieu.
+            ZStack {
+                Circle().fill(Theme.strain.opacity(dark ? 0.22 : 0.16)).frame(width: 340).blur(radius: 110).offset(x: -150, y: -330)
+                Circle().fill(Theme.sleep.opacity(dark ? 0.24 : 0.14)).frame(width: 320).blur(radius: 120).offset(x: 160, y: -280)
+                Circle().fill(Theme.recovery.opacity(dark ? 0.16 : 0.10)).frame(width: 300).blur(radius: 130).offset(x: 40, y: -120)
+            }
+            LinearGradient(colors: [.clear, Color(uiColor: .systemGroupedBackground).opacity(0.0), Color(uiColor: .systemGroupedBackground)],
+                           startPoint: .top, endPoint: .center)
+            PaperGrain(opacity: dark ? 0.05 : 0.035)
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
     }
 }
 
-/// Surface de carte : blanc arrondi + ombre douce (gris foncé en mode sombre).
+/// Grain très fin (façon papier), dessiné une seule fois avec un tirage pseudo-aléatoire fixe.
+struct PaperGrain: View {
+    var opacity: Double
+
+    var body: some View {
+        Canvas { context, size in
+            var seed: UInt64 = 0x9E3779B97F4A7C15
+            func next() -> Double {
+                seed = seed &* 6364136223846793005 &+ 1442695040888963407
+                return Double(seed >> 33) / Double(UInt64(1) << 31)
+            }
+            let count = Int(size.width * size.height / 90)
+            for _ in 0..<count {
+                let x = next() * size.width, y = next() * size.height
+                let light = next() > 0.5
+                context.fill(Path(CGRect(x: x, y: y, width: 1, height: 1)),
+                             with: .color(light ? .white : .black))
+            }
+        }
+        .opacity(opacity)
+        .drawingGroup()
+    }
+}
+
+/// Surface de carte : blanc légèrement bombé (dégradé), liseré lumineux, ombre douce en deux couches,
+/// et en option un voile de couleur dans le coin supérieur.
 struct CardBackground: ViewModifier {
     var cornerRadius: CGFloat = Theme.cardRadius
+    var tint: Color?
     @Environment(\.colorScheme) private var colorScheme
 
     func body(content: Content) -> some View {
+        let dark = colorScheme == .dark
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         content
-            .background(Color(uiColor: .secondarySystemGroupedBackground), in: .rect(cornerRadius: cornerRadius))
-            .shadow(color: .black.opacity(colorScheme == .dark ? 0 : 0.06), radius: 14, y: 4)
+            .background {
+                ZStack {
+                    shape.fill(Color(uiColor: .secondarySystemGroupedBackground))
+                    shape.fill(LinearGradient(colors: [.white.opacity(dark ? 0.05 : 0.6), .clear],
+                                              startPoint: .top, endPoint: .bottom))
+                    if let tint {
+                        shape.fill(RadialGradient(colors: [tint.opacity(dark ? 0.22 : 0.13), .clear],
+                                                  center: .topLeading, startRadius: 0, endRadius: 260))
+                    }
+                }
+            }
+            .overlay {
+                shape.strokeBorder(LinearGradient(colors: [.white.opacity(dark ? 0.14 : 0.95), (tint ?? .black).opacity(dark ? 0.04 : 0.06)],
+                                                  startPoint: .top, endPoint: .bottom),
+                                   lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(dark ? 0 : 0.04), radius: 2, y: 1)
+            .shadow(color: (tint ?? .black).opacity(dark ? 0 : (tint == nil ? 0.07 : 0.10)), radius: 18, y: 8)
     }
 }
 
 extension View {
-    func card(cornerRadius: CGFloat = Theme.cardRadius) -> some View {
-        modifier(CardBackground(cornerRadius: cornerRadius))
+    func card(cornerRadius: CGFloat = Theme.cardRadius, tint: Color? = nil) -> some View {
+        modifier(CardBackground(cornerRadius: cornerRadius, tint: tint))
     }
 }
 
 /// Carte standard (nom historique conservé : plus de verre, une carte blanche façon Bevel).
 struct GlassCard<Content: View>: View {
+    private let tint: Color?
     private let content: Content
 
-    init(@ViewBuilder content: () -> Content) {
+    init(tint: Color? = nil, @ViewBuilder content: () -> Content) {
+        self.tint = tint
         self.content = content()
     }
 
@@ -62,8 +124,24 @@ struct GlassCard<Content: View>: View {
         content
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .card()
+            .card(tint: tint)
             .scrollAppear()
+    }
+}
+
+/// Pastille d'icône colorée (dégradé), utilisée dans les titres et les tuiles.
+struct IconBadge: View {
+    let symbol: String
+    let tint: Color
+    var size: CGFloat = 26
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: size * 0.5, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(tint.gradient, in: .rect(cornerRadius: size * 0.32, style: .continuous))
+            .shadow(color: tint.opacity(0.35), radius: 4, y: 2)
     }
 }
 
@@ -71,9 +149,12 @@ struct GlassCard<Content: View>: View {
 struct SectionHeader: View {
     let title: String
     var trailing: String?
+    var symbol: String?
+    var tint: Color = Theme.strain
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
+        HStack(alignment: .center, spacing: 8) {
+            if let symbol { IconBadge(symbol: symbol, tint: tint, size: 24) }
             Text(title).font(.title3.weight(.bold))
             Spacer()
             if let trailing {
@@ -158,7 +239,7 @@ struct MetricTile: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .card(cornerRadius: 22)
+        .card(cornerRadius: 22, tint: tint == .primary ? nil : tint)
     }
 }
 
@@ -212,7 +293,7 @@ struct SimpleTile: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .card(cornerRadius: 22)
+        .card(cornerRadius: 22, tint: tint == .primary ? nil : tint)
     }
 }
 

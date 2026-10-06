@@ -121,6 +121,7 @@ struct QuickAddView: View {
                 .foregroundStyle(.white)
                 .frame(width: 40, height: 40)
                 .background(action.tint.gradient, in: .circle)
+                .shadow(color: action.tint.opacity(0.35), radius: 6, y: 3)
             VStack(alignment: .leading, spacing: 2) {
                 Text(action.title).font(.subheadline.weight(.semibold))
                 Text(action.caption).font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -128,11 +129,11 @@ struct QuickAddView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .card(cornerRadius: 22)
+        .card(cornerRadius: 22, tint: action.tint)
     }
 
     private var waterCard: some View {
-        GlassCard {
+        GlassCard(tint: Theme.sleep) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Label("Eau", systemImage: "drop.fill").font(.headline).foregroundStyle(Theme.sleep)

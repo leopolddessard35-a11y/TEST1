@@ -16,10 +16,10 @@ struct TodayView: View {
                     VStack(spacing: 12) {
                         RingsCoachingCard(snapshot: snapshot)
 
-                        SectionHeader(title: "Moniteur de santé", trailing: "vs ta normale")
+                        SectionHeader(title: "Moniteur de santé", trailing: "vs ta normale", symbol: "heart.text.square.fill", tint: Theme.warning)
                         HealthMonitorGrid(snapshot: snapshot)
 
-                        SectionHeader(title: "Énergie")
+                        SectionHeader(title: "Énergie", symbol: "bolt.fill", tint: Theme.recovery)
                         NavigationLink {
                             DailyBriefDetailView(brief: snapshot.brief, confidence: snapshot.confidence)
                         } label: {
@@ -27,7 +27,7 @@ struct TodayView: View {
                         }
                         .buttonStyle(.plain)
 
-                        SectionHeader(title: "Aliments du jour")
+                        SectionHeader(title: "Aliments du jour", symbol: "fork.knife", tint: Theme.nutrition)
                         if let targets = snapshot.macroTargets {
                             TodayNutritionCard(targets: targets, today: snapshot.todayNutrition) { addingFood = true }
                         } else {
@@ -40,7 +40,7 @@ struct TodayView: View {
 
                         if let report = snapshot.weeklyReport, let review = snapshot.weeklyReview,
                            [1, 2].contains(Calendar.current.component(.weekday, from: .now)) {
-                            SectionHeader(title: "Revue de la semaine")
+                            SectionHeader(title: "Revue de la semaine", symbol: "calendar", tint: Theme.sleep)
                             NavigationLink {
                                 DetailPage(title: "Revue de la semaine") { WeeklyReviewCard(report: report, review: review) }
                             } label: {
@@ -135,7 +135,7 @@ private struct RingsCoachingCard: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .card()
+        .card(tint: brief.verdict.color)
         .scrollAppear()
     }
 }
@@ -172,7 +172,7 @@ private struct HealthMonitorGrid: View {
             MetricDetailView(kind: kind, series: series, sourceNote: note, extraTiles: extra, events: snapshot.chartEvents)
         } label: {
             HealthMonitorTile(title: kind.shortTitle, symbol: kind.symbol, value: reading.latest.map { kind.format($0) } ?? "–",
-                              unit: unit, reading: reading)
+                              unit: unit, reading: reading, tint: kind.color)
         }
     }
 }
@@ -194,7 +194,7 @@ private struct EnergyCard: View {
 
     var body: some View {
         let percent = Int((min(1.2, max(0, brief.capacity)) * 100).rounded())
-        GlassCard {
+        GlassCard(tint: Theme.recovery) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline) {
                     Image(systemName: "bolt.fill").foregroundStyle(Theme.recovery)
@@ -219,7 +219,7 @@ struct TodayNutritionCard: View {
     let onAdd: () -> Void
 
     var body: some View {
-        GlassCard {
+        GlassCard(tint: Theme.nutrition) {
             VStack(alignment: .leading, spacing: 14) {
                 NavigationLink {
                     MacroTargetsDetailView(targets: targets, today: today)
