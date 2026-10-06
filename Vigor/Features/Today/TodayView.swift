@@ -5,23 +5,28 @@ struct TodayView: View {
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
     @Query private var profiles: [AthleteProfile]
+    @State private var showSettings = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 SnapshotReader { profile, snapshot in
                     VStack(spacing: 16) {
-                        NavigationLink {
-                            ReadinessDetailView(readiness: snapshot.readiness, history: snapshot.readinessHistory, hrvSource: snapshot.hrvSource)
-                        } label: {
-                            ReadinessCard(readiness: snapshot.readiness, advice: snapshot.readiness?.level.advice ?? "")
-                        }
-                        .buttonStyle(.plain)
-
+                        // La décision du jour en premier : go, adapter ou repos.
                         NavigationLink {
                             DailyBriefDetailView(brief: snapshot.brief)
                         } label: {
                             DailyBriefCard(brief: snapshot.brief)
+                        }
+                        .buttonStyle(.plain)
+
+                        QuickEntryBar()
+
+                        NavigationLink {
+                            ReadinessDetailView(readiness: snapshot.readiness, history: Array(snapshot.readinessHistory.suffix(30)),
+                                                hrvSource: snapshot.hrvSource)
+                        } label: {
+                            ReadinessCard(readiness: snapshot.readiness, advice: snapshot.readiness?.level.advice ?? "")
                         }
                         .buttonStyle(.plain)
 
@@ -43,8 +48,11 @@ struct TodayView: View {
                             .buttonStyle(.plain)
                         }
 
+                        HydrationCard(target: snapshot.hydrationTarget, today: snapshot.waterToday)
+
                         NavigationLink {
-                            LoadDetailView(load: snapshot.load)
+                            LoadDetailView(load: snapshot.load, disciplines: snapshot.disciplineLoads, volumes: snapshot.weeklyVolumes,
+                                           alerts: snapshot.volumeAlerts, lifeLoad7: snapshot.lifeLoad7)
                         } label: {
                             LoadCard(point: snapshot.today)
                         }
@@ -66,7 +74,11 @@ struct TodayView: View {
             }
             .background(AppBackground())
             .navigationTitle("Aujourd'hui")
+            .sheet(isPresented: $showSettings) { SettingsView() }
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { showSettings = true } label: { Image(systemName: "gearshape") }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         Task { await app.syncAll(context: context, profile: profiles.first) }
@@ -152,7 +164,8 @@ private struct WellnessGrid: View {
         let latest = snapshot.latestWellness
         let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
         LazyVGrid(columns: columns, spacing: 12) {
-            tile(.sleep, value: latest?.sleepHours?.hoursText ?? "–", unit: "", series: MetricKind.sleep.series(from: wellness))
+            tile(.sleep, value: latest?.sleepHours?.hoursText ?? "–", unit: "", series: MetricKind.sleep.series(from: wellness),
+                 extra: sleepTiles)
             tile(.hrv, value: snapshot.hrvSeries.last?.value.noDecimal ?? "–", unit: "ms", series: snapshot.hrvSeries, note: snapshot.hrvSource)
             tile(.restingHR, value: latest?.restingHeartRate?.noDecimal ?? "–", unit: "bpm", series: MetricKind.restingHR.series(from: wellness))
             tile(.steps, value: latest?.steps?.noDecimal ?? "–", unit: "", series: MetricKind.steps.series(from: wellness))
@@ -163,9 +176,16 @@ private struct WellnessGrid: View {
         }
     }
 
-    private func tile(_ kind: MetricKind, value: String, unit: String, series: [DayValue], note: String? = nil) -> some View {
+    private var sleepTiles: [(title: String, value: String, caption: String)] {
+        guard let regularity = snapshot.bedtimeRegularity else { return [] }
+        return [(title: "Coucher moyen", value: regularity.average, caption: "14 dernières nuits"),
+                (title: "Régularité", value: String(format: "±%.0f min", regularity.sd), caption: "repère : ±30 min")]
+    }
+
+    private func tile(_ kind: MetricKind, value: String, unit: String, series: [DayValue], note: String? = nil,
+                      extra: [(title: String, value: String, caption: String)] = []) -> some View {
         NavigationLink {
-            MetricDetailView(kind: kind, series: series, sourceNote: note)
+            MetricDetailView(kind: kind, series: series, sourceNote: note, extraTiles: extra)
         } label: {
             MetricTile(title: kind.title, value: value, unit: unit, symbol: kind.symbol, tint: kind.color)
                 .overlay(alignment: .topTrailing) { DetailChevron().padding(12) }
@@ -306,6 +326,38 @@ private struct RaceCountdownCard: View {
                     Text("J-\(max(days, 0))").font(.system(size: 34, weight: .bold, design: .rounded))
                     Text("\(max(days, 0) / 7) semaines").font(.caption).foregroundStyle(.secondary)
                 }
+            }
+        }
+    }
+}
+
+/// Hydratation du jour, avec ajout en un geste.
+struct HydrationCard: View {
+    @Environment(\.modelContext) private var context
+    @Environment(AppModel.self) private var app
+    let target: Double
+    let today: Double
+
+    var body: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    SectionTitle(title: "Hydratation", symbol: "drop.fill")
+                    Spacer()
+                    Text(String(format: "%.1f / %.1f L", today / 1000, target / 1000)).font(.subheadline.monospacedDigit())
+                }
+                AnimatedBar(fraction: target > 0 ? today / target : 0, color: Theme.sleep, height: 10)
+                HStack {
+                    ForEach([250.0, 500, 750], id: \.self) { ml in
+                        Button("+\(Int(ml)) ml") {
+                            QuickActions.addWater(ml, context: context)
+                            app.dataVersion += 1
+                        }
+                        .buttonStyle(.glass)
+                        .font(.caption)
+                    }
+                }
+                Text("Objectif : 35 ml/kg + 600 ml par heure d'entraînement prévue.").font(.caption2).foregroundStyle(.secondary)
             }
         }
     }

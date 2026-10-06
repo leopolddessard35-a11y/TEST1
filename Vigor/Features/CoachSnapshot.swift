@@ -26,6 +26,24 @@ struct CoachSnapshot {
     /// Repas déjà renseignés aujourd'hui (pas de rappel pour ceux-là).
     let loggedMealsToday: Set<Meal>
 
+    // Suivi avancé
+    let disciplineLoads: [DisciplineLoad]
+    let weeklyVolumes: [WeeklyVolume]
+    let volumeAlerts: [String]
+    let bedtimeRegularity: (sd: Double, average: String)?
+    let correlations: [Correlation]
+    let symptomPatterns: [SymptomPattern]
+    let weekStatus: [DayStatus]
+    let milestones: [Milestone]
+    /// Poids en moyenne mobile 7 jours.
+    let weightMA7: [DayValue]
+    let hydrationTarget: Double
+    let waterToday: Double
+    let shoeKm: [(name: String, km: Double)]
+    let lifeLoad7: Double
+    /// Apports par jour (jours renseignés).
+    let nutritionDays: [NutritionDay]
+
     var today: LoadPoint? { load.last }
 
     static func build(profile: AthleteProfile,
@@ -36,6 +54,9 @@ struct CoachSnapshot {
                       injuries: [Injury],
                       foods: [FoodEntry],
                       planned: [PlannedWorkout],
+                      lifeActivities: [LifeActivity] = [],
+                      symptoms: [Symptom] = [],
+                      shoes: [Shoe] = [],
                       now: Date = .now) -> CoachSnapshot {
         let calendar = Calendar.current
         let thresholds = profile.thresholds
@@ -46,7 +67,7 @@ struct CoachSnapshot {
             let tss = activity.providedTSS ?? TrainingLoad.estimateTSS(
                 sport: activity.sport, durationSeconds: activity.durationSeconds,
                 normalizedPower: activity.normalizedPower, averagePower: activity.averagePower,
-                averageHeartRate: activity.averageHeartRate, thresholds: thresholds)
+                averageHeartRate: activity.averageHeartRate, rpe: activity.rpe, thresholds: thresholds)
             let intensity = activity.providedIntensity ?? TrainingLoad.intensityFactor(
                 sport: activity.sport, normalizedPower: activity.normalizedPower, averagePower: activity.averagePower,
                 averageHeartRate: activity.averageHeartRate, thresholds: thresholds)
@@ -56,8 +77,17 @@ struct CoachSnapshot {
         var items: [(date: Date, tss: Double)] = []
         for sample in samples { items.append((date: sample.date, tss: sample.tss)) }
         for workout in strength {
-            let tss: Double = TrainingLoad.estimateTSS(sport: .strength, durationSeconds: workout.durationSeconds, thresholds: thresholds)
+            let tss: Double = TrainingLoad.estimateTSS(sport: .strength, durationSeconds: workout.durationSeconds, rpe: workout.rpe, thresholds: thresholds)
             items.append((date: workout.start, tss: tss))
+        }
+        // Charge hors sport : activités physiques déclarées + pas au-delà de 12 000.
+        for life in lifeActivities {
+            items.append((date: life.date, tss: life.loadEquivalent))
+        }
+        for record in wellness {
+            if let steps = record.steps, steps > 12_000 {
+                items.append((date: record.day, tss: (steps - 12_000) / 1000 * 2))
+            }
         }
         let daily: [Date: Double] = TrainingLoad.dailyTotals(items, calendar: calendar)
         let fallbackStart: Date = calendar.date(byAdding: .day, value: -60, to: now) ?? now
@@ -92,7 +122,7 @@ struct CoachSnapshot {
                 form: loadByDay[day]?.form, today: day, calendar: calendar)
         }
         let todayReadiness = readiness(on: todayStart)
-        let history: [DayValue] = (0..<30).reversed().compactMap { offset in
+        let history: [DayValue] = (0..<60).reversed().compactMap { offset in
             guard let day = calendar.date(byAdding: .day, value: -offset, to: todayStart),
                   let result = readiness(on: day) else { return nil }
             return DayValue(date: day, value: Double(result.score))
@@ -195,7 +225,181 @@ struct CoachSnapshot {
             sleepNeedHours: profile.sleepNeedHours,
             phase: plan.currentWeek?.phase,
             readiness: todayReadiness)
-        let insights: [Insight] = InsightEngine.analyze(insightInput, calendar: calendar)
+        var insights: [Insight] = InsightEngine.analyze(insightInput, calendar: calendar)
+
+        // Suivi avancé : discipline, volume, hors sport, sommeil, symptômes, chaussures, hydratation.
+        var loadItems: [LoadItem] = []
+        for sample in samples {
+            let name: String = sample.sport.isCycling ? "Vélo" : (sample.sport == .running ? "Course" : "Autre")
+            loadItems.append(LoadItem(date: sample.date, tss: sample.tss, discipline: name))
+        }
+        var tonnage: [(date: Date, kg: Double)] = []
+        for workout in strength {
+            let tss: Double = TrainingLoad.estimateTSS(sport: .strength, durationSeconds: workout.durationSeconds, rpe: workout.rpe, thresholds: thresholds)
+            loadItems.append(LoadItem(date: workout.start, tss: tss, discipline: "Muscu"))
+            var kg: Double = 0
+            for set in workout.sets where !set.isWarmup {
+                kg += (set.weightKg ?? 0) * Double(set.reps ?? 0)
+            }
+            tonnage.append((date: workout.start, kg: kg))
+        }
+        var lifeMinutes: [(date: Date, minutes: Double)] = []
+        let weekAgo: Date = calendar.date(byAdding: .day, value: -7, to: now) ?? now
+        var lifeLoad7: Double = 0
+        var lifeHours7: Double = 0
+        var lifeByDay: [Date: Double] = [:]
+        for life in lifeActivities {
+            loadItems.append(LoadItem(date: life.date, tss: life.loadEquivalent, discipline: "Hors sport"))
+            lifeMinutes.append((date: life.date, minutes: Double(life.minutes)))
+            lifeByDay[calendar.startOfDay(for: life.date), default: 0] += life.loadEquivalent
+            if life.date >= weekAgo {
+                lifeLoad7 += life.loadEquivalent
+                lifeHours7 += Double(life.minutes) / 60
+            }
+        }
+        let disciplineLoads: [DisciplineLoad] = LoadAnalytics.disciplineLoads(loadItems, today: now, calendar: calendar)
+
+        var volumeSamples: [VolumeSample] = []
+        var endurance: [EnduranceQuality] = []
+        var rated: [RatedSession] = []
+        for (index, activity) in activities.enumerated() {
+            volumeSamples.append(VolumeSample(date: activity.start, sport: activity.sport,
+                                              seconds: activity.durationSeconds, meters: activity.distanceMeters ?? 0))
+            endurance.append(EnduranceQuality(date: activity.start, durationSeconds: activity.durationSeconds,
+                                              zoneSeconds: activity.zoneSeconds, decoupling: activity.decouplingPercent))
+            if let rpe = activity.rpe {
+                rated.append(RatedSession(date: activity.start, rpe: rpe, intensityFactor: samples[index].intensityFactor))
+            }
+        }
+        let weeklyVolumes: [WeeklyVolume] = LoadAnalytics.weeklyVolumes(samples: volumeSamples, tonnage: tonnage,
+                                                                         life: lifeMinutes, weeks: 8, today: now)
+        let volumeAlerts: [String] = LoadAnalytics.progressionAlerts(weeklyVolumes)
+
+        let twoWeeksAgo: Date = calendar.date(byAdding: .day, value: -14, to: todayStart) ?? todayStart
+        var bedtimes: [Date] = []
+        for record in sortedWellness where record.day >= twoWeeksAgo {
+            if let bedtime = record.bedtime { bedtimes.append(bedtime) }
+        }
+        let bedtimeRegularity = SleepAnalytics.bedtimeRegularity(bedtimes, calendar: calendar)
+
+        // Chaussures (kilométrage des sorties course).
+        var shoeNames: [String: String] = [:]
+        var shoeKmByID: [String: Double] = [:]
+        for shoe in shoes {
+            shoeNames[shoe.shoeID] = shoe.name
+            shoeKmByID[shoe.shoeID] = shoe.initialKm
+        }
+        let defaultShoeID: String? = shoes.first { $0.isDefault && !$0.retired }?.shoeID
+        var runsByShoe: [String: Int] = [:]
+        for activity in activities where activity.sport == .running {
+            guard let id = activity.shoeID ?? defaultShoeID else { continue }
+            shoeKmByID[id, default: 0] += (activity.distanceMeters ?? 0) / 1000
+            if let name = shoeNames[id] { runsByShoe[name, default: 0] += 1 }
+        }
+        var shoeKm: [(name: String, km: Double)] = []
+        for shoe in shoes where !shoe.retired {
+            shoeKm.append((name: shoe.name, km: shoeKmByID[shoe.shoeID] ?? 0))
+        }
+
+        // Journal de symptômes.
+        var symptomRecords: [SymptomRecord] = []
+        var zoneByKey: [String: BodyZone] = [:]
+        for symptom in symptoms {
+            let day = calendar.startOfDay(for: symptom.date)
+            let shoeName: String? = symptom.shoeID.flatMap { shoeNames[$0] }
+            zoneByKey[symptom.key] = symptom.zone
+            symptomRecords.append(SymptomRecord(date: symptom.date, key: symptom.key, intensity: symptom.intensity,
+                                                onsetMinutes: symptom.onsetMinutes, shoe: shoeName,
+                                                terrain: symptom.terrain?.label, fatigue: symptom.fatigue,
+                                                previousSleep: wellnessByDay[day]?.sleepHours))
+        }
+        let symptomPatterns: [SymptomPattern] = SymptomAnalysis.patterns(symptomRecords, runsByShoe: runsByShoe, today: now)
+        let legZones: Set<BodyZone> = [.foot, .ankle, .calf, .shin, .knee, .hamstring, .quad, .hip, .glute]
+        var recurrentLeg: [String] = []
+        for pattern in symptomPatterns where pattern.isRecurrent {
+            if let zone = zoneByKey[pattern.key], legZones.contains(zone) { recurrentLeg.append(pattern.key) }
+        }
+
+        // Hydratation : ~35 ml/kg + 600 ml par heure d'entraînement prévue.
+        let hydrationTarget: Double = (currentWeight > 0 ? currentWeight * 35 : 2500) + trainingHours * 600
+        let waterToday: Double = wellnessByDay[todayStart]?.waterMl ?? 0
+        var waterRatios: [Double] = []
+        for offset in 1...7 {
+            guard let day = calendar.date(byAdding: .day, value: -offset, to: todayStart),
+                  let water = wellnessByDay[day]?.waterMl, water > 0 else { continue }
+            waterRatios.append(water / max(hydrationTarget, 1))
+        }
+
+        let advanced: [Insight] = AdvancedInsights.analyze(
+            disciplineLoads: disciplineLoads,
+            volumeAlerts: volumeAlerts,
+            lifeLoad7: lifeLoad7,
+            lifeHours7: lifeHours7,
+            rated: rated,
+            bedtimeSD: bedtimeRegularity?.sd,
+            averageBedtime: bedtimeRegularity?.average,
+            endurance: endurance,
+            symptoms: symptomPatterns,
+            shoeKm: shoeKm,
+            waterRatio7: waterRatios.count >= 3 ? Stats.mean(waterRatios) : nil,
+            today: now)
+        insights.append(contentsOf: advanced)
+        insights.sort { $0.severity > $1.severity }
+
+        // Croisements jour par jour (120 jours).
+        var readinessByDay: [Date: Double] = [:]
+        for point in history { readinessByDay[point.date] = point.value }
+        var rpeByDay: [Date: [Double]] = [:]
+        for session in rated { rpeByDay[calendar.startOfDay(for: session.date), default: []].append(Double(session.rpe)) }
+        var dayRecords: [DayRecord] = []
+        for offset in 0..<120 {
+            guard let day = calendar.date(byAdding: .day, value: -offset, to: todayStart) else { continue }
+            var record = DayRecord(date: day)
+            let wellnessDay = wellnessByDay[day]
+            record.sleep = wellnessDay?.sleepHours
+            record.hrv = useGarmin ? wellnessDay?.hrvRMSSD : wellnessDay?.hrvMs
+            record.restingHR = wellnessDay?.restingHeartRate
+            record.load = daily[day] ?? 0
+            record.lifeLoad = lifeByDay[day] ?? 0
+            let nutrition = totalsByDay[day]
+            if let nutrition, nutrition.kcal > 800 {
+                record.kcal = nutrition.kcal
+                record.protein = nutrition.protein
+                record.carbs = nutrition.carbs
+            }
+            record.readiness = readinessByDay[day]
+            record.rpe = rpeByDay[day].flatMap { Stats.mean($0) }
+            dayRecords.append(record)
+        }
+        let correlations: [Correlation] = Correlations.analyze(dayRecords)
+
+        // Poids : moyenne mobile 7 jours.
+        var weightMA7: [DayValue] = []
+        for point in weights {
+            let windowStart = point.date.addingTimeInterval(-6 * 86_400)
+            let window: [Double] = weights.filter { $0.date >= windowStart && $0.date <= point.date }.map(\.value)
+            if let mean = Stats.mean(window) { weightMA7.append(DayValue(date: point.date, value: mean)) }
+        }
+
+        // Prévu vs réalisé (semaine en cours) et jalons.
+        var bikeDays = Set<Date>()
+        var strengthDays = Set<Date>()
+        var doneLabels: [Date: [String]] = [:]
+        for activity in activities {
+            let day = calendar.startOfDay(for: activity.start)
+            bikeDays.insert(day)
+            doneLabels[day, default: []].append("\(activity.sport.label) \((activity.durationSeconds / 3600).hoursText)")
+        }
+        for workout in strength {
+            let day = calendar.startOfDay(for: workout.start)
+            strengthDays.insert(day)
+            doneLabels[day, default: []].append(workout.title)
+        }
+        let weekStatus: [DayStatus] = plan.currentWeek.map {
+            PlanTracking.weekStatus(week: $0, bikeDays: bikeDays, strengthDays: strengthDays, doneLabels: doneLabels,
+                                    today: now, ftp: thresholds.ftp, calendar: calendar)
+        } ?? []
+        let milestones: [Milestone] = PlanTracking.milestones(plan: plan)
         // Coach du jour : croisement santé × entraînement × nutrition.
         var sleepDebt: Double = 0
         var nightsCounted = 0
@@ -242,7 +446,10 @@ struct CoachSnapshot {
             ftp: thresholds.ftp,
             injuries: injuryStatuses,
             unavailableToday: unavailableToday,
-            lastLegsSession: lastLegs)
+            lastLegsSession: lastLegs,
+            lifeLoadYesterday: lifeByDay[yesterdayStart] ?? 0,
+            stepsYesterday: wellnessByDay[yesterdayStart]?.steps,
+            recurrentLegSymptoms: recurrentLeg)
         let brief: DailyBrief = DailyCoach.brief(coachInput, calendar: calendar)
 
         let tomorrow: Date = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? todayStart
@@ -276,7 +483,21 @@ struct CoachSnapshot {
             todayAdvice: brief.headline,
             brief: brief,
             tomorrowPlan: tomorrowPlan,
-            loggedMealsToday: loggedMeals)
+            loggedMealsToday: loggedMeals,
+            disciplineLoads: disciplineLoads,
+            weeklyVolumes: weeklyVolumes,
+            volumeAlerts: volumeAlerts,
+            bedtimeRegularity: bedtimeRegularity,
+            correlations: correlations,
+            symptomPatterns: symptomPatterns,
+            weekStatus: weekStatus,
+            milestones: milestones,
+            weightMA7: weightMA7,
+            hydrationTarget: hydrationTarget,
+            waterToday: waterToday,
+            shoeKm: shoeKm,
+            lifeLoad7: lifeLoad7,
+            nutritionDays: nutritionDays)
     }
 
     /// Conseil du jour : croise la récupération avec la séance prévue.

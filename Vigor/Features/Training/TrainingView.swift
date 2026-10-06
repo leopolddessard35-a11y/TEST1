@@ -63,6 +63,8 @@ private struct StrengthSection: View {
                 } else {
                     MuscleVolumeCard(workouts: workouts)
                     ProgressionCard(workouts: workouts, readiness: snapshot.readiness?.level, injured: injured)
+                    TonnageCard(volumes: snapshot.weeklyVolumes)
+                    ExerciseListCard(workouts: workouts)
                     WorkoutListCard(workouts: Array(workouts.prefix(15)))
                 }
             }
@@ -187,10 +189,19 @@ private struct WorkoutListCard: View {
 }
 
 struct StrengthWorkoutDetailView: View {
-    let workout: StrengthWorkout
+    @Environment(\.modelContext) private var context
+    @Environment(AppModel.self) private var app
+    @Bindable var workout: StrengthWorkout
 
     var body: some View {
         List {
+            Section("Effort ressenti de la séance (RPE)") {
+                RPEPicker(value: workout.rpe) { value in
+                    workout.rpe = value
+                    try? context.save()
+                    app.dataVersion += 1
+                }
+            }
             if !workout.notes.isEmpty {
                 Section("Notes") { Text(workout.notes) }
             }
@@ -235,7 +246,12 @@ private struct EnduranceSection: View {
                         VStack(alignment: .leading, spacing: 10) {
                             SectionTitle(title: "Dernières sorties", symbol: "list.bullet")
                             ForEach(activities.prefix(20)) { activity in
-                                ActivityRow(activity: activity, thresholds: profile.thresholds)
+                                NavigationLink {
+                                    ActivityDetailView(activity: activity, thresholds: profile.thresholds)
+                                } label: {
+                                    ActivityRow(activity: activity, thresholds: profile.thresholds)
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -293,6 +309,60 @@ private struct ActivityRow: View {
                     Text("TSS \(tss.noDecimal)")
                 }
                 .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+// MARK: - Tonnage et exercices
+
+private struct TonnageCard: View {
+    let volumes: [WeeklyVolume]
+
+    var body: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 10) {
+                SectionTitle(title: "Tonnage hebdomadaire", symbol: "scalemass.fill")
+                Chart(volumes) { week in
+                    BarMark(x: .value("Semaine", week.weekStart, unit: .weekOfYear), y: .value("Tonnes", week.tonnage / 1000))
+                        .foregroundStyle(Theme.strain.gradient)
+                        .cornerRadius(4)
+                }
+                .frame(height: 140)
+                if let last = volumes.dropLast().last {
+                    Text(String(format: "Semaine dernière : %.1f t soulevées (séries de travail).", last.tonnage / 1000))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+}
+
+private struct ExerciseListCard: View {
+    let workouts: [StrengthWorkout]
+
+    var body: some View {
+        let sessions = workouts.flatMap(\.exerciseSessions)
+        let grouped = Dictionary(grouping: sessions, by: \.exercise)
+        let names = grouped.keys.sorted { (grouped[$0]?.count ?? 0) > (grouped[$1]?.count ?? 0) }
+        GlassCard {
+            VStack(alignment: .leading, spacing: 8) {
+                SectionTitle(title: "Exercices · records et 1RM", symbol: "trophy.fill")
+                ForEach(names.prefix(20), id: \.self) { name in
+                    let items = grouped[name] ?? []
+                    let best = items.map(\.bestEstimated1RM).max() ?? 0
+                    NavigationLink {
+                        ExerciseDetailView(exercise: name, sessions: items)
+                    } label: {
+                        HStack {
+                            Text(name).font(.subheadline).lineLimit(1)
+                            Spacer()
+                            Text("1RM \(best.oneDecimal) kg").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                            DetailChevron()
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
     }

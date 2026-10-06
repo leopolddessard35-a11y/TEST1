@@ -136,6 +136,8 @@ struct MetricDetailView: View {
     let kind: MetricKind
     let series: [DayValue]
     var sourceNote: String?
+    /// Tuiles supplémentaires (ex. régularité du coucher pour le sommeil).
+    var extraTiles: [(title: String, value: String, caption: String)] = []
     @State private var days = 30
 
     var body: some View {
@@ -210,6 +212,9 @@ struct MetricDetailView: View {
                     StatTile(title: "Zone normale", value: mean.map { "\(kind.format($0 - sd))–\(kind.format($0 + sd))" } ?? "–", caption: "60 derniers jours")
                     StatTile(title: "Tendance", value: slope.map { String(format: "%+.1f", kind == .sleep ? $0 * 60 : $0) } ?? "–",
                              caption: kind == .sleep ? "min / semaine" : "\(kind.unit) / semaine")
+                    ForEach(extraTiles.indices, id: \.self) { index in
+                        StatTile(title: extraTiles[index].title, value: extraTiles[index].value, caption: extraTiles[index].caption)
+                    }
                 }
 
                 ExplanationCard(title: "Qu'est-ce que c'est ?", symbol: "questionmark.circle", text: kind.about)

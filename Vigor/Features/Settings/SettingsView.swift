@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 
 struct SettingsView: View {
+    @Environment(\.dismiss) private var dismiss
     @Query private var profiles: [AthleteProfile]
 
     var body: some View {
@@ -14,6 +15,7 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Réglages")
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("OK") { dismiss() } } }
         }
     }
 }
@@ -26,6 +28,7 @@ private struct ProfileForm: View {
     @AppStorage(NotificationScheduler.Keys.morningEnabled) private var morningEnabled = true
     @AppStorage(NotificationScheduler.Keys.morningMinutes) private var morningMinutes = 7 * 60 + 15
     @AppStorage(NotificationScheduler.Keys.eveningEnabled) private var eveningEnabled = true
+    @AppStorage(NotificationScheduler.Keys.alertsEnabled) private var alertsEnabled = true
     @AppStorage(NotificationScheduler.Keys.eveningMinutes) private var eveningMinutes = 21 * 60 + 30
     @AppStorage(NotificationScheduler.Keys.mealEnabled(.breakfast)) private var breakfastEnabled = true
     @AppStorage(NotificationScheduler.Keys.mealMinutes(.breakfast)) private var breakfastMinutes = NotificationScheduler.defaultMinutes(for: .breakfast)
@@ -99,6 +102,8 @@ private struct ProfileForm: View {
                 if eveningEnabled {
                     DatePicker("Heure", selection: timeBinding($eveningMinutes), displayedComponents: .hourAndMinute)
                 }
+                Toggle("Alertes importantes", isOn: $alertsEnabled)
+                    .onChange(of: alertsEnabled) { app.dataVersion += 1 }
                 mealRow("Petit-déjeuner", isOn: $breakfastEnabled, minutes: $breakfastMinutes)
                 mealRow("Déjeuner", isOn: $lunchEnabled, minutes: $lunchMinutes)
                 mealRow("Goûter", isOn: $snackEnabled, minutes: $snackMinutes)
@@ -106,8 +111,9 @@ private struct ProfileForm: View {
             } header: {
                 Text("Notifications")
             } footer: {
-                Text("Matin : verdict du jour, séance adaptée à ta nuit et ta récup, priorité n° 1. Repas : quantités visées (ce qu'il reste à manger aujourd'hui) et conseil selon tes séances ; pas de rappel si le repas est déjà noté. Soir : protéines ou calories manquantes, préparation du lendemain.")
+                Text("Matin : verdict du jour, séance adaptée à ta nuit et ta récup, priorité n° 1. Repas : quantités visées (ce qu'il reste à manger aujourd'hui) et conseil selon tes séances ; pas de rappel si le repas est déjà noté. Soir : protéines ou calories manquantes, préparation du lendemain. Alertes importantes : uniquement les seuils critiques (surcharge, dette de sommeil, symptôme récurrent, surmenage), une fois par jour au maximum.")
             }
+            ShoesSection()
             Section("Synchronisation") {
                 Button {
                     Task { await app.syncAll(context: context, profile: profile) }
@@ -172,5 +178,65 @@ private struct ProfileForm: View {
                 .multilineTextAlignment(.trailing)
                 .frame(width: 90)
         }
+    }
+}
+
+/// Chaussures de course : kilométrage et paire par défaut.
+private struct ShoesSection: View {
+    @Environment(\.modelContext) private var context
+    @Environment(AppModel.self) private var app
+    @Query(sort: \Shoe.addedAt) private var shoes: [Shoe]
+    @State private var name = ""
+    @State private var initialKm = 0.0
+
+    var body: some View {
+        Section {
+            ForEach(shoes) { shoe in
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(shoe.name).strikethrough(shoe.retired)
+                        Text(shoe.isDefault ? "Par défaut" : (shoe.retired ? "Retirée" : "")).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Menu {
+                        Button("Paire par défaut") {
+                            for other in shoes { other.isDefault = other.shoeID == shoe.shoeID }
+                            save()
+                        }
+                        Button(shoe.retired ? "Remettre en service" : "Retirer") {
+                            shoe.retired.toggle()
+                            if shoe.retired { shoe.isDefault = false }
+                            save()
+                        }
+                        Button("Supprimer", role: .destructive) {
+                            context.delete(shoe)
+                            save()
+                        }
+                    } label: { Image(systemName: "ellipsis.circle") }
+                }
+            }
+            HStack {
+                TextField("Nouvelle paire", text: $name)
+                TextField("km déjà faits", value: $initialKm, format: .number)
+                    .keyboardType(.decimalPad)
+                    .frame(width: 90)
+                Button("Ajouter") {
+                    context.insert(Shoe(name: name, initialKm: initialKm, isDefault: shoes.allSatisfy { $0.retired }))
+                    name = ""
+                    initialKm = 0
+                    save()
+                }
+                .disabled(name.isEmpty)
+            }
+        } header: {
+            Text("Chaussures de course")
+        } footer: {
+            Text("Les sorties course sont comptées sur la paire par défaut (modifiable dans le détail de chaque sortie). Alerte au-delà de 600 km.")
+        }
+    }
+
+    private func save() {
+        try? context.save()
+        app.dataVersion += 1
     }
 }

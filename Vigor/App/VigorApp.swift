@@ -11,7 +11,8 @@ struct VigorApp: App {
         do {
             container = try ModelContainer(for: DailyWellness.self, CardioActivity.self, StrengthWorkout.self, StrengthSet.self,
                                            Unavailability.self, Injury.self, AthleteProfile.self, PlannedWorkout.self,
-                                           FoodItem.self, FoodEntry.self)
+                                           FoodItem.self, FoodEntry.self, LifeActivity.self, Symptom.self, Shoe.self,
+                                           Goal.self, PlanBaseline.self)
         } catch {
             fatalError("Base de données impossible à ouvrir : \(error)")
         }
@@ -40,12 +41,18 @@ final class AppModel {
     var dataVersion = 0
     @ObservationIgnored let snapshotCache = SnapshotCache()
 
+    /// Date de la dernière synchronisation complète.
+    var lastSync: Date {
+        get { UserDefaults.standard.object(forKey: "sync.last") as? Date ?? .distantPast }
+        set { UserDefaults.standard.set(newValue, forKey: "sync.last") }
+    }
+
     var intervalsAPIKey: String {
         get { Keychain.get(IntervalsClient.apiKeyAccount) ?? "" }
         set { Keychain.set(newValue, for: IntervalsClient.apiKeyAccount) }
     }
 
-    func syncAll(context: ModelContext, profile: AthleteProfile?) async {
+    func syncAll(context: ModelContext, profile: AthleteProfile?, silent: Bool = false) async {
         guard !isSyncing else { return }
         isSyncing = true
         defer {
@@ -53,22 +60,29 @@ final class AppModel {
             dataVersion += 1
         }
         var messages: [String] = []
+        var hadError = false
         do {
             try await health.requestAuthorization()
-            messages.append(try await DataStore.syncHealth(health, into: context).summary)
+            messages.append(try await DataStore.syncHealth(health, into: context, days: silent ? 30 : 365, thresholds: profile?.thresholds).summary)
         } catch {
             messages.append("Apple Santé : \(error.localizedDescription)")
+            hadError = true
         }
         let key = intervalsAPIKey
         if !key.isEmpty {
             do {
                 let client = IntervalsClient(apiKey: key, athleteID: profile?.intervalsAthleteID ?? "0")
-                messages.append(try await DataStore.syncIntervals(client, into: context))
+                messages.append(try await DataStore.syncIntervals(client, into: context, days: silent ? 30 : 365))
             } catch {
                 messages.append("Intervals.icu : \(error.localizedDescription)")
+                hadError = true
             }
         }
-        statusMessage = messages.joined(separator: "\n")
+        lastSync = .now
+        // Synchronisation silencieuse : on n'affiche que les erreurs.
+        if !silent || hadError {
+            statusMessage = messages.joined(separator: "\n")
+        }
     }
 
     static let refreshTaskID = "fr.leopold.vigor.refresh"
@@ -84,7 +98,10 @@ final class AppModel {
             unavailabilities: (try? context.fetch(FetchDescriptor<Unavailability>())) ?? [],
             injuries: (try? context.fetch(FetchDescriptor<Injury>())) ?? [],
             foods: (try? context.fetch(FetchDescriptor<FoodEntry>())) ?? [],
-            planned: (try? context.fetch(FetchDescriptor<PlannedWorkout>())) ?? [])
+            planned: (try? context.fetch(FetchDescriptor<PlannedWorkout>())) ?? [],
+            lifeActivities: (try? context.fetch(FetchDescriptor<LifeActivity>())) ?? [],
+            symptoms: (try? context.fetch(FetchDescriptor<Symptom>())) ?? [],
+            shoes: (try? context.fetch(FetchDescriptor<Shoe>())) ?? [])
     }
 
     func refreshNotifications(context: ModelContext) async {
@@ -107,7 +124,7 @@ final class AppModel {
         scheduleBackgroundRefresh()
         let context = container.mainContext
         let profile = (try? context.fetch(FetchDescriptor<AthleteProfile>()))?.first
-        _ = try? await DataStore.syncHealth(health, into: context, days: 7)
+        _ = try? await DataStore.syncHealth(health, into: context, days: 7, thresholds: profile?.thresholds)
         let key = intervalsAPIKey
         if !key.isEmpty {
             let client = IntervalsClient(apiKey: key, athleteID: profile?.intervalsAthleteID ?? "0")

@@ -13,7 +13,7 @@ struct ContentView: View {
             Tab("Entraînement", systemImage: "figure.strengthtraining.traditional") { TrainingView() }
             Tab("Plan", systemImage: "calendar") { PlanView() }
             Tab("Nutrition", systemImage: "fork.knife") { NutritionView() }
-            Tab("Réglages", systemImage: "gearshape.fill") { SettingsView() }
+            Tab("Suivi", systemImage: "chart.xyaxis.line") { TrackingView() }
         }
         .task {
             if profiles.isEmpty {
@@ -29,6 +29,10 @@ struct ContentView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 app.scheduleBackgroundRefresh()
+                // Synchronisation automatique si la dernière date de plus d'une heure.
+                if Date.now.timeIntervalSince(app.lastSync) > 3600 {
+                    Task { await app.syncAll(context: context, profile: profiles.first, silent: true) }
+                }
                 Task { await app.refreshNotifications(context: context) }
             }
         }

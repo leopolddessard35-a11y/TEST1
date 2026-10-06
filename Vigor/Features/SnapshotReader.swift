@@ -11,6 +11,9 @@ struct SnapshotReader<Content: View>: View {
     @Query(sort: \Injury.start) private var injuries: [Injury]
     @Query(sort: \FoodEntry.date) private var foods: [FoodEntry]
     @Query(sort: \PlannedWorkout.date) private var planned: [PlannedWorkout]
+    @Query(sort: \LifeActivity.date) private var lifeActivities: [LifeActivity]
+    @Query(sort: \Symptom.date) private var symptoms: [Symptom]
+    @Query private var shoes: [Shoe]
     @Query private var profiles: [AthleteProfile]
 
     private let content: (AthleteProfile, CoachSnapshot) -> Content
@@ -23,7 +26,8 @@ struct SnapshotReader<Content: View>: View {
         if let profile = profiles.first {
             let snapshot = app.snapshotCache.snapshot(for: cacheKey(profile)) {
                 CoachSnapshot.build(profile: profile, wellness: wellness, activities: activities, strength: strength,
-                                    unavailabilities: unavailabilities, injuries: injuries, foods: foods, planned: planned)
+                                    unavailabilities: unavailabilities, injuries: injuries, foods: foods, planned: planned,
+                                    lifeActivities: lifeActivities, symptoms: symptoms, shoes: shoes)
             }
             content(profile, snapshot)
         } else {
@@ -48,6 +52,9 @@ struct SnapshotReader<Content: View>: View {
         hasher.combine(foods.count)
         hasher.combine(foods.reduce(0) { $0 + $1.grams })
         hasher.combine(planned.count)
+        hasher.combine(lifeActivities.count)
+        hasher.combine(symptoms.count)
+        hasher.combine(shoes.count)
         hasher.combine(profile.ftp)
         hasher.combine(profile.cyclingLTHR)
         hasher.combine(profile.runningLTHR)

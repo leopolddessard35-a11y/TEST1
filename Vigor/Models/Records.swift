@@ -21,6 +21,11 @@ final class DailyWellness {
     var spO2: Double?
     var respiration: Double?
     var bodyFatPercent: Double?
+    /// Heure d'endormissement et de réveil (régularité du sommeil).
+    var bedtime: Date?
+    var wakeTime: Date?
+    /// Eau bue (saisie manuelle), en ml.
+    var waterMl: Double?
 
     init(day: Date) {
         self.day = day
@@ -45,6 +50,19 @@ final class CardioActivity {
     var providedTSS: Double?
     /// Intensité relative au seuil fournie par la source (IF).
     var providedIntensity: Double?
+    /// Effort ressenti 1–10 (saisi après la séance).
+    var rpe: Int?
+    /// Secondes passées dans les zones de FC 1 à 5.
+    var zoneSeconds: [Double] = []
+    /// Dérive cardiaque / découplage (%) : < 5 % = bonne endurance aérobie.
+    var decouplingPercent: Double?
+    var averageCadence: Double?
+    var elevationGain: Double?
+    var terrainRaw: String?
+    var shoeID: String?
+    var zonesComputed: Bool = false
+
+    var terrain: Terrain? { terrainRaw.flatMap(Terrain.init(rawValue:)) }
 
     var sport: Sport { Sport(rawValue: sportRaw) ?? .other }
 
@@ -66,6 +84,8 @@ final class StrengthWorkout {
     var start: Date
     var end: Date?
     var notes: String
+    /// Effort ressenti 1–10 (saisi après la séance).
+    var rpe: Int?
     @Relationship(deleteRule: .cascade, inverse: \StrengthSet.workout)
     var sets: [StrengthSet] = []
 
@@ -300,5 +320,128 @@ final class FoodEntry {
         self.fat100 = item.fat100
         self.fiber100 = item.fiber100
         self.sugar100 = item.sugar100
+    }
+}
+
+/// Activité physique hors sport : elle fatigue autant qu'une séance.
+@Model
+final class LifeActivity {
+    var date: Date
+    var kindRaw: String
+    var minutes: Int
+    /// 1 = légère, 2 = modérée, 3 = dure
+    var intensity: Int
+    var note: String
+
+    var kind: LifeActivityKind { LifeActivityKind(rawValue: kindRaw) ?? .other }
+
+    /// Équivalent TSS : ~20 / 35 / 50 points par heure selon l'intensité.
+    var loadEquivalent: Double {
+        let perHour: Double = intensity >= 3 ? 50 : (intensity == 2 ? 35 : 20)
+        return Double(minutes) / 60 * perHour
+    }
+
+    init(date: Date, kind: LifeActivityKind, minutes: Int, intensity: Int, note: String = "") {
+        self.date = date
+        self.kindRaw = kind.rawValue
+        self.minutes = minutes
+        self.intensity = intensity
+        self.note = note
+    }
+}
+
+/// Entrée du journal de symptômes.
+@Model
+final class Symptom {
+    var date: Date
+    var zoneRaw: String
+    var sideRaw: String
+    var typeRaw: String
+    /// 0–10
+    var intensity: Int
+    /// Minutes après le début de l'effort (nil = hors effort).
+    var onsetMinutes: Int?
+    var sportRaw: String?
+    var shoeID: String?
+    var terrainRaw: String?
+    /// Fatigue ressentie avant 1–5.
+    var fatigue: Int
+    /// Durée du symptôme en minutes.
+    var durationMinutes: Int?
+    var note: String
+
+    var zone: BodyZone { BodyZone(rawValue: zoneRaw) ?? .other }
+    var side: BodySide { BodySide(rawValue: sideRaw) ?? .center }
+    var type: SymptomType { SymptomType(rawValue: typeRaw) ?? .other }
+    var terrain: Terrain? { terrainRaw.flatMap(Terrain.init(rawValue:)) }
+    var sport: Sport? { sportRaw.flatMap(Sport.init(rawValue:)) }
+    /// « Engourdissement · pied gauche »
+    var key: String { "\(type.label) · \(zone.label.lowercased()) \(side == .center ? "" : side.label.lowercased())".trimmingCharacters(in: .whitespaces) }
+
+    init(date: Date, zone: BodyZone, side: BodySide, type: SymptomType, intensity: Int, fatigue: Int) {
+        self.date = date
+        self.zoneRaw = zone.rawValue
+        self.sideRaw = side.rawValue
+        self.typeRaw = type.rawValue
+        self.intensity = intensity
+        self.fatigue = fatigue
+        self.note = ""
+    }
+}
+
+/// Paire de chaussures (kilométrage).
+@Model
+final class Shoe {
+    @Attribute(.unique) var shoeID: String
+    var name: String
+    var initialKm: Double
+    var retired: Bool
+    var isDefault: Bool
+    var addedAt: Date
+
+    init(name: String, initialKm: Double = 0, isDefault: Bool = false) {
+        self.shoeID = UUID().uuidString
+        self.name = name
+        self.initialKm = initialKm
+        self.retired = false
+        self.isDefault = isDefault
+        self.addedAt = .now
+    }
+}
+
+/// Échéance du calendrier (course, sortie objectif…).
+@Model
+final class Goal {
+    var name: String
+    var date: Date
+    var sportRaw: String
+    var distanceKm: Double
+    var priorityRaw: String
+    var note: String
+
+    var sport: Sport { Sport(rawValue: sportRaw) ?? .cycling }
+    var priority: GoalPriority { GoalPriority(rawValue: priorityRaw) ?? .b }
+
+    init(name: String, date: Date, sport: Sport, distanceKm: Double, priority: GoalPriority, note: String = "") {
+        self.name = name
+        self.date = date
+        self.sportRaw = sport.rawValue
+        self.distanceKm = distanceKm
+        self.priorityRaw = priority.rawValue
+        self.note = note
+    }
+}
+
+/// Condition prévue par le plan, mémorisée la première fois qu'une semaine apparaît (prévu vs réel).
+@Model
+final class PlanBaseline {
+    @Attribute(.unique) var weekStart: Date
+    var projectedCTL: Double
+    var targetHours: Double
+
+    init(weekStart: Date, projectedCTL: Double, targetHours: Double) {
+        self.weekStart = weekStart
+        self.projectedCTL = projectedCTL
+        self.targetHours = targetHours
     }
 }

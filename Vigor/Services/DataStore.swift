@@ -14,9 +14,10 @@ struct SyncReport {
 /// Écrit les données importées dans la base locale de l'app (SwiftData).
 @MainActor
 enum DataStore {
-    static func syncHealth(_ health: HealthKitService, into context: ModelContext, days: Int = 365) async throws -> SyncReport {
+    static func syncHealth(_ health: HealthKitService, into context: ModelContext, days: Int = 365,
+                           thresholds: Thresholds? = nil) async throws -> SyncReport {
         let bpm = HKUnit.count().unitDivided(by: .minute())
-        let sleep = try await health.sleepHours(days: days)
+        let nights = try await health.sleepNights(days: days)
         let hrv = try await health.daily(.heartRateVariabilitySDNN, unit: .secondUnit(with: .milli), cumulative: false, days: days)
         let restingHR = try await health.daily(.restingHeartRate, unit: bpm, cumulative: false, days: days)
         let steps = try await health.daily(.stepCount, unit: .count(), cumulative: true, days: days)
@@ -27,7 +28,7 @@ enum DataStore {
         var report = SyncReport()
         let existingDays = try context.fetch(FetchDescriptor<DailyWellness>())
         var byDay = Dictionary(existingDays.map { ($0.day, $0) }, uniquingKeysWith: { first, _ in first })
-        let allDays = Set(sleep.keys).union(hrv.keys).union(restingHR.keys).union(steps.keys)
+        let allDays = Set(nights.keys).union(hrv.keys).union(restingHR.keys).union(steps.keys)
             .union(energy.keys).union(weight.keys).union(vo2.keys)
 
         for day in allDays {
@@ -39,7 +40,11 @@ enum DataStore {
                 context.insert(record)
                 byDay[day] = record
             }
-            if let value = sleep[day] { record.sleepHours = value }
+            if let night = nights[day] {
+                record.sleepHours = night.hours
+                record.bedtime = night.bedtime
+                record.wakeTime = night.wake
+            }
             if let value = hrv[day] { record.hrvMs = value }
             if let value = restingHR[day] { record.restingHeartRate = value }
             if let value = steps[day] { record.steps = value }
@@ -73,9 +78,27 @@ enum DataStore {
             activity.averageHeartRate = workout.averageHeartRate
             activity.averagePower = workout.averagePower
             activity.energyKcal = workout.energyKcal
+            activity.elevationGain = workout.elevationGain
+            activity.averageCadence = workout.averageCadence
+            if workout.sport == .indoorCycling { activity.terrainRaw = Terrain.indoor.rawValue }
             context.insert(activity)
             activities.append(activity)
             report.newActivities += 1
+        }
+
+        // Zones de FC et dérive cardiaque des séances récentes (une seule fois par séance).
+        if let thresholds {
+            let cutoff = Calendar.current.date(byAdding: .day, value: -120, to: .now) ?? .now
+            for activity in activities where !activity.zonesComputed && activity.start >= cutoff {
+                guard let bounds = HeartRateZones.bounds(thresholds: thresholds, sport: activity.sport) else { break }
+                let end = activity.start.addingTimeInterval(activity.durationSeconds)
+                let samples = (try? await health.heartRateSamples(from: activity.start, to: end)) ?? []
+                guard samples.count > 10 else { continue }
+                let analysis = HeartRateZones.analyze(samples, bounds: bounds)
+                activity.zoneSeconds = analysis.zones
+                if activity.decouplingPercent == nil { activity.decouplingPercent = analysis.drift }
+                activity.zonesComputed = true
+            }
         }
 
         try context.save()
@@ -185,6 +208,18 @@ enum DataStore {
             target.averageHeartRate = item.averageHeartRate ?? target.averageHeartRate
             target.distanceMeters = item.distance ?? target.distanceMeters
             target.energyKcal = item.calories ?? target.energyKcal
+            target.decouplingPercent = item.decoupling ?? target.decouplingPercent
+            target.averageCadence = item.averageCadence ?? target.averageCadence
+            target.elevationGain = item.elevationGain ?? target.elevationGain
+            if let zones = item.hrZoneTimes, !zones.isEmpty {
+                // Intervals peut avoir 5 à 7 zones : on regroupe au-delà de la 5e.
+                var five = Array(zones.prefix(5))
+                while five.count < 5 { five.append(0) }
+                if zones.count > 5 { five[4] += zones.dropFirst(5).reduce(0, +) }
+                target.zoneSeconds = five
+                target.zonesComputed = true
+            }
+            if sport == .indoorCycling, target.terrainRaw == nil { target.terrainRaw = Terrain.indoor.rawValue }
         }
 
         // Séances prévues : mise à jour du calendrier à venir.

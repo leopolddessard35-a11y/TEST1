@@ -166,3 +166,131 @@ enum Meal: String, Codable, CaseIterable, Identifiable {
         }
     }
 }
+
+// MARK: - Journal de symptômes
+
+enum BodyZone: String, Codable, CaseIterable, Identifiable {
+    case foot, ankle, calf, shin, knee, hamstring, quad, hip, glute, lowerBack, upperBack, neck, shoulder, elbow, wrist, hand, other
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .foot: "Pied"
+        case .ankle: "Cheville"
+        case .calf: "Mollet"
+        case .shin: "Tibia"
+        case .knee: "Genou"
+        case .hamstring: "Ischio"
+        case .quad: "Quadriceps"
+        case .hip: "Hanche"
+        case .glute: "Fessier"
+        case .lowerBack: "Bas du dos"
+        case .upperBack: "Haut du dos"
+        case .neck: "Nuque"
+        case .shoulder: "Épaule"
+        case .elbow: "Coude"
+        case .wrist: "Poignet"
+        case .hand: "Main"
+        case .other: "Autre"
+        }
+    }
+}
+
+enum BodySide: String, Codable, CaseIterable, Identifiable {
+    case left, right, both, center
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .left: "Gauche"
+        case .right: "Droite"
+        case .both: "Les deux"
+        case .center: "Centre"
+        }
+    }
+}
+
+enum SymptomType: String, Codable, CaseIterable, Identifiable {
+    case pain, numbness, tingling, stiffness, cramp, swelling, other
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .pain: "Douleur"
+        case .numbness: "Engourdissement"
+        case .tingling: "Fourmillements"
+        case .stiffness: "Raideur"
+        case .cramp: "Crampe"
+        case .swelling: "Gonflement"
+        case .other: "Autre"
+        }
+    }
+}
+
+enum Terrain: String, Codable, CaseIterable, Identifiable {
+    case road, trail, gravel, track, treadmill, indoor
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .road: "Route"
+        case .trail: "Trail / chemin"
+        case .gravel: "Gravel"
+        case .track: "Piste"
+        case .treadmill: "Tapis"
+        case .indoor: "Home trainer"
+        }
+    }
+}
+
+// MARK: - Charge hors sport
+
+enum LifeActivityKind: String, Codable, CaseIterable, Identifiable {
+    case renovation, gardening, moving, standing, physicalWork, carrying, longWalk, other
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .renovation: "Travaux / rénovation"
+        case .gardening: "Jardinage"
+        case .moving: "Déménagement"
+        case .standing: "Journée debout"
+        case .physicalWork: "Travail physique"
+        case .carrying: "Port de charges"
+        case .longWalk: "Longue marche"
+        case .other: "Autre"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .renovation: "hammer.fill"
+        case .gardening: "leaf.fill"
+        case .moving: "shippingbox.fill"
+        case .standing: "figure.stand"
+        case .physicalWork: "wrench.and.screwdriver.fill"
+        case .carrying: "figure.strengthtraining.functional"
+        case .longWalk: "figure.walk"
+        case .other: "ellipsis.circle"
+        }
+    }
+}
+
+enum GoalPriority: String, Codable, CaseIterable, Identifiable {
+    case a = "A", b = "B", c = "C"
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .a: "A · objectif principal"
+        case .b: "B · objectif secondaire"
+        case .c: "C · étape / préparation"
+        }
+    }
+}

@@ -25,6 +25,12 @@ enum DemoData {
             record.restingHeartRate = Double.random(in: 46...53, using: &random)
             record.steps = Double.random(in: 6000...14000, using: &random)
             record.activeEnergyKcal = Double.random(in: 450...1100, using: &random)
+            let bedMinutes = Int.random(in: -50...70, using: &random)
+            if let bed = calendar.date(bySettingHour: 23, minute: 0, second: 0, of: day.addingTimeInterval(-86_400)) {
+                record.bedtime = bed.addingTimeInterval(Double(bedMinutes) * 60)
+                record.wakeTime = record.bedtime?.addingTimeInterval((record.sleepHours ?? 7.5) * 3600 + 1800)
+            }
+            if offset < 10 { record.waterMl = Double.random(in: 1500...3200, using: &random) }
             let drift: Double = Double(120 - offset) * 0.01
             let noise: Double = Double.random(in: -0.3...0.3, using: &random)
             record.weightKg = 72 + drift + noise
@@ -51,6 +57,15 @@ enum DemoData {
             activity.averagePower = indoor ? Double.random(in: 165...195, using: &random) : Double.random(in: 135...160, using: &random)
             activity.averageHeartRate = Double.random(in: 128...150, using: &random)
             activity.distanceMeters = hours * 27_000
+            // Zones de FC et dérive cardiaque simulées (la dérive diminue avec les semaines).
+            let seconds = hours * 3600
+            activity.zoneSeconds = indoor
+                ? [seconds * 0.15, seconds * 0.35, seconds * 0.2, seconds * 0.22, seconds * 0.08]
+                : [seconds * 0.2, seconds * 0.6, seconds * 0.15, seconds * 0.05, 0]
+            activity.zonesComputed = true
+            if hours >= 1.5 { activity.decouplingPercent = 2.5 + Double(offset) * 0.05 + Double.random(in: -1...1, using: &random) }
+            if offset < 14 { activity.rpe = indoor ? Int.random(in: 6...8, using: &random) : Int.random(in: 3...5, using: &random) }
+            if !indoor { activity.terrainRaw = (weekday == 1 ? Terrain.gravel : Terrain.road).rawValue }
             context.insert(activity)
         }
 
@@ -124,6 +139,66 @@ enum DemoData {
             }
         }
 
+        // Chaussures, sorties course (avant la blessure) et journal du pied gauche.
+        let shoeA = Shoe(name: "Pegasus 41", initialKm: 420, isDefault: true)
+        let shoeB = Shoe(name: "Novablast 5", initialKm: 80)
+        context.insert(shoeA)
+        context.insert(shoeB)
+        for offset in stride(from: 100, through: 40, by: -4) {
+            guard let day = calendar.date(byAdding: .day, value: -offset, to: today),
+                  let start = calendar.date(bySettingHour: 19, minute: 0, second: 0, of: day) else { continue }
+            let useA = offset % 8 == 0
+            let minutes = Double(Int.random(in: 35...60, using: &random))
+            let run = CardioActivity(externalID: "\(prefix)run-\(offset)", source: "Garmin", sport: .running,
+                                     title: "Course · Garmin", start: start, durationSeconds: minutes * 60)
+            run.distanceMeters = minutes / 5.5 * 1000
+            run.averageHeartRate = Double.random(in: 140...152, using: &random)
+            run.elevationGain = Double.random(in: 20...120, using: &random)
+            run.averageCadence = Double.random(in: 166...176, using: &random)
+            run.shoeID = useA ? shoeA.shoeID : shoeB.shoeID
+            run.terrainRaw = (offset % 3 == 0 ? Terrain.trail : Terrain.road).rawValue
+            run.rpe = Int.random(in: 4...6, using: &random)
+            context.insert(run)
+            // Engourdissement fréquent avec la paire A, plus tardif quand on est frais.
+            if useA || offset % 12 == 0 {
+                let fatigue = Int.random(in: 2...5, using: &random)
+                let symptom = Symptom(date: start.addingTimeInterval(25 * 60), zone: .foot, side: .left, type: .numbness,
+                                      intensity: Int.random(in: 3...6, using: &random), fatigue: fatigue)
+                symptom.onsetMinutes = (useA ? 22 : 34) + (fatigue >= 4 ? -4 : 3)
+                symptom.sportRaw = Sport.running.rawValue
+                symptom.shoeID = run.shoeID
+                symptom.terrainRaw = run.terrainRaw
+                symptom.durationMinutes = 10
+                context.insert(symptom)
+            }
+        }
+        if let recent = calendar.date(byAdding: .day, value: -3, to: today) {
+            let symptom = Symptom(date: recent, zone: .hamstring, side: .left, type: .pain, intensity: 3, fatigue: 3)
+            symptom.note = "Gêne en montant les escaliers"
+            context.insert(symptom)
+        }
+
+        // Charge hors sport : travaux le week-end dernier.
+        if let renovation = calendar.date(byAdding: .day, value: -2, to: today) {
+            context.insert(LifeActivity(date: renovation, kind: .renovation, minutes: 360, intensity: 2, note: "Peinture + ponçage"))
+        }
+        if let standing = calendar.date(byAdding: .day, value: -6, to: today) {
+            context.insert(LifeActivity(date: standing, kind: .standing, minutes: 480, intensity: 1))
+        }
+
+        // Échéances.
+        let goals: [(String, Int, Int, Sport, Double, GoalPriority)] = [
+            ("The Traka 100", 2027, 4, .cycling, 100, .a),
+            ("Semi-marathon", 2027, 3, .running, 21.1, .b),
+            ("Sortie 200 km", 2027, 6, .cycling, 200, .b),
+            ("Trail 30 km", 2027, 9, .running, 30, .c),
+        ]
+        for (name, year, month, sport, distance, priority) in goals {
+            if let date = DateComponents(calendar: calendar, year: year, month: month, day: month == 4 ? 25 : 15).date {
+                context.insert(Goal(name: name, date: date, sport: sport, distanceKm: distance, priority: priority))
+            }
+        }
+
         // Ta blessure actuelle, pour voir l'adaptation du plan.
         if let injuryStart = calendar.date(byAdding: .day, value: -10, to: today) {
             context.insert(Injury(title: "Ischio gauche (démo)", muscles: [.hamstrings], affectsRunning: true,
@@ -142,6 +217,11 @@ enum DemoData {
         try context.delete(model: Injury.self)
         try context.delete(model: FoodEntry.self)
         try context.delete(model: PlannedWorkout.self)
+        try context.delete(model: LifeActivity.self)
+        try context.delete(model: Symptom.self)
+        try context.delete(model: Shoe.self)
+        try context.delete(model: Goal.self)
+        try context.delete(model: PlanBaseline.self)
         try context.save()
     }
 }

@@ -150,6 +150,12 @@ struct DailyCoachInput {
     var injuries: [InjuryStatus] = []
     var unavailableToday: UnavailabilityReason?
     var lastLegsSession: Date?
+    /// Charge hors sport d'hier (équivalent TSS : travaux, journée debout…).
+    var lifeLoadYesterday: Double = 0
+    /// Pas d'hier.
+    var stepsYesterday: Double?
+    /// Symptômes récurrents (14 j) touchant les jambes / pieds.
+    var recurrentLegSymptoms: [String] = []
 }
 
 /// Le coach du jour : croise santé, entraînement et nutrition pour adapter concrètement tes séances.
@@ -346,6 +352,22 @@ enum DailyCoach {
                                            detail: String(format: "%.1f g/kg (objectif ≥ 1,6)", proteinPerKg)))
                 priorities.append((0.6, String(format: "Protéines : vise %.0f g aujourd'hui, en 4 prises de 30–40 g.", input.weightKg * 1.8)))
             }
+        }
+
+        // Entraînement : charge hors sport de la veille.
+        if input.lifeLoadYesterday >= 40 {
+            let impact: Double = input.lifeLoadYesterday >= 80 ? -0.15 : -0.08
+            factors.append(CoachFactor(domain: .sport, name: "Journée physique hier", impact: impact,
+                                       detail: String(format: "Activité hors sport ≈ %.0f TSS (travaux, debout…)", input.lifeLoadYesterday)))
+        }
+        if let steps = input.stepsYesterday, steps >= 20_000 {
+            factors.append(CoachFactor(domain: .sport, name: "Beaucoup de pas hier", impact: -0.05,
+                                       detail: String(format: "%.0f pas", steps)))
+        }
+        if !input.recurrentLegSymptoms.isEmpty {
+            factors.append(CoachFactor(domain: .health, name: "Symptôme récurrent", impact: -0.05,
+                                       detail: input.recurrentLegSymptoms.joined(separator: ", ")))
+            priorities.append((0.85, "Symptôme récurrent (\(input.recurrentLegSymptoms[0])) : note-le dans le journal s'il réapparaît, et consulte s'il persiste."))
         }
 
         // Disponibilité et blessures.

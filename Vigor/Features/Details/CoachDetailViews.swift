@@ -86,6 +86,10 @@ struct ReadinessDetailView: View {
 
 struct LoadDetailView: View {
     let load: [LoadPoint]
+    var disciplines: [DisciplineLoad] = []
+    var volumes: [WeeklyVolume] = []
+    var alerts: [String] = []
+    var lifeLoad7: Double = 0
     @State private var days = 90
 
     var body: some View {
@@ -129,6 +133,66 @@ struct LoadDetailView: View {
                     StatTile(title: "Monotonie", value: monotony.map { String(format: "%.1f", $0) } ?? "–", caption: "repère : < 2")
                 }
 
+                if !disciplines.isEmpty {
+                    GlassCard {
+                        VStack(alignment: .leading, spacing: 8) {
+                            SectionTitle(title: "Par discipline · 7 j vs 28 j", symbol: "square.grid.2x2")
+                            HStack {
+                                Text("").frame(maxWidth: .infinity, alignment: .leading)
+                                Text("7 j").frame(width: 50)
+                                Text("28 j").frame(width: 50)
+                                Text("Ratio").frame(width: 56)
+                            }
+                            .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            ForEach(disciplines) { item in
+                                HStack {
+                                    Text(item.name).font(.subheadline.weight(item.name == "Global" ? .bold : .regular))
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    Text(item.acute.noDecimal).frame(width: 50)
+                                    Text(item.chronic.noDecimal).frame(width: 50)
+                                    Text(item.ratio.map { String(format: "%.2f", $0) } ?? "–")
+                                        .foregroundStyle(LoadDetailView.ratioColor(item.ratio))
+                                        .frame(width: 56)
+                                }
+                                .font(.subheadline.monospacedDigit())
+                            }
+                            Text(String(format: "TSS moyen par jour. La charge hors sport (travaux, journées debout, pas > 12 000) compte : %.0f TSS sur 7 jours.", lifeLoad7))
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                if !volumes.isEmpty {
+                    GlassCard {
+                        VStack(alignment: .leading, spacing: 8) {
+                            SectionTitle(title: "Volume hebdomadaire", symbol: "calendar")
+                            HStack {
+                                Text("Semaine").frame(maxWidth: .infinity, alignment: .leading)
+                                Text("Vélo").frame(width: 54)
+                                Text("Course").frame(width: 54)
+                                Text("Muscu").frame(width: 54)
+                                Text("Hors sport").frame(width: 64)
+                            }
+                            .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            ForEach(volumes.reversed()) { week in
+                                HStack {
+                                    Text(week.weekStart.formatted(.dateTime.day().month(.abbreviated))).frame(maxWidth: .infinity, alignment: .leading)
+                                    Text(week.bikeHours.hoursText).frame(width: 54)
+                                    Text(String(format: "%.0f km", week.runKm)).frame(width: 54)
+                                    Text(String(format: "%.1f t", week.tonnage / 1000)).frame(width: 54)
+                                    Text(week.lifeHours.hoursText).frame(width: 64)
+                                }
+                                .font(.caption.monospacedDigit())
+                            }
+                            ForEach(alerts, id: \.self) { alert in
+                                Label(alert, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(Theme.nutrition)
+                            }
+                            Text("Repère : ne pas augmenter le volume de plus d'environ 10 % d'une semaine à l'autre.")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
                 ExplanationCard(title: "Comment c'est calculé", symbol: "function", text: """
                 • Chaque séance reçoit un TSS : 100 = 1 h à ta FTP. Avec puissance : durée × (puissance normalisée / FTP)² × 100. Sans puissance : même formule avec ta FC rapportée à ta FC seuil. Musculation : ~40 TSS/h.
                 • Condition (CTL) : moyenne exponentielle de la charge sur 42 jours, c'est ton « moteur ».
@@ -145,6 +209,15 @@ struct LoadDetailView: View {
         .background(AppBackground())
         .navigationTitle("Charge d'entraînement")
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+extension LoadDetailView {
+    static func ratioColor(_ ratio: Double?) -> Color {
+        guard let ratio else { return .secondary }
+        if ratio > 1.5 { return Theme.warning }
+        if ratio > 1.3 || ratio < 0.8 { return Theme.nutrition }
+        return Theme.recovery
     }
 }
 

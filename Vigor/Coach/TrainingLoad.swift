@@ -35,9 +35,16 @@ enum TrainingLoad {
                             normalizedPower: Double? = nil,
                             averagePower: Double? = nil,
                             averageHeartRate: Double? = nil,
+                            rpe: Int? = nil,
                             thresholds: Thresholds) -> Double {
         let hours = durationSeconds / 3600
         guard hours > 0 else { return 0 }
+
+        // Musculation : charge selon l'effort ressenti (session-RPE, Foster) ou ~40 TSS/h.
+        if sport == .strength {
+            if let rpe { return hours * Double(rpe) * 6 }
+            return hours * 40
+        }
 
         if sport.isCycling, let ftp = thresholds.ftp, ftp > 0,
            let power = normalizedPower ?? averagePower.map({ $0 * 1.05 }), power > 0 {
@@ -56,10 +63,17 @@ enum TrainingLoad {
             return hours * intensity * intensity * 100
         }
 
-        switch sport {
-        case .strength: return hours * 40
-        default: return hours * 50
+        // Sans capteur : l'effort ressenti (RPE 1–10) donne l'intensité.
+        if let rpe {
+            let intensity = rpeIntensity(rpe)
+            return hours * intensity * intensity * 100
         }
+        return hours * 50
+    }
+
+    /// Intensité approximative (IF) associée à un RPE : 3 → 0,63 · 5 → 0,75 · 7 → 0,87 · 9 → 0,99.
+    static func rpeIntensity(_ rpe: Int) -> Double {
+        0.45 + 0.06 * Double(min(max(rpe, 1), 10))
     }
 
     /// Intensité relative au seuil (IF) : puissance / FTP, sinon FC / FC seuil.

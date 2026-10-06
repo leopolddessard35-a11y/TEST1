@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import Charts
 
 struct NutritionView: View {
     @Environment(\.modelContext) private var context
@@ -41,6 +42,11 @@ struct NutritionView: View {
                                            message: "Renseigne ton poids, ta taille et ton année de naissance dans Réglages (ou synchronise ton poids depuis Garmin).",
                                            symbol: "person.text.rectangle")
                         }
+
+                        HydrationCard(target: snapshot.hydrationTarget, today: snapshot.waterToday)
+                        EnergyBalanceCard(weights: snapshot.weightMA7, nutrition: snapshot.nutritionDays,
+                                          expenditure: snapshot.macroTargets?.expenditure,
+                                          method: snapshot.macroTargets?.expenditureMethod ?? "estimée")
 
                         ForEach(Meal.allCases) { meal in
                             MealCard(meal: meal, entries: dayEntries.filter { $0.meal == meal }) {
@@ -145,5 +151,74 @@ private struct MealCard: View {
                 }
             }
         }
+    }
+}
+
+/// Poids en moyenne mobile 7 jours croisé avec les apports : la vraie mesure de l'équilibre énergétique.
+struct EnergyBalanceCard: View {
+    let weights: [DayValue]
+    let nutrition: [NutritionDay]
+    let expenditure: Double?
+    let method: String
+
+    var body: some View {
+        let start: Date = Calendar.current.date(byAdding: .day, value: -42, to: .now) ?? .now
+        let recentWeights: [DayValue] = weights.filter { $0.date >= start }
+        let recentIntake: [NutritionDay] = nutrition.filter { $0.date >= start && $0.kcal > 800 }
+        let twoWeeks: Date = Calendar.current.date(byAdding: .day, value: -14, to: .now) ?? .now
+        let intake14: Double? = Stats.mean(nutrition.filter { $0.date >= twoWeeks && $0.kcal > 800 }.map(\.kcal))
+        let change: Double? = {
+            guard let last = recentWeights.last else { return nil }
+            let reference = recentWeights.last { $0.date <= last.date.addingTimeInterval(-14 * 86_400) }
+            return reference.map { last.value - $0.value }
+        }()
+
+        GlassCard {
+            VStack(alignment: .leading, spacing: 10) {
+                SectionTitle(title: "Bilan énergétique · 6 semaines", symbol: "scalemass")
+                if recentWeights.count >= 3 {
+                    Chart {
+                        ForEach(recentWeights, id: \.date) { point in
+                            LineMark(x: .value("Jour", point.date), y: .value("Poids (kg)", point.value))
+                                .foregroundStyle(Theme.nutrition)
+                                .interpolationMethod(.catmullRom)
+                        }
+                    }
+                    .chartYScale(domain: .automatic(includesZero: false))
+                    .frame(height: 120)
+                    Text("Poids en moyenne mobile 7 jours (jamais le chiffre du jour).").font(.caption2).foregroundStyle(.secondary)
+                }
+                if recentIntake.count >= 3 {
+                    Chart {
+                        ForEach(recentIntake, id: \.date) { day in
+                            BarMark(x: .value("Jour", day.date, unit: .day), y: .value("kcal", day.kcal))
+                                .foregroundStyle(Theme.sleep.opacity(0.7))
+                        }
+                        if let expenditure {
+                            RuleMark(y: .value("Dépense", expenditure))
+                                .foregroundStyle(Theme.warning)
+                                .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                        }
+                    }
+                    .frame(height: 110)
+                }
+                HStack {
+                    StatTile(title: "Apport moyen 14 j", value: intake14.map { "\($0.noDecimal) kcal" } ?? "–")
+                    StatTile(title: "Dépense (\(method))", value: expenditure.map { "\($0.noDecimal) kcal" } ?? "–")
+                    StatTile(title: "Poids 14 j", value: change.map { String(format: "%+.1f kg", $0) } ?? "–")
+                }
+                Text(verdict(intake: intake14, change: change)).font(.footnote)
+            }
+        }
+    }
+
+    private func verdict(intake: Double?, change: Double?) -> String {
+        guard let intake, let change else { return "Note tes repas et pèse-toi 3 fois par semaine pour vérifier que ton apport tient face à ta dépense." }
+        if abs(change) < 0.3 {
+            return String(format: "Poids stable à ~%.0f kcal/j : c'est ton niveau de maintien actuel.", intake)
+        }
+        return change > 0
+            ? String(format: "Tu prends du poids à ~%.0f kcal/j : tu es au-dessus de ton maintien.", intake)
+            : String(format: "Tu perds du poids à ~%.0f kcal/j : ton maintien est plus haut que ça.", intake)
     }
 }

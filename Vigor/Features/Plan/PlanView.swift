@@ -2,6 +2,8 @@ import SwiftUI
 import SwiftData
 
 struct PlanView: View {
+    @Environment(\.modelContext) private var context
+    @Query(sort: \PlanBaseline.weekStart) private var baselines: [PlanBaseline]
     @Query(sort: \Unavailability.start, order: .reverse) private var unavailabilities: [Unavailability]
     @Query(sort: \Injury.start, order: .reverse) private var injuries: [Injury]
     @State private var showUnavailability = false
@@ -13,6 +15,14 @@ struct PlanView: View {
                 SnapshotReader { profile, snapshot in
                     VStack(spacing: 16) {
                         PlanHeaderCard(plan: snapshot.plan, raceName: profile.raceName)
+                        GoalsCard(plan: snapshot.plan)
+                        if !snapshot.weekStatus.isEmpty {
+                            WeekStatusCard(days: snapshot.weekStatus)
+                        }
+                        FormCurveCard(baselines: baselines, load: snapshot.load, plan: snapshot.plan)
+                        if !snapshot.milestones.isEmpty {
+                            MilestonesCard(milestones: snapshot.milestones)
+                        }
 
                         GlassCard {
                             VStack(alignment: .leading, spacing: 12) {
@@ -44,6 +54,7 @@ struct PlanView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 24)
+                    .task(id: snapshot.plan.weeks.count) { saveBaselines(snapshot.plan) }
                 }
             }
             .background(AppBackground())
@@ -51,6 +62,19 @@ struct PlanView: View {
             .sheet(isPresented: $showUnavailability) { UnavailabilityForm() }
             .sheet(isPresented: $showInjury) { InjuryForm() }
         }
+    }
+}
+
+extension PlanView {
+    /// Mémorise la projection de chaque semaine la première fois qu'elle apparaît (courbe « prévue »).
+    func saveBaselines(_ plan: SeasonPlan) {
+        let known = Set(baselines.map(\.weekStart))
+        var changed = false
+        for week in plan.weeks where !known.contains(week.start) {
+            context.insert(PlanBaseline(weekStart: week.start, projectedCTL: week.projectedCTL, targetHours: week.targetHours))
+            changed = true
+        }
+        if changed { try? context.save() }
     }
 }
 

@@ -12,6 +12,15 @@ struct WorkoutSummary {
     let averagePower: Double?
     let energyKcal: Double?
     let sourceName: String
+    let end: Date
+    let elevationGain: Double?
+    let averageCadence: Double?
+}
+
+struct SleepNight {
+    let hours: Double
+    let bedtime: Date
+    let wake: Date
 }
 
 extension Sport {
@@ -43,7 +52,7 @@ final class HealthKitService {
         var types: Set<HKObjectType> = [HKObjectType.workoutType(), HKCategoryType(.sleepAnalysis)]
         let quantities: [HKQuantityTypeIdentifier] = [
             .heartRateVariabilitySDNN, .restingHeartRate, .heartRate, .stepCount, .activeEnergyBurned,
-            .bodyMass, .vo2Max, .cyclingPower, .distanceCycling, .distanceWalkingRunning,
+            .bodyMass, .vo2Max, .cyclingPower, .cyclingCadence, .distanceCycling, .distanceWalkingRunning,
             .dietaryEnergyConsumed, .dietaryProtein, .dietaryCarbohydrates, .dietaryFatTotal,
         ]
         for identifier in quantities {
@@ -85,9 +94,9 @@ final class HealthKitService {
         return values
     }
 
-    /// Heures de sommeil par nuit (rattachées au jour du réveil).
+    /// Nuits de sommeil (rattachées au jour du réveil) : durée, coucher, réveil.
     /// Si plusieurs sources (Garmin + iPhone), on garde la plus complète pour ne pas compter deux fois.
-    func sleepHours(days: Int) async throws -> [Date: Double] {
+    func sleepNights(days: Int) async throws -> [Date: SleepNight] {
         let calendar = Calendar.current
         let (start, end) = range(days: days)
         let predicate = HKQuery.predicateForSamples(withStart: start, end: end)
@@ -102,13 +111,38 @@ final class HealthKitService {
             HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
             HKCategoryValueSleepAnalysis.asleepREM.rawValue,
         ]
-        var perSource: [Date: [String: Double]] = [:]
+        struct Accumulator {
+            var seconds: Double = 0
+            var first: Date = .distantFuture
+            var last: Date = .distantPast
+        }
+        var perSource: [Date: [String: Accumulator]] = [:]
         for sample in samples where asleep.contains(sample.value) {
             let day = calendar.startOfDay(for: sample.endDate)
             let source = sample.sourceRevision.source.bundleIdentifier
-            perSource[day, default: [:]][source, default: 0] += sample.endDate.timeIntervalSince(sample.startDate)
+            var accumulator = perSource[day]?[source] ?? Accumulator()
+            accumulator.seconds += sample.endDate.timeIntervalSince(sample.startDate)
+            accumulator.first = min(accumulator.first, sample.startDate)
+            accumulator.last = max(accumulator.last, sample.endDate)
+            perSource[day, default: [:]][source] = accumulator
         }
-        return perSource.mapValues { ($0.values.max() ?? 0) / 3600 }
+        var nights: [Date: SleepNight] = [:]
+        for (day, sources) in perSource {
+            guard let best = sources.values.max(by: { $0.seconds < $1.seconds }) else { continue }
+            nights[day] = SleepNight(hours: best.seconds / 3600, bedtime: best.first, wake: best.last)
+        }
+        return nights
+    }
+
+    /// Fréquence cardiaque seconde par seconde (ou presque) pendant une séance.
+    func heartRateSamples(from start: Date, to end: Date) async throws -> [HeartRateZones.Sample] {
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end)
+        let descriptor = HKSampleQueryDescriptor(
+            predicates: [.quantitySample(type: HKQuantityType(.heartRate), predicate: predicate)],
+            sortDescriptors: [SortDescriptor(\.startDate)])
+        let samples = try await descriptor.result(for: store)
+        let bpm = HKUnit.count().unitDivided(by: .minute())
+        return samples.map { HeartRateZones.Sample(time: $0.startDate, bpm: $0.quantity.doubleValue(for: bpm)) }
     }
 
     func workouts(days: Int) async throws -> [WorkoutSummary] {
@@ -136,7 +170,10 @@ final class HealthKitService {
                 averageHeartRate: workout.statistics(for: HKQuantityType(.heartRate))?.averageQuantity()?.doubleValue(for: bpm),
                 averagePower: workout.statistics(for: HKQuantityType(.cyclingPower))?.averageQuantity()?.doubleValue(for: .watt()),
                 energyKcal: workout.statistics(for: HKQuantityType(.activeEnergyBurned))?.sumQuantity()?.doubleValue(for: .kilocalorie()),
-                sourceName: source)
+                sourceName: source,
+                end: workout.endDate,
+                elevationGain: (workout.metadata?[HKMetadataKeyElevationAscended] as? HKQuantity)?.doubleValue(for: .meter()),
+                averageCadence: workout.statistics(for: HKQuantityType(.cyclingCadence))?.averageQuantity()?.doubleValue(for: bpm))
         }
     }
 }

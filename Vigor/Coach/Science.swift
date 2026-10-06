@@ -114,4 +114,8 @@ enum Science {
         id: "mountjoy2018",
         citation: "Mountjoy M, et al. IOC consensus statement on relative energy deficiency in sport (RED-S): 2018 update. Br J Sports Med. 2018;52(11):687-697.",
         finding: "Manger nettement moins que ce que l'on dépense dégrade la récupération, l'immunité, la santé osseuse et les gains musculaires.")
+    static let halson2014 = Reference(
+        id: "halson2014",
+        citation: "Halson SL. Monitoring training load to understand fatigue in athletes. Sports Med. 2014;44(Suppl 2):S139-S147.",
+        finding: "Comparer la charge mesurée (capteurs) à l'effort ressenti révèle la fatigue mieux que chacun séparément.")
 }

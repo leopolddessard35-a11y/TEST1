@@ -18,6 +18,24 @@ Objectif actuel : **The Traka 100 (fin avril 2027)** + prise de masse (PPL 3×/s
 
 Mode clair / sombre automatique (suit le réglage de l'iPhone).
 
+
+## Couverture fonctionnelle (checklist « app de suivi santé & sport »)
+
+| Domaine | Dans Vigor |
+|---|---|
+| Décision quotidienne | Carte « Plan du jour » en tête d'accueil : jauge d'énergie, verdict go / ajuster / repos, séance adaptée, 3 priorités |
+| Charge & fatigue | Ratio 7 j / 28 j global **et par discipline** (vélo, course, muscu, hors sport) · volume hebdo (heures, km, tonnage) avec alerte > 10 % · **charge hors sport** (travaux, journées debout, pas > 12 000) · **RPE** après chaque séance (corrige la charge et détecte la fatigue) |
+| Récupération | VFC 7 j vs base 60 j · FC repos vs normale · sommeil : durée, dette, **régularité du coucher** · score détaillé |
+| Endurance | **Temps par zone de FC**, % Z1–Z2, **dérive cardiaque**, cadence, dénivelé, puissance, allure ajustée (GAP estimée) · **chaussures** (km, alerte 600 km) et **terrain** |
+| Musculation | Charges, reps, RIR, 1RM estimé, **records**, stagnation, volume par muscle, tonnage, lien Legs → vélo |
+| Nutrition & poids | Calories / macros, glucides autour des séances, **hydratation**, **poids en moyenne mobile 7 j croisé avec les apports** et la dépense mesurée |
+| Journal de symptômes | Saisie rapide (zone, côté, type, intensité, minute d'apparition, sport, chaussures, terrain, fatigue) · analyse : chaussure, terrain, fatigue, sommeil, évolution · alerte si récurrent |
+| Objectifs & plan | **Plusieurs échéances** (A / B / C) · forme attendue vs réelle · **prévu vs réalisé** de la semaine (séances manquées) · **jalons** de fin de phase |
+| Tendances & croisements | Onglet Suivi : courbes 30 j / 90 j / 1 an avec moyennes mobiles · corrélations sommeil ↔ VFC, charge ↔ VFC, hors sport ↔ VFC, sommeil ↔ RPE, glucides / protéines / calories ↔ récupération |
+| Technique | Sync auto à l'ouverture (> 1 h) et en arrière-plan · saisie rapide en 1 geste · données 100 % locales · alertes limitées aux seuils critiques (1 fois/jour max) |
+
+Pas de gamification, de badges ni de classement.
+
 ### Le coach du jour (`Coach/DailyCoach.swift`)
 Chaque matin, Vigor part de ta séance prévue (plan Traka réparti en semaine type PPL + vélo, ou calendrier Intervals.icu)
 et estime ta **capacité du jour** en croisant :

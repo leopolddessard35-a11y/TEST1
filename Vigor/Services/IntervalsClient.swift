@@ -16,6 +16,15 @@ struct FlexibleString: Decodable, Hashable {
     }
 }
 
+/// Décode une valeur si son format est celui attendu, sinon l'ignore (sans faire échouer tout le JSON).
+struct Lenient<T: Decodable>: Decodable {
+    let value: T?
+
+    init(from decoder: Decoder) throws {
+        value = try? decoder.singleValueContainer().decode(T.self)
+    }
+}
+
 /// Intervals.icu : reçoit officiellement tout de Garmin Connect (séances FIT complètes, sommeil, VFC, readiness…).
 struct IntervalsClient {
     static let apiKeyAccount = "intervals.apiKey"
@@ -55,9 +64,19 @@ struct IntervalsClient {
         let averageHeartRate: Double?
         let intensity: Double?
         let calories: Double?
+        let hrZoneTimesRaw: Lenient<[Double]>?
+        let decouplingRaw: Lenient<Double>?
+        let averageCadenceRaw: Lenient<Double>?
+        let elevationGainRaw: Lenient<Double>?
+
+        var hrZoneTimes: [Double]? { hrZoneTimesRaw?.value }
+        var decoupling: Double? { decouplingRaw?.value }
+        var averageCadence: Double? { averageCadenceRaw?.value }
+        var elevationGain: Double? { elevationGainRaw?.value }
 
         enum CodingKeys: String, CodingKey {
             case id, type, name, distance, calories
+            case decouplingRaw = "decoupling"
             case startDateLocal = "start_date_local"
             case movingTime = "moving_time"
             case trainingLoad = "icu_training_load"
@@ -65,6 +84,9 @@ struct IntervalsClient {
             case weightedAverageWatts = "icu_weighted_avg_watts"
             case averageHeartRate = "average_heartrate"
             case intensity = "icu_intensity"
+            case hrZoneTimesRaw = "icu_hr_zone_times"
+            case averageCadenceRaw = "average_cadence"
+            case elevationGainRaw = "total_elevation_gain"
         }
 
         var sport: Sport? {

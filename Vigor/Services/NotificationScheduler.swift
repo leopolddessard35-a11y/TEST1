@@ -12,6 +12,7 @@ enum NotificationScheduler {
         static let eveningEnabled = "notif.evening.enabled"
         static let eveningMinutes = "notif.evening.minutes"
         static let lastMorningBrief = "notif.morning.lastBriefDay"
+        static let alertsEnabled = "notif.alerts.enabled"
         static func mealEnabled(_ meal: Meal) -> String { "notif.meal.\(meal.rawValue).enabled" }
         static func mealMinutes(_ meal: Meal) -> String { "notif.meal.\(meal.rawValue).minutes" }
     }
@@ -75,6 +76,7 @@ enum NotificationScheduler {
             schedule(id: morningID, content: content, at: tomorrow, minutes: morningMinutes)
         }
         scheduleMeals(snapshot, now: now)
+        await sendThresholdAlerts(snapshot, now: now)
         if eveningEnabled, let content = evening(snapshot) {
             let todayAt = calendar.date(byAdding: .minute, value: eveningMinutes, to: calendar.startOfDay(for: now)) ?? now
             if todayAt > now {
@@ -147,6 +149,28 @@ enum NotificationScheduler {
         content.body = lines.joined(separator: "\n")
         content.sound = .default
         return content
+    }
+
+    // MARK: Alertes de seuil
+
+    /// Seuils importants seulement : surcharge, surmenage, dette de sommeil, symptôme récurrent.
+    static let alertIDs: [String] = ["load.acwr", "load.form", "recovery.overreaching", "sleep.debt", "discipline.", "symptom."]
+
+    private static func sendThresholdAlerts(_ snapshot: CoachSnapshot, now: Date) async {
+        guard UserDefaults.standard.object(forKey: Keys.alertsEnabled) as? Bool ?? true else { return }
+        let dayKey = Calendar.current.startOfDay(for: now).timeIntervalSince1970
+        for insight in snapshot.insights where insight.severity == .warning {
+            guard alertIDs.contains(where: { insight.id.hasPrefix($0) }) else { continue }
+            let key = "notif.alert.\(insight.id)"
+            guard UserDefaults.standard.double(forKey: key) != dayKey else { continue }
+            let content = UNMutableNotificationContent()
+            content.title = "⚠️ \(insight.title)"
+            content.body = ([insight.evidence.first].compactMap { $0 } + [insight.recommendation]).joined(separator: "\n")
+            content.sound = .default
+            let request = UNNotificationRequest(identifier: "vigor.alert.\(insight.id)", content: content, trigger: nil)
+            try? await UNUserNotificationCenter.current().add(request)
+            UserDefaults.standard.set(dayKey, forKey: key)
+        }
     }
 
     // MARK: Repas
