@@ -82,7 +82,11 @@ FC de repos, SpO2, respiration, VO2max, poids, et le calendrier des séances pr�
 - Fond gris très clair, cartes blanches très arrondies avec ombre douce ; mode sombre automatique (cartes gris foncé sur fond noir).
 - Accueil : trois anneaux à dégradé (Effort, Récupération, Sommeil) et le « Coaching » du jour dessous ; « Moniteur de santé » en grille (respiration, FC repos, VFC, sommeil, poids, VO2max), avec une mini-jauge verticale et un statut Normal / Supérieur / Inférieur par rapport à ta médiane sur 30 jours ; énergie du jour ; aliments du jour (anneau des calories et grilles de points pour les macros).
 - Activité : calendrier de la semaine, effort du jour, fraîcheur musculaire par muscle (fatigue qui s'efface en 48 à 72 h, sorties vélo et course comptées pour les jambes). Le Plan s'ouvre avec le bouton calendrier.
-- Barre d'onglets flottante (Aujourd'hui, Activité, Santé, Nutrition) et bouton « + » rond : repas, eau, effort ressenti, symptôme, hors sport, imprévu, blessure.
+- Barre d'onglets flottante (Accueil, Santé, Activité, Nutrition) et bouton « + » rond, classé par thème :
+  - Nutrition : repas, eau, pesée ;
+  - Entraînement : séance de muscu en direct (façon Hevy : exercices, séries kg × reps, échauffement, charges proposées par le coach, valeurs de la séance précédente, minuteur de repos avec notification, brouillon sauvegardé), séance d'endurance manuelle (avec alerte doublon), effort ressenti, import Hevy CSV ;
+  - Corps et santé : symptôme, blessure ;
+  - Quotidien : activité hors sport, imprévu.
 
 ## Installer l'app sur ton iPhone (gratuit, sans compte développeur payant)
 

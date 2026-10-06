@@ -59,18 +59,23 @@ private struct StrengthSection: View {
     @Environment(AppModel.self) private var app
     @Query(sort: \StrengthWorkout.start, order: .reverse) private var workouts: [StrengthWorkout]
     @State private var importing = false
+    @State private var logging = false
 
     var body: some View {
         SnapshotReader { _, snapshot in
             let injured = snapshot.activeInjuries.reduce(into: Set<Muscle>()) { $0.formUnion($1.muscles) }
             VStack(spacing: 16) {
-                Button {
-                    importing = true
-                } label: {
-                    Label("Importer l'export Hevy (CSV)", systemImage: "square.and.arrow.down")
-                        .frame(maxWidth: .infinity)
+                HStack(spacing: 10) {
+                    Button { logging = true } label: {
+                        Label("Démarrer une séance", systemImage: "play.fill").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.glassProminent)
+                    .tint(Theme.strain)
+                    Button { importing = true } label: {
+                        Label("Import Hevy", systemImage: "square.and.arrow.down").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.glass)
                 }
-                .buttonStyle(.glassProminent)
                 .controlSize(.large)
 
                 if workouts.isEmpty {
@@ -120,6 +125,7 @@ private struct StrengthSection: View {
                 app.importHevy(from: url, context: context)
             }
         }
+        .sheet(isPresented: $logging) { WorkoutLoggerView() }
     }
 }
 
