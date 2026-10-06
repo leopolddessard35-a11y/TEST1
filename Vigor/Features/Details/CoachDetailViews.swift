@@ -35,8 +35,8 @@ struct ReadinessDetailView: View {
                                         Spacer()
                                         Text("\(Int(component.score))/100").font(.subheadline.monospacedDigit())
                                     }
-                                    ProgressView(value: component.score, total: 100)
-                                        .tint(component.score >= 70 ? Theme.recovery : (component.score >= 45 ? Theme.nutrition : Theme.warning))
+                                    AnimatedBar(fraction: component.score / 100,
+                                                color: component.score >= 70 ? Theme.recovery : (component.score >= 45 ? Theme.nutrition : Theme.warning))
                                     Text(component.detail).font(.caption).foregroundStyle(.secondary)
                                 }
                             }
@@ -216,9 +216,9 @@ struct InsightCard: View {
                         Text(insight.recommendation).font(.footnote)
                     }
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Pourquoi (science)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        Text("Pourquoi").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                         ForEach(insight.references) { reference in
-                            Text("\(reference.finding)\n\(reference.citation)").font(.caption2).foregroundStyle(.secondary)
+                            Text(reference.finding).font(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }

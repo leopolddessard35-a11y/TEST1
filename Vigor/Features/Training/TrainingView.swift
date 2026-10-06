@@ -95,8 +95,8 @@ private struct MuscleVolumeCard: View {
                         let sets = volume[muscle] ?? 0
                         HStack {
                             Text(muscle.label).font(.footnote).frame(width: 150, alignment: .leading)
-                            ProgressView(value: min(sets, range.upperBound), total: range.upperBound)
-                                .tint(sets < range.lowerBound ? Theme.nutrition : (sets > range.upperBound ? Theme.warning : Theme.recovery))
+                            AnimatedBar(fraction: min(sets, range.upperBound) / range.upperBound,
+                                        color: sets < range.lowerBound ? Theme.nutrition : (sets > range.upperBound ? Theme.warning : Theme.recovery))
                             Text(sets.oneDecimal).font(.footnote.monospacedDigit()).frame(width: 36, alignment: .trailing)
                         }
                     }

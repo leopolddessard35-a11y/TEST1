@@ -209,7 +209,7 @@ struct MacroBar: View {
                 Spacer()
                 Text("\(value.noDecimal) / \(target.noDecimal) \(unit)").font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
             }
-            ProgressView(value: min(value, target), total: max(target, 1)).tint(color)
+            AnimatedBar(fraction: target > 0 ? value / target : 0, color: color)
         }
     }
 }

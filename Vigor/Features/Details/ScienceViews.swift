@@ -16,24 +16,16 @@ struct ExplanationCard: View {
     }
 }
 
-/// Sources scientifiques, dépliables.
+/// Justifications des règles (sans les références bibliographiques).
 struct ReferencesCard: View {
     let references: [Reference]
 
     var body: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 10) {
-                SectionTitle(title: "Sources scientifiques", symbol: "books.vertical.fill")
+            VStack(alignment: .leading, spacing: 8) {
+                SectionTitle(title: "Pourquoi ces repères", symbol: "lightbulb.fill")
                 ForEach(references) { reference in
-                    DisclosureGroup {
-                        Text(reference.citation)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.top, 4)
-                    } label: {
-                        Text(reference.finding).font(.footnote).multilineTextAlignment(.leading)
-                    }
+                    Text("• \(reference.finding)").font(.footnote).fixedSize(horizontal: false, vertical: true)
                 }
             }
         }

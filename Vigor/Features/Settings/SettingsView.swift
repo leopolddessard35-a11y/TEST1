@@ -26,7 +26,15 @@ private struct ProfileForm: View {
     @AppStorage(NotificationScheduler.Keys.morningEnabled) private var morningEnabled = true
     @AppStorage(NotificationScheduler.Keys.morningMinutes) private var morningMinutes = 7 * 60 + 15
     @AppStorage(NotificationScheduler.Keys.eveningEnabled) private var eveningEnabled = true
-    @AppStorage(NotificationScheduler.Keys.eveningMinutes) private var eveningMinutes = 20 * 60 + 30
+    @AppStorage(NotificationScheduler.Keys.eveningMinutes) private var eveningMinutes = 21 * 60 + 30
+    @AppStorage(NotificationScheduler.Keys.mealEnabled(.breakfast)) private var breakfastEnabled = true
+    @AppStorage(NotificationScheduler.Keys.mealMinutes(.breakfast)) private var breakfastMinutes = NotificationScheduler.defaultMinutes(for: .breakfast)
+    @AppStorage(NotificationScheduler.Keys.mealEnabled(.lunch)) private var lunchEnabled = true
+    @AppStorage(NotificationScheduler.Keys.mealMinutes(.lunch)) private var lunchMinutes = NotificationScheduler.defaultMinutes(for: .lunch)
+    @AppStorage(NotificationScheduler.Keys.mealEnabled(.snack)) private var snackEnabled = true
+    @AppStorage(NotificationScheduler.Keys.mealMinutes(.snack)) private var snackMinutes = NotificationScheduler.defaultMinutes(for: .snack)
+    @AppStorage(NotificationScheduler.Keys.mealEnabled(.dinner)) private var dinnerEnabled = true
+    @AppStorage(NotificationScheduler.Keys.mealMinutes(.dinner)) private var dinnerMinutes = NotificationScheduler.defaultMinutes(for: .dinner)
 
     var body: some View {
         Form {
@@ -91,10 +99,14 @@ private struct ProfileForm: View {
                 if eveningEnabled {
                     DatePicker("Heure", selection: timeBinding($eveningMinutes), displayedComponents: .hourAndMinute)
                 }
+                mealRow("Petit-déjeuner", isOn: $breakfastEnabled, minutes: $breakfastMinutes)
+                mealRow("Déjeuner", isOn: $lunchEnabled, minutes: $lunchMinutes)
+                mealRow("Goûter", isOn: $snackEnabled, minutes: $snackMinutes)
+                mealRow("Dîner", isOn: $dinnerEnabled, minutes: $dinnerMinutes)
             } header: {
                 Text("Notifications")
             } footer: {
-                Text("Matin : verdict du jour, séance adaptée à ta nuit et ta récup, priorité n° 1. Soir : protéines ou calories manquantes, préparation de la séance du lendemain (glucides, coucher).")
+                Text("Matin : verdict du jour, séance adaptée à ta nuit et ta récup, priorité n° 1. Repas : quantités visées (ce qu'il reste à manger aujourd'hui) et conseil selon tes séances ; pas de rappel si le repas est déjà noté. Soir : protéines ou calories manquantes, préparation du lendemain.")
             }
             Section("Synchronisation") {
                 Button {
@@ -127,6 +139,15 @@ private struct ProfileForm: View {
         .onChange(of: morningEnabled) { app.dataVersion += 1 }
         .onChange(of: eveningEnabled) { app.dataVersion += 1 }
         .onDisappear { try? context.save() }
+    }
+
+    @ViewBuilder
+    private func mealRow(_ title: String, isOn: Binding<Bool>, minutes: Binding<Int>) -> some View {
+        Toggle("Rappel \(title.lowercased())", isOn: isOn)
+            .onChange(of: isOn.wrappedValue) { app.dataVersion += 1 }
+        if isOn.wrappedValue {
+            DatePicker("Heure", selection: timeBinding(minutes), displayedComponents: .hourAndMinute)
+        }
     }
 
     /// Convertit des minutes après minuit en heure pour le sélecteur.

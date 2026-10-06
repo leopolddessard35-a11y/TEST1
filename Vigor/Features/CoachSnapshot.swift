@@ -23,6 +23,8 @@ struct CoachSnapshot {
     let brief: DailyBrief
     /// Séances prévues demain (pour la notification du matin).
     let tomorrowPlan: [SessionPrescription]
+    /// Repas déjà renseignés aujourd'hui (pas de rappel pour ceux-là).
+    let loggedMealsToday: Set<Meal>
 
     var today: LoadPoint? { load.last }
 
@@ -252,6 +254,11 @@ struct CoachSnapshot {
             DailyCoach.template(for: $0, weekday: calendar.component(.weekday, from: tomorrow), ftp: thresholds.ftp)
         } ?? []
 
+        var loggedMeals = Set<Meal>()
+        for entry in foods where calendar.isDate(entry.date, inSameDayAs: now) {
+            loggedMeals.insert(entry.meal)
+        }
+
         return CoachSnapshot(
             load: load,
             readiness: todayReadiness,
@@ -268,7 +275,8 @@ struct CoachSnapshot {
             plannedToday: plannedToday,
             todayAdvice: brief.headline,
             brief: brief,
-            tomorrowPlan: tomorrowPlan)
+            tomorrowPlan: tomorrowPlan,
+            loggedMealsToday: loggedMeals)
     }
 
     /// Conseil du jour : croise la récupération avec la séance prévue.

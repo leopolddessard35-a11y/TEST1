@@ -69,3 +69,22 @@ struct DailyCoachTests {
         #expect(brief.adapted.first { $0.kind == .legs }?.detail.contains("ischio") == true)
     }
 }
+
+struct MealReminderTests {
+    @Test func lunchBeforeIntensityRecommendsCarbs() {
+        let sessions = [DailyCoach.bike(.threshold, minutes: 75, ftp: 206, phase: .build)]
+        let tip = NotificationScheduler.mealTip(.lunch, sessions: sessions, tomorrowSessions: [], forTomorrow: false)
+        #expect(tip?.contains("glucides") == true)
+    }
+
+    @Test func dinnerBeforeLongRideTomorrow() {
+        let tomorrow = [DailyCoach.bike(.longRide, minutes: 180, ftp: 206, phase: .base)]
+        let tip = NotificationScheduler.mealTip(.dinner, sessions: [], tomorrowSessions: tomorrow, forTomorrow: false)
+        #expect(tip?.contains("demain") == true)
+    }
+
+    @Test func mealSharesCoverTheDay() {
+        let total = NotificationScheduler.remindedMeals.reduce(0.0) { $0 + NotificationScheduler.share(of: $1) }
+        #expect(abs(total - 1) < 0.001)
+    }
+}

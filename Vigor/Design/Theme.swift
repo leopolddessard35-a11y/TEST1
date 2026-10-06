@@ -49,6 +49,7 @@ struct GlassCard<Content: View>: View {
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
             .glassEffect(.regular, in: .rect(cornerRadius: 24))
+            .scrollAppear()
     }
 }
 
@@ -75,25 +76,33 @@ struct SectionTitle: View {
     }
 }
 
-/// Anneau de score façon Bevel.
+/// Anneau de score façon Bevel : se remplit et compte jusqu'à la valeur.
 struct ScoreRing: View {
     let value: Double
     let color: Color
     var lineWidth: CGFloat = 14
     var label: String
+    @State private var shown: Double = 0
 
     var body: some View {
         ZStack {
             Circle().stroke(color.opacity(0.18), lineWidth: lineWidth)
             Circle()
-                .trim(from: 0, to: max(0.001, min(1, value / 100)))
-                .stroke(AngularGradient(colors: [color.opacity(0.6), color], center: .center),
+                .trim(from: 0, to: max(0.001, min(1, shown / 100)))
+                .stroke(AngularGradient(colors: [color.opacity(0.5), color], center: .center),
                         style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
+                .shadow(color: color.opacity(0.45), radius: 8)
             VStack(spacing: 2) {
-                Text("\(Int(value))").font(.system(size: 40, weight: .bold, design: .rounded))
+                CountingText(value: shown).font(.system(size: 40, weight: .bold, design: .rounded))
                 Text(label).font(.caption).foregroundStyle(.secondary)
             }
+        }
+        .onAppear {
+            withAnimation(.spring(response: 1.2, dampingFraction: 0.8).delay(0.1)) { shown = value }
+        }
+        .onChange(of: value) {
+            withAnimation(.spring(response: 0.9, dampingFraction: 0.8)) { shown = value }
         }
     }
 }

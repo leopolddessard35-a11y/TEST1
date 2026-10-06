@@ -140,7 +140,7 @@ enum Meal: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .breakfast: "Petit-déjeuner"
         case .lunch: "Déjeuner"
-        case .snack: "Collation"
+        case .snack: "Goûter"
         case .dinner: "Dîner"
         case .training: "Pendant l'effort"
         }

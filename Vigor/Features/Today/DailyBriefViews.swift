@@ -24,12 +24,11 @@ struct DailyBriefCard: View {
                         .font(.headline)
                         .foregroundStyle(brief.verdict.color)
                     Spacer()
-                    Text("Capacité \(Int((brief.capacity * 100).rounded())) %")
-                        .font(.caption.weight(.semibold).monospacedDigit())
-                        .padding(.horizontal, 10).padding(.vertical, 4)
-                        .glassEffect(.regular.tint(brief.verdict.color.opacity(0.4)), in: .capsule)
                     DetailChevron()
                 }
+                EnergyGauge(value: brief.capacity, color: brief.verdict.color, label: "Énergie du jour")
+                    .frame(maxWidth: 260)
+                    .frame(maxWidth: .infinity)
                 Text(brief.headline).font(.subheadline)
 
                 ForEach(brief.adapted) { session in
@@ -91,9 +90,9 @@ struct DailyBriefDetailView: View {
                         Label(brief.verdict.label, systemImage: brief.verdict.symbol)
                             .font(.title3.weight(.semibold)).foregroundStyle(brief.verdict.color)
                         Text(brief.headline).font(.subheadline)
-                        ProgressView(value: min(brief.capacity, 1), total: 1).tint(brief.verdict.color)
-                        Text("Capacité estimée : \(Int((brief.capacity * 100).rounded())) % de ta forme habituelle")
-                            .font(.caption).foregroundStyle(.secondary)
+                        EnergyGauge(value: brief.capacity, color: brief.verdict.color, label: "de ta forme habituelle")
+                            .frame(maxWidth: 260)
+                            .frame(maxWidth: .infinity)
                     }
                 }
 
