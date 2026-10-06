@@ -2,7 +2,7 @@ import ActivityKit
 import Foundation
 
 /// Minuteur de repos affiché dans la Dynamic Island et sur l'écran verrouillé.
-/// Fichier partagé entre l'app et l'extension VigorWidgets.
+/// À partager avec l'extension VigorWidgets si elle est réactivée (voir Extras/VigorWidgets).
 struct RestTimerAttributes: ActivityAttributes {
     public struct ContentState: Codable, Hashable {
         /// Début et fin du repos en cours.

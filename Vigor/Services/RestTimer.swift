@@ -7,9 +7,13 @@ import UserNotifications
 enum RestTimer {
     private static let notificationID = "vigor.rest"
 
+    /// Live Activity (Dynamic Island) désactivée : l'extension VigorWidgets prendrait une 4e place
+    /// d'app sur le compte gratuit. Pour la réactiver, voir Extras/VigorWidgets/README.md.
+    static let liveActivityEnabled = false
+
     static func start(start: Date = .now, end: Date, exercise: String, next: String, workout: String) {
         scheduleNotification(at: end, next: next)
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        guard liveActivityEnabled, ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         let state = RestTimerAttributes.ContentState(start: start, end: end, exercise: exercise, next: next)
         let content = ActivityContent(state: state, staleDate: end)
         if let current = Activity<RestTimerAttributes>.activities.first {
@@ -25,6 +29,7 @@ enum RestTimer {
 
     static func stop() {
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [notificationID])
+        guard liveActivityEnabled else { return }
         for activity in Activity<RestTimerAttributes>.activities {
             Task { await activity.end(nil, dismissalPolicy: .immediate) }
         }
