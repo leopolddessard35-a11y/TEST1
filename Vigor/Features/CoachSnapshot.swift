@@ -54,6 +54,12 @@ struct CoachSnapshot {
     let sleepNeed: SleepNeed
     /// Performance de la nuit dernière (sommeil / besoin).
     let lastSleepPerformance: Double?
+    /// Score de sommeil de la nuit dernière (durée, efficacité, stades, régularité).
+    let lastSleepScore: SleepScoreResult?
+    /// Score de sommeil des 30 dernières nuits.
+    let sleepScoreHistory: [DayValue]
+    /// Dette de sommeil sur 14 jours (heures, nuits anciennes moins pondérées).
+    let sleepDebt: Double
     let respiratory: RespiratorySignal?
     let respirationSeries: [DayValue]
     let weeklyReport: WeeklyReport?
@@ -144,12 +150,36 @@ struct CoachSnapshot {
         let hrvSeries: [DayValue] = useGarmin ? rmssd : sdnn
         let hrvSource = useGarmin ? "Garmin (rMSSD nocturne)" : "Apple Santé (SDNN)"
 
+        // Score de sommeil de chaque nuit (durée, efficacité, stades, régularité).
+        func sleepScore(on day: Date) -> SleepScoreResult? {
+            guard let record = wellnessByDay[day], let hours = record.sleepHours else { return nil }
+            var priorBedtimes: [Double] = []
+            for offset in 1...14 {
+                if let previous = calendar.date(byAdding: .day, value: -offset, to: day),
+                   let bed = wellnessByDay[previous]?.bedtime {
+                    priorBedtimes.append(SleepAnalytics.eveningMinutes(bed, calendar: calendar))
+                }
+            }
+            let previousDay: Date = calendar.date(byAdding: .day, value: -1, to: day) ?? day
+            let need: Double = profile.sleepNeedHours + max(0, EffortScore.score(load: daily[previousDay] ?? 0) - 10) * 4 / 60
+            let usual: Double? = priorBedtimes.count >= 5 ? Robust.median(priorBedtimes) : nil
+            return SleepScoreCalculator.compute(asleepHours: hours, needHours: need, bedtime: record.bedtime, wake: record.wakeTime,
+                                                deepHours: record.sleepDeepHours, remHours: record.sleepREMHours,
+                                                awakeHours: record.sleepAwakeHours, usualBedtimeMinutes: usual, calendar: calendar)
+        }
+
         func readiness(on day: Date) -> ReadinessResult? {
             ReadinessCalculator.compute(
                 hrv: hrvSeries, restingHR: restingHR,
                 lastNightSleepHours: wellnessByDay[day]?.sleepHours,
                 sleepNeedHours: profile.sleepNeedHours,
-                form: loadByDay[day]?.form, today: day, calendar: calendar)
+                form: loadByDay[day]?.form, sleepScore: sleepScore(on: day), today: day, calendar: calendar)
+        }
+        let lastSleepScore: SleepScoreResult? = sleepScore(on: todayStart)
+        let sleepScoreHistory: [DayValue] = (0..<30).reversed().compactMap { offset in
+            guard let day = calendar.date(byAdding: .day, value: -offset, to: todayStart),
+                  let result = sleepScore(on: day) else { return nil }
+            return DayValue(date: day, value: Double(result.score))
         }
         let todayReadiness = readiness(on: todayStart)
         let history: [DayValue] = (0..<60).reversed().compactMap { offset in
@@ -172,9 +202,9 @@ struct CoachSnapshot {
         let currentCTL: Double = load.last?.ctl ?? 0
         // Fatigue accumulée : forme < −25 au moins 5 jours sur 7, ou VFC et FC de repos dégradées ensemble.
         let tiredDays: Int = load.suffix(7).filter { $0.form < -25 }.count
-        let hrvScore: Double = todayReadiness?.components.first { $0.name == "VFC" }?.score ?? 70
-        let rhrScore: Double = todayReadiness?.components.first { $0.name == "FC au repos" }?.score ?? 70
-        let fatigueDetected: Bool = tiredDays >= 5 || (hrvScore < 50 && rhrScore < 55)
+        let hrvScore: Double = todayReadiness?.components.first { $0.name == "VFC" }?.score ?? 60
+        let rhrScore: Double = todayReadiness?.components.first { $0.name == "FC au repos" }?.score ?? 60
+        let fatigueDetected: Bool = tiredDays >= 5 || (hrvScore < 38 && rhrScore < 45)
         let plannerInput = PlannerInput(
             today: now,
             raceDate: profile.raceDate,
@@ -743,6 +773,9 @@ struct CoachSnapshot {
             effortTarget: effortTarget,
             sleepNeed: sleepNeed,
             lastSleepPerformance: lastSleepPerformance,
+            lastSleepScore: lastSleepScore,
+            sleepScoreHistory: sleepScoreHistory,
+            sleepDebt: sleepDebt,
             respiratory: respiratory,
             respirationSeries: respirationSeries,
             weeklyReport: weeklyReport,

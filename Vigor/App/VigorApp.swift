@@ -182,7 +182,7 @@ final class AppModel {
 
     /// Une seule fois après la mise à jour : relit un an de nuits avec le bon découpage (coucher la veille au soir).
     func repairSleepHistoryIfNeeded(context: ModelContext, profile: AthleteProfile?) async {
-        let key = "repair.sleepNights.v2"
+        let key = "repair.sleepNights.v3"
         guard !UserDefaults.standard.bool(forKey: key), health.isAvailable else { return }
         do {
             _ = try await DataStore.syncHealth(health, into: context, days: 365, thresholds: profile?.thresholds)

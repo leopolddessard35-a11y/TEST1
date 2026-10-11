@@ -107,8 +107,8 @@ enum MetricKind: String, Identifiable, CaseIterable {
 
     var howUsed: String {
         switch self {
-        case .sleep: "30 % du score de récupération. Une dette de plus de 5 h sur 7 jours déclenche une alerte du coach."
-        case .hrv: "45 % du score de récupération : moyenne des 3 derniers jours (en log) comparée à tes 60 derniers jours. La tendance sur 7 jours, croisée avec la FC de repos, sert à détecter le surmenage."
+        case .sleep: "Via le score de sommeil, 25 % du score de récupération. Une dette de plus de 5 h sur 7 jours déclenche une alerte du coach."
+        case .hrv: "50 % du score de récupération : la nuit dernière (70 %) et la tendance 7 jours (30 %), en log, comparées à tes 60 derniers jours. La tendance sur 7 jours, croisée avec la FC de repos, sert à détecter le surmenage."
         case .restingHR: "25 % du score de récupération : dernière valeur comparée à ta moyenne et ta variabilité sur 30 jours."
         case .steps: "Intégrés à la dépense énergétique (via l'énergie active) pour calculer tes calories cibles."
         case .weight: "La tendance sert à piloter la prise de masse (+0,25 à 0,5 %/semaine) et à mesurer ta dépense énergétique réelle."

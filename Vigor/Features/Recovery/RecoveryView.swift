@@ -73,9 +73,7 @@ private struct SleepSummaryCard: View {
     var body: some View {
         let last = snapshot.wellness.last { $0.sleepHours != nil }
         NavigationLink {
-            SleepNeedDetailView(need: snapshot.sleepNeed, performance: snapshot.lastSleepPerformance,
-                                lastNight: snapshot.wellness.last.flatMap { Calendar.current.isDateInToday($0.day) ? $0.sleepHours : nil },
-                                regularity: snapshot.bedtimeRegularity)
+            SleepDetailView(snapshot: snapshot)
         } label: {
             GlassCard {
                 VStack(alignment: .leading, spacing: 12) {
@@ -91,10 +89,10 @@ private struct SleepSummaryCard: View {
                             }
                         }
                         Spacer()
-                        if let performance = snapshot.lastSleepPerformance {
-                            StatusPill(text: "\(Int((performance * 100).rounded())) % du besoin",
-                                       symbol: performance >= 0.85 ? "checkmark.circle.fill" : "exclamationmark.circle.fill",
-                                       color: performance >= 0.85 ? Theme.good : (performance >= 0.7 ? Theme.caution : Theme.alert))
+                        if let score = snapshot.lastSleepScore {
+                            StatusPill(text: "Score \(score.score) · \(score.label.lowercased())",
+                                       symbol: score.score >= 70 ? "checkmark.circle.fill" : "exclamationmark.circle.fill",
+                                       color: score.score >= 70 ? Theme.good : (score.score >= 50 ? Theme.caution : Theme.alert))
                         }
                         DetailChevron()
                     }

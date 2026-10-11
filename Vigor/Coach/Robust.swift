@@ -3,10 +3,10 @@ import Foundation
 /// Versions des formules : chaque changement d'algorithme incrémente sa version
 /// pour que l'historique reste interprétable (affichées dans Réglages et dans l'export).
 enum FormulaVersion {
-    static let readiness = "readiness-2 (médiane/MAD 60 j, ln VFC)"
+    static let readiness = "readiness-3 (VFC nuit 70 % + 7 j 30 %, médiane/MAD 60 j, zones 67/34)"
     static let load = "load-2 (TSS / sRPE, ACWR exponentiel 7/28 j)"
     static let effort = "effort-1 (0–21 logarithmique, k = 100/ln 3)"
-    static let sleepNeed = "sleep-2 (base + effort + dette 14 j pondérée)"
+    static let sleepNeed = "sleep-3 (besoin : base + effort + dette 14 j ; score : durée, efficacité, stades, régularité)"
     static let decision = "decision-2 (règles hiérarchisées, signaux rouges)"
     static let correlations = "corr-2 (Spearman, décalages J/J+1/J+2, IC 95 %)"
 

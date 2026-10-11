@@ -46,6 +46,10 @@ enum DataStore {
                 record.sleepHours = night.hours
                 record.bedtime = night.bedtime
                 record.wakeTime = night.wake
+                record.sleepDeepHours = night.deep
+                record.sleepREMHours = night.rem
+                record.sleepCoreHours = night.core
+                record.sleepAwakeHours = night.awake
             }
             if let value = hrv[day] { record.hrvMs = value }
             if let value = restingHR[day] { record.restingHeartRate = value }

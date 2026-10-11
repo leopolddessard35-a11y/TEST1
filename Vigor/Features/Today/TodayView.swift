@@ -67,15 +67,18 @@ private struct RingsCoachingCard: View {
                     ReadinessDetailView(readiness: snapshot.readiness, history: Array(snapshot.readinessHistory.suffix(30)),
                                         hrvSource: snapshot.hrvSource)
                 } label: {
-                    HeroRing(readiness: snapshot.readiness)
+                    // Même taille que les deux autres ; couleur selon la zone (vert / blé / brique).
+                    SideRing(title: "Récupération", fraction: Double(snapshot.readiness?.score ?? 0) / 100,
+                             text: snapshot.readiness.map { "\($0.score)" } ?? "–",
+                             suffix: snapshot.readiness == nil ? "après 1 nuit" : "%",
+                             colors: snapshot.readiness.map { [Theme.color(for: $0.level).opacity(0.5), Theme.color(for: $0.level)] }
+                                ?? Theme.recoveryGradient)
                 }
                 NavigationLink {
-                    SleepNeedDetailView(need: snapshot.sleepNeed, performance: snapshot.lastSleepPerformance,
-                                        lastNight: snapshot.wellness.last.flatMap { Calendar.current.isDateInToday($0.day) ? $0.sleepHours : nil },
-                                        regularity: snapshot.bedtimeRegularity)
+                    SleepDetailView(snapshot: snapshot)
                 } label: {
-                    SideRing(title: "Sommeil", fraction: snapshot.lastSleepPerformance ?? 0,
-                             text: snapshot.lastSleepPerformance.map { "\(Int(($0 * 100).rounded()))" } ?? "–", suffix: "%",
+                    SideRing(title: "Sommeil", fraction: Double(snapshot.lastSleepScore?.score ?? 0) / 100,
+                             text: snapshot.lastSleepScore.map { "\($0.score)" } ?? "–", suffix: "score",
                              colors: Theme.sleepGradient)
                 }
             }
@@ -202,17 +205,16 @@ private struct SideRing: View {
     var body: some View {
         VStack(spacing: 8) {
             ZStack {
-                GradientRing(fraction: fraction, colors: colors, lineWidth: 7)
+                GradientRing(fraction: fraction, colors: colors, lineWidth: 9)
                 VStack(spacing: 0) {
-                    Text(text).font(.system(.headline, design: .rounded).weight(.heavy)).monospacedDigit()
+                    Text(text).font(.system(.title2, design: .rounded).weight(.heavy)).monospacedDigit()
                     Text(suffix).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
                 }
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
                 .padding(.horizontal, 10)
             }
-            .frame(width: 72, height: 72)
-            .frame(height: 136)
+            .frame(width: 96, height: 96)
             CapsLabel(title)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)

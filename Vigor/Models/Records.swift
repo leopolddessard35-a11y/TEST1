@@ -24,6 +24,12 @@ final class DailyWellness {
     /// Heure d'endormissement et de réveil (régularité du sommeil).
     var bedtime: Date?
     var wakeTime: Date?
+    /// Stades de sommeil (heures), lus dans Apple Santé quand la montre les fournit.
+    var sleepDeepHours: Double?
+    var sleepREMHours: Double?
+    var sleepCoreHours: Double?
+    /// Éveils pendant la nuit (heures).
+    var sleepAwakeHours: Double?
     /// Eau bue (saisie manuelle), en ml.
     var waterMl: Double?
 

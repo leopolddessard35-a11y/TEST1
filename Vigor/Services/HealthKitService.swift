@@ -21,6 +21,34 @@ struct SleepNight {
     let hours: Double
     let bedtime: Date
     let wake: Date
+    /// Stades (heures) ; nil si la source ne les détaille pas.
+    var deep: Double? = nil
+    var rem: Double? = nil
+    var core: Double? = nil
+    var awake: Double? = nil
+}
+
+/// Un segment de la nuit, pour l'hypnogramme.
+struct SleepSegment: Identifiable, Equatable {
+    enum Stage: Int, CaseIterable, Comparable {
+        case deep = 0, core, rem, awake
+
+        var label: String {
+            switch self {
+            case .deep: "Profond"
+            case .core: "Léger"
+            case .rem: "Paradoxal"
+            case .awake: "Éveil"
+            }
+        }
+
+        static func < (lhs: Stage, rhs: Stage) -> Bool { lhs.rawValue < rhs.rawValue }
+    }
+
+    var id: Date { start }
+    let start: Date
+    let end: Date
+    let stage: Stage
 }
 
 extension Sport {
@@ -122,25 +150,76 @@ final class HealthKitService {
         ]
         struct Accumulator {
             var seconds: Double = 0
+            var deep: Double = 0
+            var rem: Double = 0
+            var core: Double = 0
+            var awake: Double = 0
             var first: Date = .distantFuture
             var last: Date = .distantPast
         }
+        let awakeValue = HKCategoryValueSleepAnalysis.awake.rawValue
         var perSource: [Date: [String: Accumulator]] = [:]
-        for sample in samples where asleep.contains(sample.value) {
+        for sample in samples where asleep.contains(sample.value) || sample.value == awakeValue {
             let day = Self.nightDay(forSegmentEnding: sample.endDate, calendar: calendar)
             let source = sample.sourceRevision.source.bundleIdentifier
             var accumulator = perSource[day]?[source] ?? Accumulator()
-            accumulator.seconds += sample.endDate.timeIntervalSince(sample.startDate)
-            accumulator.first = min(accumulator.first, sample.startDate)
-            accumulator.last = max(accumulator.last, sample.endDate)
+            let duration = sample.endDate.timeIntervalSince(sample.startDate)
+            if sample.value == awakeValue {
+                accumulator.awake += duration
+            } else {
+                accumulator.seconds += duration
+                accumulator.first = min(accumulator.first, sample.startDate)
+                accumulator.last = max(accumulator.last, sample.endDate)
+                switch sample.value {
+                case HKCategoryValueSleepAnalysis.asleepDeep.rawValue: accumulator.deep += duration
+                case HKCategoryValueSleepAnalysis.asleepREM.rawValue: accumulator.rem += duration
+                case HKCategoryValueSleepAnalysis.asleepCore.rawValue: accumulator.core += duration
+                default: break
+                }
+            }
             perSource[day, default: [:]][source] = accumulator
         }
         var nights: [Date: SleepNight] = [:]
         for (day, sources) in perSource {
-            guard let best = sources.values.max(by: { $0.seconds < $1.seconds }) else { continue }
-            nights[day] = SleepNight(hours: best.seconds / 3600, bedtime: best.first, wake: best.last)
+            guard let best = sources.values.max(by: { $0.seconds < $1.seconds }), best.seconds > 0 else { continue }
+            let staged = best.deep + best.rem + best.core > 0
+            nights[day] = SleepNight(hours: best.seconds / 3600, bedtime: best.first, wake: best.last,
+                                     deep: staged ? best.deep / 3600 : nil,
+                                     rem: staged ? best.rem / 3600 : nil,
+                                     core: staged ? best.core / 3600 : nil,
+                                     awake: staged || best.awake > 0 ? best.awake / 3600 : nil)
         }
         return nights
+    }
+
+    /// Segments de la nuit (source la plus complète) pour l'hypnogramme.
+    func sleepSegments(from start: Date, to end: Date) async throws -> [SleepSegment] {
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end)
+        let descriptor = HKSampleQueryDescriptor(
+            predicates: [.categorySample(type: HKCategoryType(.sleepAnalysis), predicate: predicate)],
+            sortDescriptors: [SortDescriptor(\.startDate)])
+        let samples = try await descriptor.result(for: store)
+        func mapStage(_ value: Int) -> SleepSegment.Stage? {
+            switch value {
+            case HKCategoryValueSleepAnalysis.asleepDeep.rawValue: return .deep
+            case HKCategoryValueSleepAnalysis.asleepREM.rawValue: return .rem
+            case HKCategoryValueSleepAnalysis.asleepCore.rawValue,
+                 HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue: return .core
+            case HKCategoryValueSleepAnalysis.awake.rawValue: return .awake
+            default: return nil
+            }
+        }
+        var bySource: [String: [SleepSegment]] = [:]
+        for sample in samples {
+            guard let stage = mapStage(sample.value) else { continue }
+            bySource[sample.sourceRevision.source.bundleIdentifier, default: []]
+                .append(SleepSegment(start: sample.startDate, end: sample.endDate, stage: stage))
+        }
+        let best = bySource.values.max { a, b in
+            a.filter { $0.stage != .awake }.reduce(0) { $0 + $1.end.timeIntervalSince($1.start) }
+                < b.filter { $0.stage != .awake }.reduce(0) { $0 + $1.end.timeIntervalSince($1.start) }
+        }
+        return best ?? []
     }
 
     /// Fréquence cardiaque seconde par seconde (ou presque) pendant une séance.

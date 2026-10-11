@@ -108,3 +108,31 @@ struct TrainingCalendarTests {
         #expect(mondayFirst.prefix(while: { $0 == nil }).count == 3)
     }
 }
+
+struct SleepScoreTests {
+    private func at(_ day: Int, _ hour: Int, _ minute: Int = 0) -> Date {
+        DateComponents(calendar: .current, year: 2026, month: 10, day: day, hour: hour, minute: minute).date!
+    }
+
+    @Test func fullGoodNightScoresHigh() {
+        let result = SleepScoreCalculator.compute(asleepHours: 8, needHours: 8, bedtime: at(10, 22, 45), wake: at(11, 7, 15),
+                                                  deepHours: 1.4, remHours: 1.8, awakeHours: 0.4,
+                                                  usualBedtimeMinutes: SleepAnalytics.eveningMinutes(at(10, 22, 40)))
+        #expect((result?.score ?? 0) >= 90)
+        #expect(result?.components.count == 4)
+    }
+
+    @Test func shortFragmentedNightScoresLow() {
+        let result = SleepScoreCalculator.compute(asleepHours: 5, needHours: 8, bedtime: at(11, 1, 30), wake: at(11, 8, 0),
+                                                  deepHours: 0.4, remHours: 0.6, awakeHours: 1.4,
+                                                  usualBedtimeMinutes: SleepAnalytics.eveningMinutes(at(10, 22, 45)))
+        #expect((result?.score ?? 100) < 50)
+    }
+
+    @Test func missingStagesAreIgnoredNotPenalised() {
+        let result = SleepScoreCalculator.compute(asleepHours: 8, needHours: 8, bedtime: nil, wake: nil,
+                                                  deepHours: nil, remHours: nil, awakeHours: nil, usualBedtimeMinutes: nil)
+        #expect(result?.score == 100)
+        #expect(result?.components.count == 1)
+    }
+}

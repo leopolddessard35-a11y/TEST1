@@ -54,21 +54,26 @@ enum ReadinessCalculator {
                         lastNightSleepHours: Double?,
                         sleepNeedHours: Double,
                         form: Double?,
+                        sleepScore: SleepScoreResult? = nil,
                         today: Date = .now,
                         calendar: Calendar = .current) -> ReadinessResult? {
         var weighted: [(component: ReadinessComponent, weight: Double)] = []
 
+        // readiness-3 : la VFC de la nuit pèse le plus (comme Whoop / Bevel), le sommeil compte via son score.
         if let component = hrvComponent(hrv, today: today, calendar: calendar) {
-            weighted.append((component, 0.45))
+            weighted.append((component, 0.50))
         }
         if let component = restingHRComponent(restingHR, today: today, calendar: calendar) {
             weighted.append((component, 0.25))
         }
-        if let hours = lastNightSleepHours, hours > 0 {
+        if let sleepScore {
+            weighted.append((ReadinessComponent(name: "Sommeil", score: Double(sleepScore.score),
+                                                detail: "Score de sommeil \(sleepScore.score) (durée, efficacité, stades, régularité)"), 0.25))
+        } else if let hours = lastNightSleepHours, hours > 0 {
             let ratio = hours / max(sleepNeedHours, 1)
             let score = clamp(ratio >= 1 ? 100 : 100 - (1 - ratio) * 200)
             let detail = String(format: "%.1f h dormies (besoin : %.1f h)", hours, sleepNeedHours)
-            weighted.append((ReadinessComponent(name: "Sommeil", score: score, detail: detail), 0.30))
+            weighted.append((ReadinessComponent(name: "Sommeil", score: score, detail: detail), 0.25))
         }
 
         guard !weighted.isEmpty else { return nil }
@@ -90,26 +95,30 @@ enum ReadinessCalculator {
         }
 
         let rounded = Int(clamp(score).rounded())
-        let level: ReadinessLevel = rounded >= 70 ? .ready : (rounded >= 45 ? .moderate : .low)
+        // Zones façon Whoop : vert ≥ 67, jaune 34–66, rouge < 34. Une journée « dans ta normale » ≈ 60.
+        let level: ReadinessLevel = rounded >= 67 ? .ready : (rounded >= 34 ? .moderate : .low)
         return ReadinessResult(score: rounded, level: level, components: components)
     }
 
-    /// VFC : tendance 7 jours (moyenne du ln) comparée à ta base 60 jours (médiane ± MAD, robuste).
+    /// VFC : nuit dernière (70 %) + tendance 7 jours (30 %), en ln, comparées à ta base 60 jours (médiane ± MAD).
+    /// La nuit dernière domine pour qu'une mauvaise nuit se voie le jour même ; la tendance évite les à-coups.
     static func hrvComponent(_ values: [DayValue], today: Date, calendar: Calendar) -> ReadinessComponent? {
         let baseline = values.filter { $0.value > 0 && isWithin(days: 60, $0.date, of: today, calendar: calendar) }
+            .sorted { $0.date < $1.date }
         let recent = baseline.filter { isWithin(days: 7, $0.date, of: today, calendar: calendar) }
-        guard baseline.count >= 14, !recent.isEmpty else { return nil }
+        guard baseline.count >= 14, let last = recent.last, isWithin(days: 2, last.date, of: today, calendar: calendar) else { return nil }
 
         let logBaseline = baseline.map { log($0.value) }
         guard let center = Robust.median(logBaseline) else { return nil }
         let spread = max(Robust.mad(logBaseline) ?? 0, 0.05)
-        let recentLog = recent.map { log($0.value) }.reduce(0, +) / Double(recent.count)
-        let z = (recentLog - center) / spread
-        let deltaPercent = (exp(recentLog - center) - 1) * 100
+        let weekLog = recent.map { log($0.value) }.reduce(0, +) / Double(recent.count)
+        let blended = 0.7 * log(last.value) + 0.3 * weekLog
+        let z = (blended - center) / spread
+        let deltaPercent = (exp(log(last.value) - center) - 1) * 100
 
-        let detail = String(format: "%.0f ms sur 7 j · %+.0f %% vs ta base (%.0f–%.0f ms)",
-                            exp(recentLog), deltaPercent, exp(center - spread), exp(center + spread))
-        return ReadinessComponent(name: "VFC", score: clamp(70 + 20 * z), detail: detail)
+        let detail = String(format: "%.0f ms cette nuit · %+.0f %% vs ta base (%.0f–%.0f ms)",
+                            last.value, deltaPercent, exp(center - spread), exp(center + spread))
+        return ReadinessComponent(name: "VFC", score: clamp(60 + 22 * z), detail: detail)
     }
 
     /// FC au repos : dernière valeur comparée à ta base 60 jours (médiane ± MAD). Plus haute = moins bien.
@@ -124,7 +133,7 @@ enum ReadinessCalculator {
         let spread = max(Robust.mad(samples) ?? 0, 1)
         let z = (latest.value - center) / spread
         let detail = String(format: "%.0f bpm · %+.0f bpm vs ta base (%.0f)", latest.value, latest.value - center, center)
-        return ReadinessComponent(name: "FC au repos", score: clamp(70 - 15 * z), detail: detail)
+        return ReadinessComponent(name: "FC au repos", score: clamp(60 - 15 * z), detail: detail)
     }
 
     private static func isWithin(days: Int, _ date: Date, of today: Date, calendar: Calendar) -> Bool {

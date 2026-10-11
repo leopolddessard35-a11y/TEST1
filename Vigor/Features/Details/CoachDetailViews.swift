@@ -8,7 +8,7 @@ struct ReadinessDetailView: View {
     let history: [DayValue]
     let hrvSource: String
 
-    private let weights = ["VFC": "45 %", "FC au repos": "25 %", "Sommeil": "30 %", "Fatigue d'entraînement": "malus"]
+    private let weights = ["VFC": "50 %", "FC au repos": "25 %", "Sommeil": "25 %", "Fatigue d'entraînement": "malus"]
 
     var body: some View {
         ScrollView {
@@ -65,11 +65,12 @@ struct ReadinessDetailView: View {
 
                 ExplanationCard(title: "Comment c'est calculé", symbol: "function", text: """
                 Chaque mesure est comparée à TA propre normale, pas à une moyenne de population :
-                • VFC (\(hrvSource)) : moyenne des 3 derniers jours en logarithme, comparée à tes 60 derniers jours. Un écart d'un écart-type déplace le score de 20 points.
-                • FC au repos : dernière nuit comparée à tes 30 derniers jours (plus haut = moins bien).
-                • Sommeil : durée de la nuit rapportée à ton besoin (réglable dans Réglages).
+                • VFC (\(hrvSource)), 50 % : la nuit dernière compte pour 70 %, la tendance des 7 derniers jours pour 30 %, en logarithme, comparées à tes 60 derniers jours. Un écart d'un écart-type déplace le score de 22 points.
+                • FC au repos, 25 % : dernière nuit comparée à tes 60 derniers jours (plus haut = moins bien).
+                • Sommeil, 25 % : le score de sommeil (durée vs besoin, efficacité, stades, régularité).
                 • Fatigue : si ta forme (TSB) passe sous −25, le score est pénalisé.
-                ≥ 70 : prêt à charger · 45–69 : modéré · < 45 : récupération basse.
+                Une journée « dans ta normale » vaut environ 60. ≥ 67 : prêt à charger · 34–66 : modéré · < 34 : récupération basse.
+                Sans VFC (pas de Garmin via Intervals.icu), le score repose seulement sur la FC au repos et le sommeil : il est alors moins fiable et souvent plus optimiste.
                 """)
                 ReferencesCard(references: [Science.plews2013, Science.buchheit2014, Science.kiviniemi2007, Science.hirshkowitz2015])
             }

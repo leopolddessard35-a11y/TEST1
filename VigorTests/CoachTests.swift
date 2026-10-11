@@ -56,10 +56,11 @@ struct ReadinessTests {
         let today = day(2026, 10, 5)
         let calendar = Calendar.current
         var hrv: [DayValue] = []
-        for offset in 0...40 {
+        for offset in 1...40 {
             let date = calendar.date(byAdding: .day, value: -offset, to: today)!
             hrv.append(DayValue(date: date, value: 60 + Double(offset % 5)))
         }
+        hrv.append(DayValue(date: today, value: 63))
         let result = ReadinessCalculator.compute(hrv: hrv, restingHR: [], lastNightSleepHours: 8,
                                                  sleepNeedHours: 8, form: 0, today: today)
         #expect(result?.level == .ready)
