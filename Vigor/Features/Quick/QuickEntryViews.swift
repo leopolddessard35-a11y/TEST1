@@ -1,77 +1,6 @@
 import SwiftUI
 import SwiftData
 
-/// Barre de saisie rapide (< 10 secondes) : effort ressenti, symptôme, eau, activité hors sport.
-struct QuickEntryBar: View {
-    @Environment(\.modelContext) private var context
-    @Environment(AppModel.self) private var app
-    @State private var sheet: QuickSheet?
-
-    enum QuickSheet: String, Identifiable {
-        case rpe, symptom, life
-        var id: String { rawValue }
-    }
-
-    var body: some View {
-        HStack(spacing: 10) {
-            button("Effort", "gauge.with.dots.needle.67percent") { sheet = .rpe }
-            button("Symptôme", "bandage") { sheet = .symptom }
-            Menu {
-                ForEach([250.0, 500, 750], id: \.self) { ml in
-                    Button("+ \(Int(ml)) ml") { addWater(ml) }
-                }
-            } label: {
-                label("Eau", "drop.fill")
-            }
-            button("Hors sport", "hammer") { sheet = .life }
-        }
-        .sheet(item: $sheet) { sheet in
-            switch sheet {
-            case .rpe: RPESheet()
-            case .symptom: SymptomForm()
-            case .life: LifeActivityForm()
-            }
-        }
-    }
-
-    private func button(_ title: String, _ symbol: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { label(title, symbol) }
-            .buttonStyle(.plain)
-    }
-
-    private func label(_ title: String, _ symbol: String) -> some View {
-        VStack(spacing: 4) {
-            Image(systemName: symbol).font(.title3)
-            Text(title).font(.caption2.weight(.medium))
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 10)
-        .card(cornerRadius: 18)
-    }
-
-    private func addWater(_ ml: Double) {
-        QuickActions.addWater(ml, context: context)
-        app.dataVersion += 1
-    }
-}
-
-enum QuickActions {
-    @MainActor
-    static func addWater(_ ml: Double, context: ModelContext, date: Date = .now) {
-        let day = Calendar.current.startOfDay(for: date)
-        let descriptor = FetchDescriptor<DailyWellness>(predicate: #Predicate { $0.day == day })
-        let record: DailyWellness
-        if let existing = try? context.fetch(descriptor).first {
-            record = existing
-        } else {
-            record = DailyWellness(day: day)
-            context.insert(record)
-        }
-        record.waterMl = max(0, (record.waterMl ?? 0) + ml)
-        try? context.save()
-    }
-}
-
 // MARK: - RPE
 
 /// Note l'effort ressenti des dernières séances (1 = très facile, 10 = maximal).
@@ -332,10 +261,12 @@ struct LifeActivityForm: View {
     var body: some View {
         NavigationStack {
             Form {
+                // La date choisie s'applique aussi aux raccourcis « En un geste ».
+                DatePicker("Quand", selection: $date, displayedComponents: .date)
                 Section("En un geste") {
                     ForEach(LifeActivityForm.presets) { preset in
                         Button {
-                            context.insert(LifeActivity(date: .now, kind: preset.kind, minutes: preset.minutes, intensity: preset.intensity))
+                            context.insert(LifeActivity(date: date, kind: preset.kind, minutes: preset.minutes, intensity: preset.intensity))
                             try? context.save()
                             app.dataVersion += 1
                             dismiss()
@@ -354,7 +285,6 @@ struct LifeActivityForm: View {
                     Text("Dure").tag(3)
                 }
                 .pickerStyle(.segmented)
-                DatePicker("Quand", selection: $date, displayedComponents: .date)
                 TextField("Note (facultatif)", text: $note)
                 Section {
                     let perHour: Double = intensity >= 3 ? 50 : (intensity == 2 ? 35 : 20)

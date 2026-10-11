@@ -52,6 +52,11 @@ struct WorkoutDraft: Codable, Equatable {
         return count
     }
 
+    /// Exercices ayant au moins une série cochée (seuls ceux-ci sont enregistrés).
+    var loggedExercises: Int {
+        exercises.filter { exercise in exercise.sets.contains { $0.done && ($0.reps ?? 0) > 0 } }.count
+    }
+
     var tonnage: Double {
         var total = 0.0
         for exercise in exercises {
@@ -91,6 +96,7 @@ struct WorkoutLoggerView: View {
     @State private var picking = false
     @State private var finishing = false
     @State private var confirmLeave = false
+    @State private var confirmRoutineSwitch = false
     @State private var restEnd: Date?
     @State private var undo: LoggerUndo?
     @FocusState private var focus: LogField?
@@ -141,7 +147,11 @@ struct WorkoutLoggerView: View {
                     }
                     if let restEnd {
                         RestBanner(end: restEnd,
-                                   onAdjust: { delta in setRest(until: restEnd.addingTimeInterval(delta)) },
+                                   onAdjust: { delta in
+                                       // Repos déjà terminé : « +15 s » repart de maintenant.
+                                       let base = restEnd < .now ? Date.now : restEnd
+                                       setRest(until: base.addingTimeInterval(delta))
+                                   },
                                    onSkip: { setRest(until: nil) })
                     }
                 }
@@ -176,7 +186,7 @@ struct WorkoutLoggerView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Terminer") { finishing = true }
-                        .disabled(draft.exercises.allSatisfy { exercise in exercise.sets.allSatisfy { ($0.reps ?? 0) == 0 } })
+                        .disabled(draft.completedSets == 0)
                 }
             }
             .confirmationDialog("Séance en cours", isPresented: $confirmLeave) {
@@ -204,16 +214,29 @@ struct WorkoutLoggerView: View {
                 loaded = true
                 if let saved = WorkoutDraft.load(), !saved.exercises.isEmpty {
                     draft = saved
-                } else if let routine {
-                    draft = WorkoutDraft(title: routine.name, start: .now, exercises: [], routineID: routine.routineID)
-                    for item in routine.items {
-                        add(item.exercise, history: history, setCount: item.sets, target: item.repText,
-                            rest: item.restSeconds, note: item.note, defaultReps: item.repLow)
+                    // Une autre séance type a été lancée alors qu'une séance est en cours : on demande.
+                    if let routine, saved.routineID != routine.routineID {
+                        confirmRoutineSwitch = true
                     }
+                } else if let routine {
+                    start(routine, history: history)
                 } else {
-                    draft = WorkoutDraft(title: Self.suggestedTitle(workouts), start: .now, exercises: [])
+                    // Séance libre : titre vide (les raccourcis proposent tes propres noms).
+                    draft = WorkoutDraft(title: "", start: .now, exercises: [])
                 }
             }
+            .confirmationDialog("Une séance est déjà en cours", isPresented: $confirmRoutineSwitch, titleVisibility: .visible) {
+                Button("Reprendre la séance en cours") {}
+                if let routine {
+                    Button("Commencer \(routine.name)", role: .destructive) {
+                        setRest(until: nil)
+                        start(routine, history: history)
+                    }
+                }
+            } message: {
+                Text("Commencer la nouvelle séance abandonne celle en cours.")
+            }
+            .interactiveDismissDisabled(!draft.exercises.isEmpty)
             .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
             .onChange(of: draft) { draft.persist() }
             .task(id: restEnd) {
@@ -305,6 +328,15 @@ struct WorkoutLoggerView: View {
     }
 
     // MARK: Actions
+
+    /// Nouvelle séance à partir d'une séance type (remplace le brouillon éventuel).
+    private func start(_ routine: WorkoutRoutine, history: [String: [ExerciseSession]]) {
+        draft = WorkoutDraft(title: routine.name, start: .now, exercises: [], routineID: routine.routineID)
+        for item in routine.items {
+            add(item.exercise, history: history, setCount: item.sets, target: item.repText,
+                rest: item.restSeconds, note: item.note, defaultReps: item.repLow)
+        }
+    }
 
     private func add(_ name: String, history: [String: [ExerciseSession]], setCount: Int? = nil, target: String? = nil,
                      rest: Int? = nil, note: String? = nil, defaultReps: Int? = nil) {
@@ -424,16 +456,16 @@ struct WorkoutLoggerView: View {
         var models: [StrengthSet] = []
         var index = 0
         for exercise in draft.exercises {
-            // Séries cochées ; si aucune ne l'est pour cet exercice, toutes celles qui ont des répétitions.
-            let anyDone = exercise.sets.contains { $0.done }
-            for set in exercise.sets where (set.reps ?? 0) > 0 && (set.done || !anyDone) {
+            // Seules les séries cochées (avec des répétitions) sont enregistrées ; un exercice sans série cochée est ignoré.
+            for set in exercise.sets where set.done && (set.reps ?? 0) > 0 {
                 models.append(StrengthSet(exercise: exercise.name, exerciseNotes: "", setIndex: index,
                                           setType: set.warmup ? "warmup" : "normal", weightKg: set.weight, reps: set.reps,
                                           distanceKm: nil, durationSeconds: nil, rpe: nil, supersetID: nil))
                 index += 1
             }
         }
-        let records = Self.records(in: draft, history: Self.history(of: workouts))
+        // Records comparés à tout l'historique (pas seulement les séances récentes).
+        let records = Self.records(in: draft, history: Self.history(of: workouts, limit: nil))
         workout.sets = models
         try? context.save()
         WorkoutDraft.clear()
@@ -441,7 +473,7 @@ struct WorkoutLoggerView: View {
         app.dataVersion += 1
         var message = "Séance « \(title) » enregistrée : \(models.count) séries."
         if !records.isEmpty {
-            message += "\n🏆 Records : " + records.joined(separator: ", ") + "."
+            message += "\nRecords : " + records.joined(separator: ", ") + "."
         }
         app.statusMessage = message
         dismiss()
@@ -449,9 +481,11 @@ struct WorkoutLoggerView: View {
 
     // MARK: Historique
 
-    static func history(of workouts: [StrengthWorkout]) -> [String: [ExerciseSession]] {
+    /// `limit` : nombre de séances récentes parcourues (performance) ; `nil` = tout l'historique.
+    static func history(of workouts: [StrengthWorkout], limit: Int? = 80) -> [String: [ExerciseSession]] {
         var result: [String: [ExerciseSession]] = [:]
-        for workout in workouts.prefix(80) {
+        let source: ArraySlice<StrengthWorkout> = limit.map { workouts.prefix($0) } ?? workouts[...]
+        for workout in source {
             for session in workout.exerciseSessions {
                 result[session.exercise, default: []].append(session)
             }
@@ -467,7 +501,7 @@ struct WorkoutLoggerView: View {
         var result: [String] = []
         for exercise in draft.exercises {
             var best: (e1rm: Double, weight: Double, reps: Int)?
-            for set in exercise.sets where set.done && !set.warmup {
+            for set in exercise.sets where set.done && !set.warmup && (set.reps ?? 0) > 0 {
                 guard let weight = set.weight, weight > 0, let reps = set.reps, reps > 0 else { continue }
                 let e1rm = StrengthProgression.estimated1RM(weight: weight, reps: reps)
                 if best == nil || e1rm > best!.e1rm { best = (e1rm, weight, reps) }
@@ -481,14 +515,6 @@ struct WorkoutLoggerView: View {
         return result
     }
 
-    /// Propose la suite logique du PPL (après Push → Pull → Legs).
-    static func suggestedTitle(_ workouts: [StrengthWorkout]) -> String {
-        guard let last = workouts.first?.title.lowercased() else { return "" }
-        if last.contains("push") { return "Pull" }
-        if last.contains("pull") { return "Legs" }
-        if last.contains("leg") { return "Push" }
-        return ""
-    }
 }
 
 // MARK: - Carte d'exercice
@@ -524,7 +550,10 @@ private struct ExerciseLogCard: View {
                         Button("Supprimer l'exercice", systemImage: "trash", role: .destructive, action: onDelete)
                     } label: {
                         Image(systemName: "ellipsis.circle").font(.title3)
+                            .frame(width: 44, height: 44)
+                            .contentShape(.rect)
                     }
+                    .accessibilityLabel("Options de l'exercice")
                 }
                 HStack(spacing: 6) {
                     if let target = exercise.targetReps {
@@ -610,15 +639,14 @@ private struct SetLogRow: View {
             Text(previous).font(.caption).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading).lineLimit(1)
 
-            TextField("kg", value: $set.weight, format: .number)
+            // Valeur mise à jour à chaque frappe : les boutons ± du clavier partent de ce qui est affiché.
+            DecimalField("kg", value: $set.weight, keyboard: .decimalPad)
                 .focused(focus, equals: .weight(set.id))
-                .keyboardType(.decimalPad)
                 .multilineTextAlignment(.center)
                 .frame(width: 64, height: 40)
                 .background(Color.secondary.opacity(0.12), in: .rect(cornerRadius: 8))
-            TextField("reps", value: $set.reps, format: .number)
+            IntegerField("reps", value: $set.reps)
                 .focused(focus, equals: .reps(set.id))
-                .keyboardType(.numberPad)
                 .multilineTextAlignment(.center)
                 .frame(width: 52, height: 40)
                 .background(Color.secondary.opacity(0.12), in: .rect(cornerRadius: 8))
@@ -659,8 +687,8 @@ private struct RestBanner: View {
                 Text(remaining > 0 ? String(format: "Repos %d:%02d", remaining / 60, remaining % 60) : "Repos terminé")
                     .font(.headline.monospacedDigit())
                 Spacer()
-                Button("−15") { onAdjust(-15) }
-                Button("+15") { onAdjust(15) }
+                Button("−15 s") { onAdjust(-15) }
+                Button("+15 s") { onAdjust(15) }
                 Button(remaining > 0 ? "Passer" : "OK", action: onSkip)
             }
             .buttonStyle(.bordered)
@@ -686,7 +714,7 @@ private struct FinishWorkoutSheet: View {
             Form {
                 Section {
                     LabeledContent("Durée", value: (Date.now.timeIntervalSince(draft.start) / 3600).hoursText)
-                    LabeledContent("Exercices", value: "\(draft.exercises.count)")
+                    LabeledContent("Exercices", value: "\(draft.loggedExercises)")
                     LabeledContent("Séries validées", value: "\(draft.completedSets)")
                     LabeledContent("Tonnage", value: String(format: "%.0f kg", draft.tonnage))
                 }

@@ -24,7 +24,7 @@ struct SeasonPlanView: View {
 
                         HStack(spacing: 12) {
                             Button { showUnavailability = true } label: {
-                                Label("Je ne peux pas", systemImage: "calendar.badge.minus").frame(maxWidth: .infinity)
+                                Label("Imprévu", systemImage: "calendar.badge.exclamationmark").frame(maxWidth: .infinity)
                             }
                             Button { showInjury = true } label: {
                                 Label("Blessure", systemImage: "bandage").frame(maxWidth: .infinity)
@@ -122,7 +122,7 @@ private struct PlanHeaderCard: View {
                     }
                     Spacer()
                     VStack(alignment: .trailing) {
-                        Text("Prévue avant \(raceName)").font(.caption).foregroundStyle(.secondary)
+                        Text(raceName.isEmpty ? "Prévue le jour J" : "Prévue avant \(raceName)").font(.caption).foregroundStyle(.secondary)
                         Text("\(plan.projectedPeakCTL.noDecimal) / \(plan.targetCTL.noDecimal)").font(.title2.weight(.bold))
                     }
                 }
@@ -158,7 +158,7 @@ private struct WeekCard: View {
                 }
                 .font(.footnote)
                 HStack(spacing: 14) {
-                    Label("\(week.intensitySessions) intensité", systemImage: "bolt.fill")
+                    Label("\(week.intensitySessions) \(week.intensitySessions > 1 ? "séances intenses" : "séance intense")", systemImage: "bolt.fill")
                     Label("\(week.strengthSessions)× PPL", systemImage: "dumbbell.fill")
                     Label(week.runningAllowed ? "Course OK" : "Pas de course", systemImage: "figure.run")
                 }
@@ -181,6 +181,7 @@ private struct WeekCard: View {
 
 struct InjuryRow: View {
     @Environment(\.modelContext) private var context
+    @Environment(AppModel.self) private var app
     let injury: Injury
 
     var body: some View {
@@ -194,6 +195,7 @@ struct InjuryRow: View {
             Button("Guérie") {
                 injury.resolvedAt = .now
                 try? context.save()
+                app.dataVersion += 1
             }
             .buttonStyle(.glass)
             .font(.caption)
@@ -203,6 +205,7 @@ struct InjuryRow: View {
 
 struct UnavailabilityRow: View {
     @Environment(\.modelContext) private var context
+    @Environment(AppModel.self) private var app
     let item: Unavailability
 
     var body: some View {
@@ -217,10 +220,14 @@ struct UnavailabilityRow: View {
             Button(role: .destructive) {
                 context.delete(item)
                 try? context.save()
+                app.dataVersion += 1
             } label: {
                 Image(systemName: "trash")
+                    .frame(width: 30, height: 30)
             }
             .buttonStyle(.glass)
+            .frame(minWidth: 44, minHeight: 44)
+            .accessibilityLabel("Supprimer l'imprévu")
         }
     }
 }
@@ -228,6 +235,7 @@ struct UnavailabilityRow: View {
 struct UnavailabilityForm: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppModel.self) private var app
     @State private var start = Date.now
     @State private var end = Date.now
     @State private var reason: UnavailabilityReason = .illness
@@ -248,13 +256,14 @@ struct UnavailabilityForm: View {
                     Text(explanation).font(.footnote).foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("Indisponibilité")
+            .navigationTitle("Imprévu")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Annuler") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Enregistrer") {
                         context.insert(Unavailability(start: start, end: max(start, end), reason: reason, note: note))
                         try? context.save()
+                        app.dataVersion += 1
                         dismiss()
                     }
                 }
@@ -278,6 +287,7 @@ struct UnavailabilityForm: View {
 struct InjuryForm: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppModel.self) private var app
     @State private var title = ""
     @State private var muscles: Set<Muscle> = []
     @State private var affectsRunning = true
@@ -316,6 +326,7 @@ struct InjuryForm: View {
                         context.insert(Injury(title: name, muscles: muscles, affectsRunning: affectsRunning,
                                               affectsCycling: affectsCycling, severity: severity, start: start))
                         try? context.save()
+                        app.dataVersion += 1
                         dismiss()
                     }
                     .disabled(muscles.isEmpty)

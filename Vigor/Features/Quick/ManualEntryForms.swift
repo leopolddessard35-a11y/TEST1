@@ -67,8 +67,7 @@ struct CardioEntryForm: View {
         HStack {
             Text(label)
             Spacer()
-            TextField("–", value: value, format: .number)
-                .keyboardType(.decimalPad)
+            DecimalField("–", value: value, keyboard: .decimalPad)
                 .multilineTextAlignment(.trailing)
                 .frame(width: 90)
             Text(unit).foregroundStyle(.secondary)
@@ -97,6 +96,7 @@ struct WeightEntryForm: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AppModel.self) private var app
     @Query(sort: \DailyWellness.day, order: .reverse) private var wellness: [DailyWellness]
+    @Query private var profiles: [AthleteProfile]
     @State private var weight: Double = 72
     @State private var day = Date.now
     @State private var loaded = false
@@ -106,17 +106,17 @@ struct WeightEntryForm: View {
             Form {
                 Section {
                     HStack {
-                        Button { weight = max(30, weight - 0.1) } label: { Image(systemName: "minus.circle.fill").font(.title) }
+                        Button { weight = max(Self.range.lowerBound, weight - 0.1) } label: { Image(systemName: "minus.circle.fill").font(.title) }
                             .buttonStyle(.plain)
                         Spacer()
                         Text(String(format: "%.1f kg", weight)).font(.system(.largeTitle, design: .rounded).weight(.bold)).monospacedDigit()
                         Spacer()
-                        Button { weight = min(250, weight + 0.1) } label: { Image(systemName: "plus.circle.fill").font(.title) }
+                        Button { weight = min(Self.range.upperBound, weight + 0.1) } label: { Image(systemName: "plus.circle.fill").font(.title) }
                             .buttonStyle(.plain)
                     }
                     .foregroundStyle(Theme.nutrition)
                     .padding(.vertical, 8)
-                    Slider(value: $weight, in: 40...130, step: 0.1)
+                    Slider(value: $weight, in: Self.range, step: 0.1)
                     DatePicker("Jour", selection: $day, displayedComponents: .date)
                 }
                 Section {
@@ -133,9 +133,21 @@ struct WeightEntryForm: View {
             .onAppear {
                 guard !loaded else { return }
                 loaded = true
-                if let last = wellness.first(where: { $0.weightKg != nil })?.weightKg { weight = last }
+                // Dernière pesée, sinon le poids du profil, sinon 72 kg.
+                if let last = wellness.first(where: { $0.weightKg != nil })?.weightKg {
+                    weight = clamp(last)
+                } else if let profileWeight = profiles.first?.weightKg, profileWeight > 0 {
+                    weight = clamp(profileWeight)
+                }
             }
         }
+    }
+
+    /// Même plage pour le curseur et les boutons ±.
+    static let range: ClosedRange<Double> = 35...200
+
+    private func clamp(_ value: Double) -> Double {
+        min(Self.range.upperBound, max(Self.range.lowerBound, value))
     }
 
     private func save() {

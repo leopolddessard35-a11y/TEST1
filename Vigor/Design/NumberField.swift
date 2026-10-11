@@ -8,7 +8,6 @@ struct DecimalField: View {
     @Binding var value: Double?
     var keyboard: UIKeyboardType = .decimalPad
     @State private var text = ""
-    @FocusState private var focused: Bool
 
     init(_ title: String, value: Binding<Double?>, keyboard: UIKeyboardType = .decimalPad) {
         self.title = title
@@ -19,7 +18,6 @@ struct DecimalField: View {
     var body: some View {
         TextField(title, text: $text)
             .keyboardType(keyboard)
-            .focused($focused)
             .onAppear { text = Self.format(value) }
             .onChange(of: text) { _, newText in
                 let parsed = Self.parse(newText)

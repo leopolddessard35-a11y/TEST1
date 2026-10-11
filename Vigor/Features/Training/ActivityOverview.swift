@@ -1,43 +1,6 @@
 import SwiftUI
 import SwiftData
 
-/// La semaine en calendrier (fait, manqué, repos, à venir) : ouvre le détail de la semaine.
-struct WeekOverviewCard: View {
-    let snapshot: CoachSnapshot
-
-    var body: some View {
-        if !snapshot.weekStatus.isEmpty {
-            if let week = snapshot.plan.currentWeek {
-                NavigationLink { WeekDetailView(week: week) } label: { card }.buttonStyle(.plain)
-            } else {
-                card
-            }
-        }
-    }
-
-    private var card: some View {
-        let done = snapshot.weekStatus.filter { $0.status == .done || $0.status == .partial }.count
-        let planned = snapshot.weekStatus.filter { $0.status != .rest }.count
-        return GlassCard {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    IconBadge(symbol: "calendar", tint: Theme.accent, size: 24)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Cette semaine").font(.headline)
-                        if let week = snapshot.plan.currentWeek {
-                            Text("\(done) / \(planned) séances · \(week.phase.label) · \(week.targetHours.hoursText) prévues")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    Spacer()
-                    DetailChevron()
-                }
-                WeekStrip(days: snapshot.weekStatus)
-            }
-        }
-    }
-}
-
 /// Fraîcheur des muscles les plus sollicités : ouvre la liste complète.
 struct MuscleFreshnessCard: View {
     @Query(sort: \StrengthWorkout.start, order: .reverse) private var workouts: [StrengthWorkout]

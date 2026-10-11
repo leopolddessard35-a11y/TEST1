@@ -3,7 +3,6 @@ import SwiftData
 
 /// Ce qu'ouvre le bouton « + » de la barre d'onglets : toutes les saisies en un tap.
 struct QuickAddView: View {
-    @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Environment(AppModel.self) private var app
     var isSheet = false
@@ -27,27 +26,26 @@ struct QuickAddView: View {
         let title: String
         let caption: String
         let symbol: String
-        let tint: Color
         let entry: Entry
     }
 
     private let groups: [ActionGroup] = [
         ActionGroup(title: "Nutrition", actions: [
-            Action(id: "food", title: "Repas", caption: "scan, favoris, récents", symbol: "fork.knife", tint: Theme.accent, entry: .food),
-            Action(id: "weight", title: "Pesée", caption: "poids du matin", symbol: "scalemass.fill", tint: Theme.accent, entry: .weight)
+            Action(id: "food", title: "Repas", caption: "scan, favoris, récents", symbol: "fork.knife", entry: .food),
+            Action(id: "weight", title: "Pesée", caption: "poids du matin", symbol: "scalemass.fill", entry: .weight)
         ]),
         ActionGroup(title: "Entraînement", actions: [
-            Action(id: "workout", title: "Séance de muscu", caption: "libre ou séance type", symbol: "dumbbell.fill", tint: Theme.accent, entry: .workout),
-            Action(id: "cardio", title: "Séance d'endurance", caption: "vélo, course sans montre", symbol: "bicycle", tint: Theme.accent, entry: .cardio),
-            Action(id: "rpe", title: "Effort ressenti", caption: "noter une séance", symbol: "gauge.with.dots.needle.67percent", tint: Theme.accent, entry: .rpe)
+            Action(id: "workout", title: "Séance de muscu", caption: "libre ou séance type", symbol: "dumbbell.fill", entry: .workout),
+            Action(id: "cardio", title: "Séance d'endurance", caption: "vélo, course sans montre", symbol: "bicycle", entry: .cardio),
+            Action(id: "rpe", title: "Effort ressenti", caption: "noter une séance", symbol: "gauge.with.dots.needle.67percent", entry: .rpe)
         ]),
         ActionGroup(title: "Corps et santé", actions: [
-            Action(id: "symptom", title: "Symptôme", caption: "douleur, gêne", symbol: "bandage.fill", tint: Theme.accent, entry: .symptom),
-            Action(id: "injury", title: "Blessure", caption: "adapte le plan", symbol: "cross.case.fill", tint: Theme.accent, entry: .injury)
+            Action(id: "symptom", title: "Symptôme", caption: "douleur, gêne", symbol: "bandage.fill", entry: .symptom),
+            Action(id: "injury", title: "Blessure", caption: "adapte le plan", symbol: "cross.case.fill", entry: .injury)
         ]),
         ActionGroup(title: "Quotidien", actions: [
-            Action(id: "life", title: "Hors sport", caption: "travaux, debout", symbol: "hammer.fill", tint: Theme.accent, entry: .life),
-            Action(id: "unavailability", title: "Imprévu", caption: "maladie, voyage…", symbol: "calendar.badge.exclamationmark", tint: Theme.accent, entry: .unavailability)
+            Action(id: "life", title: "Hors sport", caption: "travaux, debout", symbol: "hammer.fill", entry: .life),
+            Action(id: "unavailability", title: "Imprévu", caption: "maladie, voyage…", symbol: "calendar.badge.exclamationmark", entry: .unavailability)
         ])
     ]
 
@@ -129,8 +127,8 @@ struct QuickAddView: View {
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(.white)
                 .frame(width: 40, height: 40)
-                .background(action.tint.gradient, in: .circle)
-                .shadow(color: action.tint.opacity(0.35), radius: 6, y: 3)
+                .background(Theme.accent.gradient, in: .circle)
+                .shadow(color: Theme.accent.opacity(0.35), radius: 6, y: 3)
             VStack(alignment: .leading, spacing: 2) {
                 Text(action.title).font(.subheadline.weight(.semibold))
                 Text(action.caption).font(.caption).foregroundStyle(.secondary).lineLimit(2)

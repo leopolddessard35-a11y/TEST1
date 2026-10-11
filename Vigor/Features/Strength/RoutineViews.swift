@@ -3,8 +3,6 @@ import SwiftData
 
 /// Haut de l'onglet Muscu : démarrer, tes programmes et séances types, la banque d'exercices, l'historique.
 struct StrengthPlansSection: View {
-    @Environment(\.modelContext) private var context
-    @Environment(AppModel.self) private var app
     @Query(sort: [SortDescriptor(\WorkoutRoutine.program), SortDescriptor(\WorkoutRoutine.order)]) private var routines: [WorkoutRoutine]
     @Query(sort: \StrengthWorkout.start, order: .reverse) private var workouts: [StrengthWorkout]
     @State private var startingRoutine: WorkoutRoutine?
@@ -109,9 +107,14 @@ private struct RoutineCard: View {
                         }
                     }
                     Spacer()
-                    Button(action: onEdit) { Image(systemName: "pencil.circle.fill").font(.title2) }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
+                    Button(action: onEdit) {
+                        Image(systemName: "pencil.circle.fill").font(.title2)
+                            .frame(width: 44, height: 44)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Modifier la séance type")
                 }
                 Text(items.prefix(4).map(\.exercise).joined(separator: " · ") + (items.count > 4 ? " …" : ""))
                     .font(.footnote).foregroundStyle(.secondary).lineLimit(2)
@@ -172,7 +175,7 @@ struct RoutineEditorView: View {
                                     ForEach(Self.restPresets, id: \.self) { seconds in
                                         Button(String(format: "Repos %d:%02d", seconds / 60, seconds % 60)) { item.restSeconds = seconds }
                                     }
-                                } label: { pill("⏱ \(item.restText)") }
+                                } label: { pill("Repos \(item.restText)") }
                             }
                             if !item.note.isEmpty {
                                 Text(item.note).font(.caption).foregroundStyle(.secondary)
@@ -243,16 +246,19 @@ struct RoutineEditorView: View {
     }
 
     private func save() {
+        let cleanProgram = program.trimmingCharacters(in: .whitespaces)
         let target: WorkoutRoutine
         if let routine {
             target = routine
         } else {
-            let siblings = (try? context.fetch(FetchDescriptor<WorkoutRoutine>()))?.filter { $0.program == program }.count ?? 0
-            target = WorkoutRoutine(name: name, program: program, order: siblings)
+            // Rang dans le programme : comparé au nom de programme nettoyé (tel qu'il est enregistré).
+            let siblings = (try? context.fetch(FetchDescriptor<WorkoutRoutine>()))?
+                .filter { $0.program.trimmingCharacters(in: .whitespaces) == cleanProgram }.count ?? 0
+            target = WorkoutRoutine(name: name, program: cleanProgram, order: siblings)
             context.insert(target)
         }
         target.name = name.trimmingCharacters(in: .whitespaces)
-        target.program = program.trimmingCharacters(in: .whitespaces)
+        target.program = cleanProgram
         target.notes = notes
         target.items = items
         try? context.save()

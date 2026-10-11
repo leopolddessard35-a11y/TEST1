@@ -4,8 +4,6 @@ import Charts
 
 /// Calendrier des échéances avec la condition prévue à chaque date.
 struct GoalsCard: View {
-    @Environment(\.modelContext) private var context
-    @Environment(AppModel.self) private var app
     @Query(sort: \Goal.date) private var goals: [Goal]
     let plan: SeasonPlan
     @State private var editing: Goal?
@@ -17,7 +15,10 @@ struct GoalsCard: View {
                 HStack {
                     SectionTitle(title: "Échéances", symbol: "flag.checkered")
                     Spacer()
-                    Button { adding = true } label: { Image(systemName: "plus") }.buttonStyle(.glass)
+                    Button { adding = true } label: { Image(systemName: "plus").frame(width: 30, height: 30) }
+                        .buttonStyle(.glass)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .accessibilityLabel("Ajouter une échéance")
                 }
                 if goals.isEmpty {
                     Text("Ajoute tes objectifs (100 km, semi, 200 km, 30 km…). L'objectif A pilote le plan, les B et C servent de jalons.")
@@ -79,7 +80,7 @@ struct GoalForm: View {
                 HStack {
                     Text("Distance (km)")
                     Spacer()
-                    TextField("km", value: $distance, format: .number).keyboardType(.decimalPad).multilineTextAlignment(.trailing).frame(width: 80)
+                    DecimalFieldNonOptional("km", value: $distance).multilineTextAlignment(.trailing).frame(width: 80)
                 }
                 Picker("Priorité", selection: $priorityRaw) {
                     ForEach(GoalPriority.allCases) { Text($0.label).tag($0.rawValue) }

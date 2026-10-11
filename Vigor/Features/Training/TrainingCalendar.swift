@@ -23,7 +23,8 @@ struct CalendarDay: Identifiable, Equatable {
     }
 
     struct Session: Equatable, Identifiable {
-        var id: String { "\(title)-\(minutes)" }
+        /// Identifiant de la séance source (unique, même pour deux séances de même titre et durée).
+        let id: String
         let title: String
         let symbol: String
         let minutes: Int
@@ -117,11 +118,11 @@ enum TrainingCalendar {
         var result: [Date: [CalendarDay.Session]] = [:]
         for activity in activities {
             result[calendar.startOfDay(for: activity.start), default: []].append(
-                CalendarDay.Session(title: activity.title, symbol: activity.sport.symbol, minutes: Int(activity.durationSeconds / 60)))
+                CalendarDay.Session(id: "cardio-\(activity.externalID)", title: activity.title, symbol: activity.sport.symbol, minutes: Int(activity.durationSeconds / 60)))
         }
         for workout in workouts {
             result[calendar.startOfDay(for: workout.start), default: []].append(
-                CalendarDay.Session(title: workout.title, symbol: "dumbbell.fill", minutes: Int(workout.durationSeconds / 60)))
+                CalendarDay.Session(id: "muscu-\(workout.externalID)", title: workout.title, symbol: "dumbbell.fill", minutes: Int(workout.durationSeconds / 60)))
         }
         return result
     }
@@ -132,7 +133,10 @@ enum TrainingCalendar {
 
     /// Série actuelle et record : semaines consécutives avec au moins `weeklyTarget` séances.
     /// La semaine en cours compte dès que l'objectif est atteint (sinon elle ne casse pas la série).
+    /// Une semaine avec un jour d'indisponibilité (maladie, voyage…) est neutre si l'objectif n'est pas atteint :
+    /// elle ne casse pas la série et ne l'allonge pas.
     static func weeklyStreak(activities: [CardioActivity], workouts: [StrengthWorkout],
+                             unavailabilities: [Unavailability] = [],
                              calendar: Calendar = .current) -> (current: Int, best: Int) {
         var counts: [Date: Int] = [:]
         let starts: [Date] = activities.map(\.start) + workouts.map(\.start)
@@ -149,9 +153,15 @@ enum TrainingCalendar {
         var week = oldest
         while week <= thisWeek {
             let reached = (counts[week] ?? 0) >= weeklyTarget
+            let weekEnd = calendar.date(byAdding: .weekOfYear, value: 1, to: week) ?? week.addingTimeInterval(7 * 86_400)
+            let unavailable = unavailabilities.contains { item in
+                let start = calendar.startOfDay(for: item.start)
+                let end = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: item.end)) ?? item.end
+                return start < weekEnd && end > week
+            }
             if reached {
                 running += 1
-            } else if week != thisWeek {
+            } else if week != thisWeek && !unavailable {
                 running = 0
             }
             best = max(best, running)
@@ -181,7 +191,7 @@ struct TrainingCalendarCard: View {
     var body: some View {
         let days = TrainingCalendar.month(containing: month, activities: activities, workouts: workouts,
                                           unavailabilities: unavailabilities, planned: planned, weekStatus: snapshot.weekStatus)
-        let streak = TrainingCalendar.weeklyStreak(activities: activities, workouts: workouts)
+        let streak = TrainingCalendar.weeklyStreak(activities: activities, workouts: workouts, unavailabilities: unavailabilities)
         let monthDays = days.compactMap { $0 }
         let sessionCount = monthDays.reduce(0) { $0 + $1.sessions.count }
         let minutes = monthDays.reduce(0) { total, day in total + day.sessions.reduce(0) { $0 + $1.minutes } }
@@ -194,9 +204,10 @@ struct TrainingCalendarCard: View {
                     stat(value: "\(streak.current)", unit: streak.current > 1 ? "semaines" : "semaine", title: "Série",
                          symbol: streak.current > 0 ? "flame.fill" : nil)
                     Divider().frame(height: 44)
-                    stat(value: "\(streak.best)", unit: "semaines", title: "Record", symbol: "laurel.leading")
+                    stat(value: "\(streak.best)", unit: streak.best > 1 ? "semaines" : "semaine", title: "Record", symbol: "laurel.leading")
                     Divider().frame(height: 44)
-                    stat(value: "\(sessionCount)", unit: (Double(minutes) / 60).hoursText, title: "Ce mois", symbol: nil)
+                    stat(value: "\(sessionCount)", unit: sessionCount > 1 ? "séances" : "séance", title: "Ce mois", symbol: nil,
+                         caption: (Double(minutes) / 60).hoursText)
                 }
                 // Respiration entre les chiffres et le calendrier.
                 Divider().padding(.vertical, 6)
@@ -239,8 +250,12 @@ struct TrainingCalendarCard: View {
                         }
                     }
                     .simultaneousGesture(DragGesture(minimumDistance: 30).onEnded { value in
-                        if value.translation.width < -60 { shift(1) }
-                        if value.translation.width > 60 { shift(-1) }
+                        // Balayage nettement horizontal seulement : un défilement vertical ne change pas de mois.
+                        let dx = value.translation.width
+                        let dy = value.translation.height
+                        guard abs(dx) > 2 * abs(dy) else { return }
+                        if dx < -60 { shift(1) }
+                        if dx > 60 { shift(-1) }
                     })
                     legend
                 } else {
@@ -294,7 +309,7 @@ struct TrainingCalendarCard: View {
         }
     }
 
-    private func stat(value: String, unit: String, title: String, symbol: String?) -> some View {
+    private func stat(value: String, unit: String, title: String, symbol: String?, caption: String? = nil) -> some View {
         VStack(spacing: 2) {
             Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             HStack(spacing: 4) {
@@ -302,16 +317,21 @@ struct TrainingCalendarCard: View {
                 Text(value).font(.system(.title2, design: .rounded).weight(.heavy)).monospacedDigit()
             }
             Text(unit).font(.caption2).foregroundStyle(.secondary)
+            if let caption {
+                Text(caption).font(.caption2).foregroundStyle(.tertiary).monospacedDigit()
+            }
         }
         .frame(maxWidth: .infinity)
     }
 
     private var legend: some View {
-        HStack(spacing: 12) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8, alignment: .leading)], alignment: .leading, spacing: 6) {
             legendItem(Circle().fill(Theme.good), "Fait")
             legendItem(Circle().fill(Theme.accent), "Grosse séance")
             legendItem(Circle().strokeBorder(Theme.alert, lineWidth: 1.5), "Manqué")
             legendItem(Circle().strokeBorder(Color.secondary, style: StrokeStyle(lineWidth: 1.5, dash: [3, 3])), "Prévu")
+            legendItem(Circle().fill(Theme.well).overlay(Circle().strokeBorder(Color.secondary.opacity(0.6), lineWidth: 1)), "Indisponible")
+            legendItem(Circle().fill(Theme.well.opacity(0.7)), "Repos")
         }
         .font(.caption2)
         .foregroundStyle(.secondary)

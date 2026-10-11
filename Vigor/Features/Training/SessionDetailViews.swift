@@ -6,7 +6,9 @@ import Charts
 
 struct ActivityDetailView: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
     @Environment(AppModel.self) private var app
+    @State private var confirmDelete = false
     @Query private var shoes: [Shoe]
     @Bindable var activity: CardioActivity
     let thresholds: Thresholds
@@ -92,6 +94,31 @@ struct ActivityDetailView: View {
         .background(AppBackground())
         .navigationTitle(activity.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Supprimer", systemImage: "trash", role: .destructive) { confirmDelete = true }
+            }
+        }
+        .confirmationDialog("Supprimer cette séance ?", isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button("Supprimer la séance", role: .destructive) {
+                // On quitte l'écran d'abord : il ne doit plus lire un objet supprimé.
+                let target = activity
+                dismiss()
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(400))
+                    context.delete(target)
+                    try? context.save()
+                    app.dataVersion += 1
+                }
+            }
+            Button("Annuler", role: .cancel) {}
+        } message: {
+            if activity.source == "Vigor" {
+                Text("La séance sera définitivement supprimée.")
+            } else {
+                Text("Séance importée (\(activity.source)) : elle peut réapparaître à la prochaine synchronisation.")
+            }
+        }
     }
 
     @ViewBuilder private var zonesCard: some View {

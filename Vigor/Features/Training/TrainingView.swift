@@ -124,7 +124,7 @@ private struct SeasonCard: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(raceName).font(.headline)
+                        Text(raceName.isEmpty ? "Objectif" : raceName).font(.headline)
                         Text(raceDate.formatted(date: .long, time: .omitted)).font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -159,7 +159,7 @@ struct StrengthProgressContent: View {
                 if workouts.isEmpty {
                     EmptyStateCard(
                         title: "Aucune séance pour l'instant",
-                        message: "Lance une séance type ou une séance libre ci-dessus : séries, charges et repos se notent en direct, et le coach propose les charges suivantes.",
+                        message: "Lance une séance type ou une séance libre depuis la section Musculation de l'onglet Sport : séries, charges et repos se notent en direct, et le coach propose les charges suivantes.",
                         symbol: "dumbbell")
                 } else {
                     let weekAgo = Calendar.current.date(byAdding: .day, value: -7, to: .now) ?? .now
@@ -172,7 +172,7 @@ struct StrengthProgressContent: View {
                                 ProgressionCard(workouts: workouts, readiness: snapshot.readiness?.level, injured: injured)
                             }
                         } label: {
-                            SimpleTile(title: "Prochaines charges", value: "\(Set(workouts.prefix(6).flatMap { $0.sets.map(\.exercise) }).count) exos",
+                            SimpleTile(title: "Prochaines charges", value: "\(Set(workouts.prefix(6).flatMap { $0.sets.map(\.exercise) }).count) exercices",
                                        caption: "charge conseillée", symbol: "scalemass.fill", tint: Theme.strain)
                         }
                         NavigationLink {
@@ -190,7 +190,8 @@ struct StrengthProgressContent: View {
                         NavigationLink {
                             DetailPage(title: "Exercices") { ExerciseListCard(workouts: workouts) }
                         } label: {
-                            SimpleTile(title: "Records", value: "1RM", caption: "par exercice", symbol: "trophy.fill", tint: Theme.sleep)
+                            SimpleTile(title: "Records", value: "\(Set(workouts.flatMap { $0.sets.map(\.exercise) }).count)",
+                                       caption: "1RM estimé par exercice", symbol: "trophy.fill", tint: Theme.sleep)
                         }
                     }
                     .buttonStyle(.plain)
@@ -327,8 +328,10 @@ private struct WorkoutListCard: View {
 
 struct StrengthWorkoutDetailView: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
     @Environment(AppModel.self) private var app
     @Bindable var workout: StrengthWorkout
+    @State private var confirmDelete = false
 
     var body: some View {
         List {
@@ -362,6 +365,27 @@ struct StrengthWorkoutDetailView: View {
             }
         }
         .navigationTitle(workout.title)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Supprimer", systemImage: "trash", role: .destructive) { confirmDelete = true }
+            }
+        }
+        .confirmationDialog("Supprimer cette séance ?", isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button("Supprimer la séance", role: .destructive) {
+                // On quitte l'écran d'abord : il ne doit plus lire un objet supprimé.
+                let target = workout
+                dismiss()
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(400))
+                    context.delete(target)
+                    try? context.save()
+                    app.dataVersion += 1
+                }
+            }
+            Button("Annuler", role: .cancel) {}
+        } message: {
+            Text("La séance et toutes ses séries seront définitivement supprimées.")
+        }
     }
 }
 
@@ -392,31 +416,6 @@ private struct EnduranceSection: View {
                         }
                     }
                 }
-            }
-        }
-    }
-}
-
-private struct LoadChartCard: View {
-    let points: [LoadPoint]
-
-    var body: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: 10) {
-                SectionTitle(title: "Condition, fatigue et forme · 4 mois", symbol: "chart.xyaxis.line")
-                Chart {
-                    ForEach(points) { point in
-                        LineMark(x: .value("Jour", point.date), y: .value("Valeur", point.ctl))
-                            .foregroundStyle(by: .value("Courbe", "Condition"))
-                        LineMark(x: .value("Jour", point.date), y: .value("Valeur", point.atl))
-                            .foregroundStyle(by: .value("Courbe", "Fatigue"))
-                        LineMark(x: .value("Jour", point.date), y: .value("Valeur", point.form))
-                            .foregroundStyle(by: .value("Courbe", "Forme"))
-                    }
-                }
-                .chartForegroundStyleScale(["Condition": Theme.recovery, "Fatigue": Theme.strain, "Forme": Theme.sleep])
-                .dateAxis(days: 120)
-                .frame(height: 200)
             }
         }
     }
@@ -536,8 +535,8 @@ private struct LoadSummarySection: View {
                            symbol: "waveform", tint: (snapshot.monotony ?? 0) > 2 ? Theme.caution : Theme.good)
             }
             NavigationLink {
-                DetailPage(title: "Efficiency Factor") {
-                    TrendChart(title: "Efficiency Factor vélo (NP / FC)", color: Theme.recovery, points: snapshot.efSeries, days: 120)
+                DetailPage(title: "Endurance aérobie (puissance / FC)") {
+                    TrendChart(title: "Endurance aérobie (puissance / FC)", color: Theme.recovery, points: snapshot.efSeries, days: 120)
                     ExplanationCard(title: "Ce que ça mesure", symbol: "lightbulb", text: "Puissance produite par battement cardiaque, sur des sorties d'endurance comparables (≥ 45 min, peu de dénivelé). Il monte quand ta base aérobie progresse : c'est l'indicateur de progrès sans chrono.")
                 }
             } label: {
@@ -565,13 +564,5 @@ private struct LoadSummarySection: View {
         if ratio > 1.5 { return Theme.alert }
         if ratio > 1.3 || ratio < 0.8 { return Theme.caution }
         return Theme.good
-    }
-
-    private func ratioCaption(_ ratio: Double?) -> String {
-        guard let ratio else { return "moyennes exponentielles" }
-        if ratio > 1.5 { return "⚠︎ pic (> 1,5)" }
-        if ratio > 1.3 { return "↗ haut (1,3–1,5)" }
-        if ratio < 0.8 { return "↘ bas (< 0,8)" }
-        return "✓ zone sûre"
     }
 }
