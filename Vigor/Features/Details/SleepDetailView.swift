@@ -12,7 +12,7 @@ struct SleepDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
                 header
                 if let score = snapshot.lastSleepScore { componentsCard(score) }
                 if !segments.isEmpty { hypnogramCard }

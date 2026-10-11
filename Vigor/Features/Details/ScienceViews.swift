@@ -41,11 +41,9 @@ struct StatTile: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title).font(.caption).foregroundStyle(.secondary)
             Text(value).font(.title3.weight(.semibold).monospacedDigit())
-            if !caption.isEmpty { Text(caption).font(.caption2).foregroundStyle(.secondary) }
+            if !caption.isEmpty { Text(caption).font(.caption2).foregroundStyle(.secondary).lineLimit(2) }
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .card(cornerRadius: 18)
+        .tile(height: Theme.compactTileHeight)
     }
 }
 

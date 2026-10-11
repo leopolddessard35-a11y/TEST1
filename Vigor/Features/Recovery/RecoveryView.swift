@@ -201,9 +201,7 @@ struct ContextTile: View {
                     Text("Base en cours de calcul").font(.caption2).foregroundStyle(.secondary)
                 }
             }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .card(cornerRadius: 20)
+            .tile()
         }
         .buttonStyle(.plain)
     }

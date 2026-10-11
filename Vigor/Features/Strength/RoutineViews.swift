@@ -35,15 +35,11 @@ struct StrengthPlansSection: View {
                         }
                         Text("Crée tes séances types (exercices, séries, répétitions, repos) et lance-les en un tap. Les charges sont proposées d'après ta dernière séance.")
                             .font(.subheadline).foregroundStyle(.secondary)
-                        Button { createPPL() } label: {
-                            Label("Créer mon programme PPL", systemImage: "wand.and.stars").frame(maxWidth: .infinity)
+                        Button { creating = true } label: {
+                            Label("Créer une séance type", systemImage: "plus").frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.glassProminent)
                         .tint(Theme.accent)
-                        Button { creating = true } label: {
-                            Label("Séance type vide", systemImage: "plus").frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.glass)
                     }
                 }
             } else {
@@ -82,19 +78,11 @@ struct StrengthPlansSection: View {
         .sheet(isPresented: $startingEmpty) { WorkoutLoggerView() }
         .sheet(item: $startingRoutine) { routine in WorkoutLoggerView(routine: routine) }
         .sheet(item: $editing) { routine in RoutineEditorView(routine: routine) }
-        .sheet(isPresented: $creating) { RoutineEditorView(routine: nil, defaultProgram: programs.last ?? ProgramTemplates.pplName) }
+        .sheet(isPresented: $creating) { RoutineEditorView(routine: nil, defaultProgram: programs.last ?? "") }
     }
 
     private func lastDone(_ routine: WorkoutRoutine) -> Date? {
         workouts.first { $0.title.caseInsensitiveCompare(routine.name) == .orderedSame }?.start
-    }
-
-    private func createPPL() {
-        for (index, template) in ProgramTemplates.ppl().enumerated() {
-            context.insert(WorkoutRoutine(name: template.name, program: ProgramTemplates.pplName, order: index, items: template.items))
-        }
-        try? context.save()
-        app.dataVersion += 1
     }
 }
 
@@ -143,7 +131,7 @@ struct RoutineEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AppModel.self) private var app
     let routine: WorkoutRoutine?
-    var defaultProgram = ProgramTemplates.pplName
+    var defaultProgram = ""
     @State private var name = ""
     @State private var program = ""
     @State private var notes = ""
@@ -160,7 +148,7 @@ struct RoutineEditorView: View {
             List {
                 Section {
                     TextField("Nom (ex. Push A)", text: $name)
-                    TextField("Programme (ex. PPL)", text: $program)
+                    TextField("Programme (facultatif)", text: $program)
                     TextField("Notes", text: $notes, axis: .vertical)
                 }
                 Section("Exercices") {

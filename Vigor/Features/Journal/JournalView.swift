@@ -15,7 +15,7 @@ struct JournalView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 16) {
+                VStack(spacing: 12) {
                     Picker("Journal", selection: $segment) {
                         ForEach(Segment.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                     }

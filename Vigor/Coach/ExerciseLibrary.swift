@@ -124,39 +124,3 @@ enum ExerciseLibrary {
         MuscleMap.custom = map
     }
 }
-
-/// Programmes prêts à l'emploi.
-enum ProgramTemplates {
-    static let pplName = "PPL"
-
-    /// PPL hypertrophie 3×/semaine, compatible avec le vélo (jambes sans excès d'excentrique, ischio protégé).
-    static func ppl() -> [(name: String, items: [RoutineItem])] {
-        [
-            (name: "Push", items: [
-                RoutineItem(exercise: "Développé couché (barre)", sets: 4, repLow: 6, repHigh: 10, restSeconds: 180),
-                RoutineItem(exercise: "Développé incliné (haltères)", sets: 3, repLow: 8, repHigh: 12, restSeconds: 120),
-                RoutineItem(exercise: "Développé épaules (haltères)", sets: 3, repLow: 8, repHigh: 12, restSeconds: 120),
-                RoutineItem(exercise: "Élévation latérale (haltères)", sets: 4, repLow: 12, repHigh: 15, restSeconds: 75),
-                RoutineItem(exercise: "Écarté à la poulie", sets: 3, repLow: 12, repHigh: 15, restSeconds: 75),
-                RoutineItem(exercise: "Extension triceps à la poulie", sets: 3, repLow: 10, repHigh: 15, restSeconds: 75)
-            ]),
-            (name: "Pull", items: [
-                RoutineItem(exercise: "Tractions", sets: 4, repLow: 6, repHigh: 10, restSeconds: 150),
-                RoutineItem(exercise: "Rowing barre", sets: 3, repLow: 8, repHigh: 12, restSeconds: 120),
-                RoutineItem(exercise: "Tirage vertical (poulie)", sets: 3, repLow: 10, repHigh: 12, restSeconds: 90),
-                RoutineItem(exercise: "Face pull", sets: 3, repLow: 12, repHigh: 15, restSeconds: 60),
-                RoutineItem(exercise: "Curl incliné (haltères)", sets: 3, repLow: 10, repHigh: 12, restSeconds: 75),
-                RoutineItem(exercise: "Curl marteau", sets: 3, repLow: 10, repHigh: 12, restSeconds: 60)
-            ]),
-            (name: "Legs", items: [
-                RoutineItem(exercise: "Squat (barre)", sets: 4, repLow: 6, repHigh: 10, restSeconds: 180),
-                RoutineItem(exercise: "Presse à cuisses", sets: 3, repLow: 10, repHigh: 12, restSeconds: 120),
-                RoutineItem(exercise: "Leg extension", sets: 3, repLow: 12, repHigh: 15, restSeconds: 75),
-                RoutineItem(exercise: "Leg curl assis", sets: 3, repLow: 10, repHigh: 12, restSeconds: 90,
-                            note: "Charge légère et sans douleur tant que l'ischio gauche est sensible."),
-                RoutineItem(exercise: "Hip thrust", sets: 3, repLow: 8, repHigh: 12, restSeconds: 120),
-                RoutineItem(exercise: "Mollets debout", sets: 4, repLow: 10, repHigh: 15, restSeconds: 60)
-            ])
-        ]
-    }
-}

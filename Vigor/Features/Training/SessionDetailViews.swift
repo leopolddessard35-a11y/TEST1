@@ -21,7 +21,7 @@ struct ActivityDetailView: View {
             averageHeartRate: activity.averageHeartRate, thresholds: thresholds)
 
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                     StatTile(title: "Durée", value: (activity.durationSeconds / 3600).hoursText)
                     StatTile(title: "Distance", value: activity.distanceMeters.map { String(format: "%.1f km", $0 / 1000) } ?? "–")
@@ -146,7 +146,7 @@ struct ExerciseDetailView: View {
         let targets = MuscleMap.targets(for: exercise)
 
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                     StatTile(title: "1RM estimé (record)", value: best.map { "\($0.bestEstimated1RM.oneDecimal) kg" } ?? "–",
                              caption: best.map { $0.date.formatted(date: .abbreviated, time: .omitted) } ?? "")

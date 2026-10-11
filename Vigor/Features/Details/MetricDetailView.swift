@@ -169,7 +169,7 @@ struct MetricDetailView: View {
         let slope = Stats.slopePerDay(Stats.lastDays(28, of: sorted, today: .now)).map { $0 * 7 }
 
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
                 GlassCard {
                     VStack(alignment: .leading, spacing: 6) {
                         Label(kind.title, systemImage: kind.symbol).font(.headline).foregroundStyle(kind.color)

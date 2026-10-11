@@ -27,7 +27,7 @@ struct NutritionContent: View {
         SnapshotReader { _, snapshot in
             let dayEntries = entries.filter { Calendar.current.isDate($0.date, inSameDayAs: day) }
             let totals: NutritionDay = NutritionView.totals(of: dayEntries, day: day)
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
                 DayPicker(day: $day)
 
                 if let targets = snapshot.macroTargets {
@@ -55,15 +55,6 @@ struct NutritionContent: View {
                 }
 
                 HStack(spacing: 12) {
-                    NavigationLink {
-                        DetailPage(title: "Hydratation") {
-                            HydrationCard(target: snapshot.hydrationTarget, today: snapshot.waterToday)
-                        }
-                    } label: {
-                        SimpleTile(title: "Eau", value: String(format: "%.1f L", snapshot.waterToday / 1000),
-                                   caption: String(format: "objectif %.1f L", snapshot.hydrationTarget / 1000),
-                                   symbol: "drop.fill", tint: Theme.sleep)
-                    }
                     NavigationLink {
                         DetailPage(title: "Bilan énergétique") {
                             EnergyBalanceCard(weights: snapshot.weightMA7, nutrition: snapshot.nutritionDays,

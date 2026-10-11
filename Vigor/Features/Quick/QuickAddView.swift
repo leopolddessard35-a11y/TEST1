@@ -8,7 +8,6 @@ struct QuickAddView: View {
     @Environment(AppModel.self) private var app
     var isSheet = false
     @State private var sheet: Entry?
-    @State private var waterAdded: Double?
     /// Dernières saisies utilisées (les plus récentes d'abord), pour les proposer en tête.
     @AppStorage("quickAdd.recent") private var recentRaw = ""
 
@@ -65,7 +64,6 @@ struct QuickAddView: View {
                         .tint(Theme.accent)
                         .controlSize(.large)
                     }
-                    waterCard
                     let recent = recentActions
                     if !recent.isEmpty {
                         SectionHeader(title: "Récents")
@@ -135,40 +133,10 @@ struct QuickAddView: View {
                 .shadow(color: action.tint.opacity(0.35), radius: 6, y: 3)
             VStack(alignment: .leading, spacing: 2) {
                 Text(action.title).font(.subheadline.weight(.semibold))
-                Text(action.caption).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(action.caption).font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .card(cornerRadius: 22, tint: action.tint)
+        .tile()
     }
 
-    private var waterCard: some View {
-        GlassCard(tint: Theme.sleep) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Label("Eau", systemImage: "drop.fill").font(.headline).foregroundStyle(Theme.sleep)
-                    Spacer()
-                    if let waterAdded {
-                        Text("+\(Int(waterAdded)) ml ajoutés").font(.caption.weight(.semibold)).foregroundStyle(Theme.recovery)
-                            .transition(.opacity)
-                    }
-                }
-                HStack(spacing: 8) {
-                    ForEach([250.0, 500, 750], id: \.self) { ml in
-                        Button("+\(Int(ml)) ml") {
-                            QuickActions.addWater(ml, context: context)
-                            app.dataVersion += 1
-                            app.offerUndo("\(Int(ml)) ml d'eau ajoutés") { context in
-                                QuickActions.addWater(-ml, context: context)
-                            }
-                            withAnimation { waterAdded = (waterAdded ?? 0) + ml }
-                        }
-                        .buttonStyle(.glass)
-                        .frame(maxWidth: .infinity)
-                    }
-                }
-            }
-        }
-    }
 }

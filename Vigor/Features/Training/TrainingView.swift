@@ -155,7 +155,7 @@ struct StrengthProgressContent: View {
     var body: some View {
         SnapshotReader { _, snapshot in
             let injured = snapshot.activeInjuries.reduce(into: Set<Muscle>()) { $0.formUnion($1.muscles) }
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
                 if workouts.isEmpty {
                     EmptyStateCard(
                         title: "Aucune séance pour l'instant",
@@ -372,7 +372,7 @@ private struct EnduranceSection: View {
 
     var body: some View {
         SnapshotReader { profile, snapshot in
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
                 if activities.isEmpty {
                     EmptyStateCard(title: "Aucune séance d'endurance",
                                    message: "Synchronise Apple Santé depuis l'onglet Aujourd'hui. Garmin, Zwift et MyWhoosh (via Garmin) y écrivent tes sorties.",

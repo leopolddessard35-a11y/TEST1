@@ -33,21 +33,6 @@ struct LogEffortIntent: AppIntent {
     }
 }
 
-/// « Dis Siri, ajoute de l'eau dans Vigor ».
-struct AddWaterIntent: AppIntent {
-    static var title: LocalizedStringResource = "Ajouter de l'eau"
-    static var description = IntentDescription("Ajoute un verre ou une gourde à ton hydratation du jour.")
-
-    @Parameter(title: "Quantité (ml)", default: 500)
-    var milliliters: Int
-
-    @MainActor
-    func perform() async throws -> some IntentResult & ProvidesDialog {
-        QuickActions.addWater(Double(milliliters), context: SharedStore.container.mainContext)
-        return .result(dialog: "\(milliliters) ml ajoutés.")
-    }
-}
-
 /// « Dis Siri, quel est mon plan du jour dans Vigor ».
 struct TodayVerdictIntent: AppIntent {
     static var title: LocalizedStringResource = "Plan du jour"
@@ -114,8 +99,6 @@ struct VigorShortcuts: AppShortcutsProvider {
                     shortTitle: "Plan du jour", systemImageName: "sun.max.fill")
         AppShortcut(intent: LogEffortIntent(), phrases: ["Note mon effort dans \(.applicationName)"],
                     shortTitle: "Noter l'effort", systemImageName: "gauge.with.dots.needle.67percent")
-        AppShortcut(intent: AddWaterIntent(), phrases: ["Ajoute de l'eau dans \(.applicationName)"],
-                    shortTitle: "Ajouter de l'eau", systemImageName: "drop.fill")
         AppShortcut(intent: SyncMorningDataIntent(), phrases: ["Synchronise ma nuit dans \(.applicationName)",
                                                                "Données du matin \(.applicationName)"],
                     shortTitle: "Synchro du matin", systemImageName: "bed.double.fill")

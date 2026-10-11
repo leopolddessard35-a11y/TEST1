@@ -67,7 +67,7 @@ Dans Xcode :
    - **Notifications** : heure du plan du matin, rappels de repas si tu les veux.
 5. **Connexions → Tout synchroniser**. La première fois, un an d'historique : patiente une minute.
 6. Santé → **Blessures** → **Déclarer une blessure** : l'ischio gauche (course en pause, le plan s'adapte).
-7. Sport → **Musculation** → **Créer mon programme PPL** (ou tes propres séances types).
+7. Sport → **Musculation** → **Créer une séance type** : crée tes séances (exercices, séries, reps, repos).
 8. (Facultatif) Récupérer ton historique Hevy : dans Hevy, Profil → Réglages → Exporter les séances, puis Sport → Progression (en bas) → **Récupérer mon historique Hevy**. Une seule fois.
 
 ## Étape 6 — Synchro automatique au réveil (3 min)

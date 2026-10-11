@@ -13,8 +13,6 @@ struct TodayChecklistCard: View {
             VStack(alignment: .leading, spacing: 4) {
                 CapsLabel("À faire aujourd'hui").padding(.bottom, 6)
                 mealRow
-                Divider().padding(.leading, 44)
-                waterRow
                 // La séance du jour vit dans la carte coaching ; ici, seulement la coche une fois faite.
                 if let today = snapshot.weekStatus.first(where: { Calendar.current.isDateInToday($0.date) }),
                    today.status == .done || today.status == .partial {
@@ -65,21 +63,6 @@ struct TodayChecklistCard: View {
         } else {
             ChecklistRow(symbol: "fork.knife", title: "Manger", subtitle: "Note tes repas pour suivre tes apports", done: false) {
                 addButton("Repas", action: onAddFood)
-            }
-        }
-    }
-
-    private var waterRow: some View {
-        let done = snapshot.waterToday >= snapshot.hydrationTarget
-        return ChecklistRow(symbol: "drop.fill", title: done ? "Hydratation atteinte" : "Boire",
-                            subtitle: String(format: "%.1f / %.1f L", snapshot.waterToday / 1000, snapshot.hydrationTarget / 1000),
-                            done: done) {
-            addButton("500 ml") {
-                QuickActions.addWater(500, context: context)
-                app.dataVersion += 1
-                app.offerUndo("500 ml d'eau ajoutés") { context in
-                    QuickActions.addWater(-500, context: context)
-                }
             }
         }
     }

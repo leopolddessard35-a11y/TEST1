@@ -12,7 +12,7 @@ struct ReadinessDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
                 if let readiness {
                     GlassCard {
                         HStack(spacing: 20) {
@@ -105,7 +105,7 @@ struct LoadDetailView: View {
         }()
 
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
                 GlassCard {
                     VStack(alignment: .leading, spacing: 10) {
                         RangePicker(days: $days)
@@ -229,7 +229,7 @@ struct InsightsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
                 if insights.isEmpty {
                     EmptyStateCard(title: "Rien à signaler",
                                    message: "Le coach n'a pas assez de données ou tout est dans la norme. Plus tu synchronises de données (sommeil, VFC, séances, repas, poids), plus l'analyse est fine.",
@@ -317,7 +317,7 @@ struct WeekDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
                 GlassCard {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("\(week.phase.label) · semaine \(week.kind.label.lowercased())").font(.title3.weight(.semibold))
@@ -367,7 +367,7 @@ struct MacroTargetsDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                     StatTile(title: "Calories", value: "\(today.kcal.noDecimal) / \(targets.kcal.noDecimal)", caption: "kcal")
                     StatTile(title: "Protéines", value: "\(today.protein.noDecimal) / \(targets.protein.noDecimal)", caption: "g")

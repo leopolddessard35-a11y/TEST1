@@ -201,7 +201,7 @@ struct HealthMonitorTile: View {
 
     var body: some View {
         // Un chiffre, une pastille de statut, UNE visualisation (la courbe des 14 derniers jours).
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 IconBadge(symbol: symbol, tint: Theme.accent, size: 22)
                 Text(title).font(.subheadline.weight(.semibold)).lineLimit(1)
@@ -213,16 +213,16 @@ struct HealthMonitorTile: View {
                 if !unit.isEmpty { Text(unit).font(.caption.weight(.medium)).foregroundStyle(.secondary) }
             }
             if trend.count >= 2 {
-                Sparkline(values: trend, color: tint).frame(height: 24)
+                Sparkline(values: trend, color: tint).frame(height: 20)
             } else {
                 Text(reading.latest == nil ? "Synchronise ta montre" : "La courbe apparaît après 2 mesures")
-                    .font(.caption2).foregroundStyle(.secondary).frame(height: 24, alignment: .leading)
+                    .font(.caption2).foregroundStyle(.secondary).frame(height: 20, alignment: .leading)
             }
             StatusPill(text: reading.label(higherIsBetter: higherIsBetter), symbol: reading.status.symbol, color: reading.color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .card(cornerRadius: 22)
+        .tile()
     }
 }
 

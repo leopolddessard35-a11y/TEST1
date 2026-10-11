@@ -76,7 +76,7 @@ struct DailyBriefDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
                 GlassCard {
                     VStack(alignment: .leading, spacing: 8) {
                         Label(brief.verdict.label, systemImage: brief.verdict.symbol)

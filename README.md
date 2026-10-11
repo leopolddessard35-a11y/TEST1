@@ -79,7 +79,7 @@ FC de repos, SpO2, respiration, VO2max, poids, et le calendrier des séances pr�
 
 ## Organisation (v1.0) et couleurs
 
-- **Aujourd'hui** : ta forme (3 anneaux), le coaching en 2 phrases avec la séance du jour (▶ lance la muscu), « À faire aujourd'hui » (manger, boire, séance, coucher, revue du dimanche) et, tant que ce n'est pas fini, « Configurer Vigor ».
+- **Aujourd'hui** : ta forme (3 anneaux), le coaching en 2 phrases avec la séance du jour (▶ lance la muscu), « À faire aujourd'hui » (manger, séance, coucher, revue du dimanche) et, tant que ce n'est pas fini, « Configurer Vigor ».
 - **Santé** : moniteur (6 mesures vs ta normale), sommeil, blessures et symptômes, analyses (récupération, jour par jour, tendances, analyse du coach).
 - **Sport** (onglet) : la semaine (le mois en grand au tap), la musculation (programmes, fraîcheur, progression), le vélo, la saison Traka, la charge et le hors-sport.
 - **Nutrition** et **+** (saisies récentes en tête).
@@ -92,7 +92,7 @@ FC de repos, SpO2, respiration, VO2max, poids, et le calendrier des séances pr�
 - Accueil : trois anneaux à dégradé (Effort, Récupération, Sommeil) et le « Coaching » du jour dessous ; « Moniteur de santé » en grille (respiration, FC repos, VFC, sommeil, poids, VO2max), avec une mini-jauge verticale et un statut Normal / Supérieur / Inférieur par rapport à ta médiane sur 30 jours ; énergie du jour ; aliments du jour (anneau des calories et grilles de points pour les macros).
 - Activité : calendrier de la semaine, effort du jour, fraîcheur musculaire par muscle (fatigue qui s'efface en 48 à 72 h, sorties vélo et course comptées pour les jambes). Le Plan s'ouvre avec le bouton calendrier.
 - Barre d'onglets flottante (Accueil, Santé, Activité, Nutrition) et bouton « + » rond, classé par thème :
-  - Nutrition : repas, eau, pesée ;
+  - Nutrition : repas, pesée ;
   - Entraînement : séance de muscu en direct (façon Hevy : exercices, séries kg × reps, échauffement, charges proposées par le coach, valeurs de la séance précédente, minuteur de repos avec notification, brouillon sauvegardé), séance d'endurance manuelle (avec alerte doublon), effort ressenti, import Hevy CSV ;
   - Corps et santé : symptôme, blessure ;
   - Quotidien : activité hors sport, imprévu.
@@ -100,7 +100,7 @@ FC de repos, SpO2, respiration, VO2max, poids, et le calendrier des séances pr�
 ## Musculation intégrée (v0.9, plus besoin de Hevy)
 
 - **Banque d'exercices** : ~70 exercices en français (filtres par groupe musculaire et matériel, recherche par nom ou muscle), exercices perso avec leurs muscles, fiche par exercice (historique, records, 1RM estimé).
-- **Programmes et séances types** : programme PPL prêt à l'emploi en un tap, ou tes propres séances (exercices, séries, plage de répétitions, repos, notes, réordonnables).
+- **Programmes et séances types** : aucune séance pré-remplie : tu crées tes propres séances (exercices, séries, plage de répétitions, repos, notes, réordonnables).
 - **Séance en direct** : lancée depuis une séance type ou en libre ; charges proposées d'après la dernière séance, colonne « Précédent », échauffements, records détectés à la fin.
 - **Repos** : compte à rebours dans l'app (±15 s) et notification à la fin du repos avec la prochaine série. La Dynamic Island est prête mais désactivée (voir `Extras/VigorWidgets`) : l'extension prendrait une 4e place d'app sur le compte gratuit.
 - **Historique** par mois (exercices, séries, tonnage, durée).
@@ -175,7 +175,7 @@ Notifications rares par défaut : verdict du matin, alertes de seuil, revue du d
 - Décision : capacité + règles hiérarchisées (2 signaux rouges → adapter, 3 ou douleur → repos), agenda par jour, semaine allégée automatique si fatigue accumulée ; règles déclenchées affichées.
 - Statistiques : Spearman décalé J/J+1/J+2, n et IC 95 %, « indice » si < 30 points ; expériences N = 1 (avant / pendant, d de Cohen).
 - Qualité : score de confiance du jour, parsing strict (« 1:23:45 », « -- », virgules), dédoublonnage multi-sources, journées physiques non déclarées.
-- Technique : 100 % local (SwiftData), formules versionnées, export CSV/JSON, Raccourcis Siri (plan du jour, effort, eau),
+- Technique : 100 % local (SwiftData), formules versionnées, export CSV/JSON, Raccourcis Siri (plan du jour, effort, synchro du matin),
   narration de la revue par le modèle Apple Intelligence local (il reformule, il ne calcule pas).
 
 Non inclus (compte développeur payant nécessaire) : widgets écran verrouillé et complication Apple Watch.

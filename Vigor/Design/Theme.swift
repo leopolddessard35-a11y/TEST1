@@ -51,7 +51,7 @@ enum Theme {
     static let sleepGradient = [Color(light: 0xA4AC86, dark: 0x656D4A), sleep]
     static let nutritionGradient = [Color(light: 0xC2C5AA, dark: 0x936639), nutrition]
 
-    static let cardRadius: CGFloat = 26
+    static let cardRadius: CGFloat = 22
 
     static func color(for level: ReadinessLevel) -> Color {
         switch level {
@@ -249,6 +249,22 @@ extension View {
     func card(cornerRadius: CGFloat = Theme.cardRadius, tint: Color? = nil) -> some View {
         modifier(CardBackground(cornerRadius: cornerRadius, tint: tint))
     }
+
+    /// Tuile de grille harmonisée : même marge, même arrondi, même hauteur partout dans l'app.
+    func tile(height: CGFloat = Theme.tileHeight) -> some View {
+        padding(Theme.tilePadding)
+            .frame(maxWidth: .infinity, minHeight: height, alignment: .topLeading)
+            .card(cornerRadius: Theme.tileRadius)
+    }
+}
+
+extension Theme {
+    /// Tuiles « widget » (2 par ligne) : moniteur, raccourcis, indicateurs.
+    static let tileHeight: CGFloat = 144
+    /// Petites tuiles de chiffres dans les pages de détail.
+    static let compactTileHeight: CGFloat = 92
+    static let tileRadius: CGFloat = 22
+    static let tilePadding: CGFloat = 16
 }
 
 /// Carte standard (nom historique conservé : plus de verre, une carte blanche façon Bevel).
@@ -381,9 +397,7 @@ struct MetricTile: View {
                 if !unit.isEmpty { Text(unit).font(.caption).foregroundStyle(.secondary) }
             }
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .card(cornerRadius: 22, tint: tint == .primary ? nil : tint)
+        .tile()
     }
 }
 
@@ -432,12 +446,10 @@ struct SimpleTile: View {
             }
             Text(value).font(.title2.weight(.semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
             if !caption.isEmpty {
-                Text(caption).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(caption).font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .card(cornerRadius: 22, tint: tint == .primary ? nil : tint)
+        .tile()
     }
 }
 
@@ -453,7 +465,7 @@ struct DetailPage<Content: View>: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) { content }
+            VStack(spacing: 12) { content }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 24)
         }

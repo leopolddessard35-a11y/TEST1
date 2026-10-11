@@ -91,7 +91,7 @@ struct EffortDetailView: View {
     var body: some View {
         let remaining = max(0, EffortScore.load(for: target.lowerBound) - EffortScore.load(for: today))
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
                 GlassCard {
                     VStack(spacing: 12) {
                         Dial(title: EffortScore.label(today), value: today, maximum: 21, text: today.oneDecimal, suffix: "/21",
@@ -148,7 +148,7 @@ struct SleepNeedDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
                 GlassCard {
                     VStack(spacing: 10) {
                         Text("Besoin de sommeil cette nuit").font(.subheadline).foregroundStyle(.secondary)

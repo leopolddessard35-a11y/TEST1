@@ -15,7 +15,7 @@ struct TrackingView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 16) {
+                VStack(spacing: 12) {
                     Picker("Vue", selection: $segment) {
                         ForEach(Segment.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                     }
@@ -45,7 +45,7 @@ struct TrendsSection: View {
     @State private var days = 90
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
             if let report = snapshot.weeklyReport {
                 WeeklyReportCard(report: report)
             }
@@ -176,7 +176,7 @@ struct JournalSection: View {
     @State private var pdf: URL?
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
             Button { adding = true } label: {
                 Label("Noter un symptôme", systemImage: "plus.circle.fill").frame(maxWidth: .infinity)
             }
@@ -293,7 +293,7 @@ struct LifeSection: View {
     @State private var adding = false
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
             Button { adding = true } label: {
                 Label("Ajouter une activité physique hors sport", systemImage: "plus.circle.fill").frame(maxWidth: .infinity)
             }

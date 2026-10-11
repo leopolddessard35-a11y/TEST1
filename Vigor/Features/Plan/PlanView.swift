@@ -14,7 +14,7 @@ struct SeasonPlanView: View {
     var body: some View {
             ScrollView {
                 SnapshotReader { profile, snapshot in
-                    VStack(spacing: 16) {
+                    VStack(spacing: 12) {
                         PlanHeaderCard(plan: snapshot.plan, raceName: profile.raceName)
 
                         if let week = snapshot.plan.currentWeek, !snapshot.weekStatus.isEmpty {

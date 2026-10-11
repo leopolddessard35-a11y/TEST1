@@ -188,7 +188,7 @@ struct TrainingCalendarCard: View {
         let isCurrentMonth = calendar.isDate(month, equalTo: .now, toGranularity: .month)
 
         GlassCard {
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
                 // Série façon « streak » : semaines tenues, record, volume du mois.
                 HStack(spacing: 0) {
                     stat(value: "\(streak.current)", unit: streak.current > 1 ? "semaines" : "semaine", title: "Série",

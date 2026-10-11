@@ -237,12 +237,20 @@ struct WorkoutLoggerView: View {
         GlassCard {
             VStack(alignment: .leading, spacing: 10) {
                 TextField("Nom de la séance", text: $draft.title).font(.title3.weight(.bold))
-                HStack(spacing: 8) {
-                    ForEach(["Push", "Pull", "Legs", "Full body"], id: \.self) { name in
-                        Button(name) { draft.title = name }
-                            .buttonStyle(.bordered)
-                            .tint(draft.title == name ? Theme.strain : .secondary)
-                            .font(.caption.weight(.semibold))
+                // Raccourcis : tes propres noms de séances déjà utilisés (rien de pré-rempli).
+                let recentTitles: [String] = workouts.reduce(into: [String]()) { list, workout in
+                    if list.count < 4 && !list.contains(workout.title) { list.append(workout.title) }
+                }
+                if !recentTitles.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(recentTitles, id: \.self) { name in
+                                Button(name) { draft.title = name }
+                                    .buttonStyle(.bordered)
+                                    .tint(draft.title == name ? Theme.accent : .secondary)
+                                    .font(.caption.weight(.semibold))
+                            }
+                        }
                     }
                 }
                 HStack(spacing: 16) {
@@ -475,7 +483,7 @@ struct WorkoutLoggerView: View {
 
     /// Propose la suite logique du PPL (après Push → Pull → Legs).
     static func suggestedTitle(_ workouts: [StrengthWorkout]) -> String {
-        guard let last = workouts.first?.title.lowercased() else { return "Push" }
+        guard let last = workouts.first?.title.lowercased() else { return "" }
         if last.contains("push") { return "Pull" }
         if last.contains("pull") { return "Legs" }
         if last.contains("leg") { return "Push" }
