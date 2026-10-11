@@ -94,6 +94,15 @@ final class HealthKitService {
         return values
     }
 
+    /// Jour de la nuit = jour du réveil. Une nuit commence la veille au soir : tout segment qui se termine
+    /// après 18 h appartient à la nuit suivante (sinon une nuit à cheval sur minuit était coupée en deux,
+    /// avec des heures de coucher et de lever absurdes).
+    nonisolated static func nightDay(forSegmentEnding end: Date, calendar: Calendar = .current) -> Date {
+        let hour = calendar.component(.hour, from: end)
+        let day = calendar.startOfDay(for: end)
+        return hour >= 18 ? (calendar.date(byAdding: .day, value: 1, to: day) ?? day) : day
+    }
+
     /// Nuits de sommeil (rattachées au jour du réveil) : durée, coucher, réveil.
     /// Si plusieurs sources (Garmin + iPhone), on garde la plus complète pour ne pas compter deux fois.
     func sleepNights(days: Int) async throws -> [Date: SleepNight] {
@@ -118,7 +127,7 @@ final class HealthKitService {
         }
         var perSource: [Date: [String: Accumulator]] = [:]
         for sample in samples where asleep.contains(sample.value) {
-            let day = calendar.startOfDay(for: sample.endDate)
+            let day = Self.nightDay(forSegmentEnding: sample.endDate, calendar: calendar)
             let source = sample.sourceRevision.source.bundleIdentifier
             var accumulator = perSource[day]?[source] ?? Accumulator()
             accumulator.seconds += sample.endDate.timeIntervalSince(sample.startDate)

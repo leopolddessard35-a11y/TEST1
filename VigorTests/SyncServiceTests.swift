@@ -69,3 +69,27 @@ struct SyncServiceTests {
         await #expect(throws: SyncError.noSourceReady) { try await service.syncSleepData(allowPrompt: false) }
     }
 }
+
+struct SleepTimeTests {
+    private func date(_ day: Int, _ hour: Int, _ minute: Int = 0) -> Date {
+        DateComponents(calendar: .current, year: 2026, month: 10, day: day, hour: hour, minute: minute).date!
+    }
+
+    @Test func segmentsBeforeMidnightBelongToTheNextMorning() {
+        let calendar = Calendar.current
+        // Endormi le 10 à 23 h 10 : le segment qui finit à 23 h 55 appartient à la nuit du 11.
+        #expect(HealthKitService.nightDay(forSegmentEnding: date(10, 23, 55)) == calendar.startOfDay(for: date(11, 7)))
+        #expect(HealthKitService.nightDay(forSegmentEnding: date(11, 7, 10)) == calendar.startOfDay(for: date(11, 7)))
+        // Sieste de l'après-midi : rattachée au jour même.
+        #expect(HealthKitService.nightDay(forSegmentEnding: date(11, 15)) == calendar.startOfDay(for: date(11, 7)))
+    }
+
+    @Test func bedtimeAdviceIsAnEveningTime() {
+        let wakes = (1...7).map { date($0, 7, 15) }
+        let beds = (1...7).map { date($0, 6, 45).addingTimeInterval(-8 * 3600) }
+        let need = SleepCoach.need(base: 8, effortToday: 8, debt7: 0, wakeTimes: wakes, bedTimes: beds,
+                                   sleptHours: Array(repeating: 7.5, count: 7))
+        #expect(need.usualWakeMinutes == 7 * 60 + 15)
+        #expect((21 * 60...23 * 60 + 59).contains(need.bedtimeMinutes))
+    }
+}

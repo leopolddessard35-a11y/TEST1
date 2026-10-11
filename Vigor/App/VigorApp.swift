@@ -159,6 +159,19 @@ final class AppModel {
         await NotificationScheduler.refresh(with: snapshot)
     }
 
+    /// Une seule fois après la mise à jour : relit un an de nuits avec le bon découpage (coucher la veille au soir).
+    func repairSleepHistoryIfNeeded(context: ModelContext, profile: AthleteProfile?) async {
+        let key = "repair.sleepNights.v2"
+        guard !UserDefaults.standard.bool(forKey: key), health.isAvailable else { return }
+        do {
+            _ = try await DataStore.syncHealth(health, into: context, days: 365, thresholds: profile?.thresholds)
+            UserDefaults.standard.set(true, forKey: key)
+            dataVersion += 1
+        } catch {
+            // Données verrouillées ou accès refusé : on réessaiera au prochain lancement.
+        }
+    }
+
     func importHevy(from url: URL, context: ModelContext) {
         let accessing = url.startAccessingSecurityScopedResource()
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }

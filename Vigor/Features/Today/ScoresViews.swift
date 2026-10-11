@@ -157,8 +157,8 @@ struct SleepNeedDetailView: View {
                             Image(systemName: "moon.zzz.fill").foregroundStyle(Theme.sleep)
                             Text("Couche-toi vers \(need.bedtimeText)").font(.headline)
                         }
-                        Text(String(format: "pour %@ au lit (efficacité de sommeil %.0f %%) avant ton réveil habituel de %d h %02d",
-                                    need.timeInBed.hoursText, need.efficiency * 100, need.usualWakeMinutes / 60, need.usualWakeMinutes % 60))
+                        Text(String(format: "pour %@ au lit (efficacité de sommeil %.0f %%) avant ton réveil habituel de %@",
+                                    need.timeInBed.hoursText, need.efficiency * 100, need.wakeText))
                             .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     }
                     .frame(maxWidth: .infinity)

@@ -47,6 +47,7 @@ struct ContentView: View {
         // Synchro du sommeil au premier plan, seulement si aucune n'a encore réussi aujourd'hui.
         .task {
             await sync.syncIfNeeded()
+            await app.repairSleepHistoryIfNeeded(context: context, profile: profiles.first)
         }
         .onChange(of: sync.lastSyncDate) {
             app.dataVersion += 1

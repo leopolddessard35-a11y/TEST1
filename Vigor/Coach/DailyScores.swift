@@ -67,7 +67,9 @@ struct SleepNeed: Equatable {
         return minutes
     }
 
-    var bedtimeText: String { String(format: "%d h %02d", bedtimeMinutes / 60, bedtimeMinutes % 60) }
+    /// Heure affichée au format de l'iPhone (24 h en France), dans le fuseau du téléphone.
+    var bedtimeText: String { ClockTime.text(minutes: bedtimeMinutes) }
+    var wakeText: String { ClockTime.text(minutes: usualWakeMinutes) }
 }
 
 enum SleepCoach {
@@ -78,18 +80,20 @@ enum SleepCoach {
         let effortExtra = max(0, effortToday - 10) * 4 / 60
         let debtExtra = min(1, max(0, debt7) / 4)
 
+        // Heure de lever habituelle : médiane des réveils plausibles (3 h – 13 h), robuste aux siestes et nuits blanches.
         var wakeMinutes = 7 * 60
-        let wakes: [Double] = wakeTimes.map { date in
+        let wakes: [Double] = wakeTimes.compactMap { date in
             let parts = calendar.dateComponents([.hour, .minute], from: date)
-            return Double((parts.hour ?? 7) * 60 + (parts.minute ?? 0))
+            let minutes = Double((parts.hour ?? 7) * 60 + (parts.minute ?? 0))
+            return (3 * 60...13 * 60).contains(minutes) ? minutes : nil
         }
-        if let mean = Stats.mean(wakes) { wakeMinutes = Int(mean.rounded()) }
+        if let median = Robust.median(wakes) { wakeMinutes = Int(median.rounded()) }
 
         // Efficacité = sommeil réel / temps entre coucher et réveil (par défaut 90 %).
         var efficiencies: [Double] = []
         for (index, bed) in bedTimes.enumerated() where index < wakeTimes.count && index < sleptHours.count {
             let inBed = wakeTimes[index].timeIntervalSince(bed) / 3600
-            if inBed > 3 { efficiencies.append(min(1, sleptHours[index] / inBed)) }
+            if inBed > 3 && inBed < 14 { efficiencies.append(min(1, sleptHours[index] / inBed)) }
         }
         let efficiency = min(0.98, max(0.75, Stats.mean(efficiencies) ?? 0.9))
 
@@ -241,5 +245,17 @@ enum WeeklyReportBuilder {
             lines.append(String(format: "Poids : %+.1f kg sur la semaine.", change))
         }
         return lines
+    }
+}
+
+/// Heures « d'horloge » (minutes après minuit) affichées comme l'iPhone les affiche :
+/// format 24 h / 12 h et fuseau du téléphone (Europe/Paris, heure d'été comprise).
+enum ClockTime {
+    static func text(minutes: Int, calendar: Calendar = .current, reference: Date = .now) -> String {
+        let normalized = ((minutes % (24 * 60)) + 24 * 60) % (24 * 60)
+        guard let date = calendar.date(bySettingHour: normalized / 60, minute: normalized % 60, second: 0, of: reference) else {
+            return String(format: "%02d:%02d", normalized / 60, normalized % 60)
+        }
+        return date.formatted(.dateTime.hour().minute())
     }
 }

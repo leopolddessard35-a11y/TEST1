@@ -200,7 +200,7 @@ enum SleepAnalytics {
         let values = bedtimes.map { eveningMinutes($0, calendar: calendar) }
         guard let mean = Stats.mean(values), let sd = Stats.standardDeviation(values) else { return nil }
         let clock = Int(mean + 18 * 60) % (24 * 60)
-        return (sd, String(format: "%d h %02d", clock / 60, clock % 60))
+        return (sd, ClockTime.text(minutes: clock, calendar: calendar))
     }
 }
 
