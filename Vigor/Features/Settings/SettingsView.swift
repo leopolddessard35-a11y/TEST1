@@ -248,6 +248,11 @@ private struct ProfileForm: View {
                     Label(app.isSyncing ? "Synchronisation…" : "Tout synchroniser (Apple Santé + Intervals.icu)", systemImage: "arrow.triangle.2.circlepath")
                 }
                 .disabled(app.isSyncing)
+                NavigationLink {
+                    GarminDataCheckView()
+                } label: {
+                    Label("Données reçues de Garmin", systemImage: "checklist")
+                }
                 Label("Musculation : séances dans Sport → Musculation (historique Hevy importable une fois)", systemImage: "dumbbell")
             }
             }

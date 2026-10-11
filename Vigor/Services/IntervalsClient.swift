@@ -49,6 +49,39 @@ struct IntervalsClient {
         let vo2max: Double?
         let steps: Double?
         let bodyFat: Double?
+
+        enum CodingKeys: String, CodingKey {
+            case id, ctl, atl, weight, restingHR, hrv, hrvSDNN, sleepSecs, sleepScore, avgSleepingHR, readiness
+            case spO2, respiration, vo2max, steps, bodyFat
+        }
+
+        /// Décodage tolérant : un champ mal typé (texte, entier, null) ne fait jamais échouer toute la synchro.
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            id = try c.decode(String.self, forKey: .id)
+            func number(_ key: CodingKeys) -> Double? {
+                if let value = try? c.decodeIfPresent(Double.self, forKey: key) { return value }
+                if let text = try? c.decodeIfPresent(String.self, forKey: key) {
+                    return Double(text.replacingOccurrences(of: ",", with: "."))
+                }
+                return nil
+            }
+            ctl = number(.ctl)
+            atl = number(.atl)
+            weight = number(.weight)
+            restingHR = number(.restingHR)
+            hrv = number(.hrv)
+            hrvSDNN = number(.hrvSDNN)
+            sleepSecs = number(.sleepSecs)
+            sleepScore = number(.sleepScore)
+            avgSleepingHR = number(.avgSleepingHR)
+            readiness = number(.readiness)
+            spO2 = number(.spO2)
+            respiration = number(.respiration)
+            vo2max = number(.vo2max)
+            steps = number(.steps)
+            bodyFat = number(.bodyFat)
+        }
     }
 
     struct Activity: Decodable {
@@ -171,7 +204,17 @@ struct IntervalsClient {
         try await get("events", oldest: oldest, newest: newest, extra: [URLQueryItem(name: "category", value: "WORKOUT")])
     }
 
+    /// Bien-être brut (toutes les clés renvoyées), pour le diagnostic « Données reçues de Garmin ».
+    func wellnessRaw(oldest: Date, newest: Date) async throws -> [[String: Any]] {
+        let data = try await fetch("wellness", oldest: oldest, newest: newest)
+        return (try JSONSerialization.jsonObject(with: data) as? [[String: Any]]) ?? []
+    }
+
     private func get<T: Decodable>(_ path: String, oldest: Date, newest: Date, extra: [URLQueryItem] = []) async throws -> T {
+        try JSONDecoder().decode(T.self, from: try await fetch(path, oldest: oldest, newest: newest, extra: extra))
+    }
+
+    private func fetch(_ path: String, oldest: Date, newest: Date, extra: [URLQueryItem] = []) async throws -> Data {
         guard !apiKey.isEmpty else { throw IntervalsError.missingKey }
         let athlete = athleteID.trimmingCharacters(in: .whitespaces).isEmpty ? "0" : athleteID.trimmingCharacters(in: .whitespaces)
         var components = URLComponents(string: "https://intervals.icu/api/v1/athlete/\(athlete)/\(path)")!
@@ -191,6 +234,6 @@ struct IntervalsClient {
             if http.statusCode == 401 || http.statusCode == 403 { throw IntervalsError.unauthorized }
             if !(200..<300).contains(http.statusCode) { throw IntervalsError.http(http.statusCode) }
         }
-        return try JSONDecoder().decode(T.self, from: data)
+        return data
     }
 }
