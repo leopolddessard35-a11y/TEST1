@@ -124,10 +124,13 @@ private struct ProfileForm: View {
             }
             Section {
                 Stepper("Heures dispo / semaine : \(profile.weeklyHoursAvailable.oneDecimal)", value: $profile.weeklyHoursAvailable, in: 3...20, step: 0.5)
+                Stepper("Séances vélo / semaine : \(profile.bikeSessionsPerWeek)", value: $profile.bikeSessionsPerWeek, in: 1...7)
                 Stepper("Séances muscu / semaine : \(profile.strengthSessionsPerWeek)", value: $profile.strengthSessionsPerWeek, in: 0...6)
                 Stepper("Besoin de sommeil : \(profile.sleepNeedHours.oneDecimal) h", value: $profile.sleepNeedHours, in: 6...10, step: 0.25)
             } header: {
                 Text("Disponibilités")
+            } footer: {
+                Text("Total : \(profile.bikeSessionsPerWeek + profile.strengthSessionsPerWeek) séances par semaine. Les séances vélo comprennent la sortie longue et l'intensité ; le volume se répartit sur ce nombre. La muscu est un peu réduite en développement et avant la course.")
             }
             Section {
                 numberField("FTP (W)", value: $profile.ftp)

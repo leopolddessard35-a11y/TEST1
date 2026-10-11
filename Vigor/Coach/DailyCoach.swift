@@ -207,21 +207,25 @@ enum DailyCoach {
             }
         }
 
-        let intensityDays: [Int] = week.intensitySessions >= 2 ? [3, 5] : (week.intensitySessions == 1 ? [3] : [])
+        // Nombre de séances vélo choisi : d'abord la sortie longue, puis l'intensité, puis l'endurance.
+        let bikeCount = max(1, week.bikeSessions)
+        let hasLong = week.longRideHours > 0
+        let intensityCount = min(week.intensitySessions, max(0, bikeCount - (hasLong ? 1 : 0)))
+        let intensityDays: [Int] = intensityCount >= 2 ? [3, 5] : (intensityCount == 1 ? [3] : [])
+        let enduranceCount = max(0, bikeCount - (hasLong ? 1 : 0) - intensityCount)
+        // Jours proposés par défaut pour l'endurance (dimanche, mercredi, lundi, vendredi) : déplaçables dans « Ma semaine ».
+        let enduranceDays = Array([1, 4, 2, 6].prefix(enduranceCount))
         if intensityDays.contains(weekday) {
             let kind = intensityKind(phase: week.phase, slot: intensityDays.firstIndex(of: weekday) ?? 0)
             sessions.append(bike(kind, minutes: kind == .openers ? 45 : 75, ftp: ftp, phase: week.phase))
-        } else if weekday == 7, week.longRideHours > 0 {
+        } else if weekday == 7, hasLong {
             sessions.append(bike(.longRide, minutes: Int(week.longRideHours * 60), ftp: ftp, phase: week.phase))
-        } else {
-            // Le reste du volume en endurance, réparti sur dimanche, lundi et mercredi.
+        } else if enduranceDays.contains(weekday) {
+            // Le reste du volume en endurance, réparti sur les séances restantes.
             let intensityMinutes = Double(intensityDays.count) * (week.phase == .taper ? 45 : 75)
             let remaining = max(0, week.targetHours * 60 - week.longRideHours * 60 - intensityMinutes)
-            let enduranceDays = [1, 2, 4]
-            if enduranceDays.contains(weekday), remaining >= 30 {
-                let minutes = min(90, Int(remaining / Double(enduranceDays.count) / 15) * 15)
-                if minutes >= 30 { sessions.append(bike(.endurance, minutes: minutes, ftp: ftp, phase: week.phase)) }
-            }
+            let minutes = min(150, Int(remaining / Double(enduranceCount) / 15) * 15)
+            sessions.append(bike(.endurance, minutes: max(45, minutes), ftp: ftp, phase: week.phase))
         }
         if sessions.isEmpty {
             sessions.append(SessionPrescription(kind: .rest, minutes: 0, detail: "Repos ou marche, 10 min de mobilité."))
@@ -231,10 +235,11 @@ enum DailyCoach {
 
     static func strengthSchedule(count: Int) -> [Int: SessionKind] {
         switch count {
-        // Jours proposés par défaut (lundi, mercredi, vendredi) : tu les déplaces dans « Ma semaine ».
-        case 3...: [2: .gym, 4: .gym, 6: .gym]
-        case 2: [2: .gym, 4: .gym]
+        // Jours proposés par défaut (lundi, mercredi, vendredi, puis mardi, jeudi, dimanche) : déplaçables dans « Ma semaine ».
         case 1: [4: .gym]
+        case 2: [2: .gym, 4: .gym]
+        case 3...:
+            Dictionary(uniqueKeysWithValues: [2, 4, 6, 3, 5, 1].prefix(min(count, 6)).map { ($0, SessionKind.gym) })
         default: [:]
         }
     }

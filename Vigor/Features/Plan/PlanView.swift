@@ -159,7 +159,7 @@ private struct WeekCard: View {
                 .font(.footnote)
                 HStack(spacing: 14) {
                     Label("\(week.intensitySessions) \(week.intensitySessions > 1 ? "séances intenses" : "séance intense")", systemImage: "bolt.fill")
-                    Label("\(week.strengthSessions)× PPL", systemImage: "dumbbell.fill")
+                    Label("\(week.bikeSessions) vélo · \(week.strengthSessions) muscu", systemImage: "dumbbell.fill")
                     Label(week.runningAllowed ? "Course OK" : "Pas de course", systemImage: "figure.run")
                 }
                 .font(.footnote).foregroundStyle(.secondary)

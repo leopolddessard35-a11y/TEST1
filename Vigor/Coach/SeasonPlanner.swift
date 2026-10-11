@@ -112,6 +112,8 @@ struct PlannerInput {
     var targetRaceCTL: Double
     var weeklyHoursAvailable: Double
     var strengthSessionsPerWeek: Int
+    /// Séances de vélo par semaine (sortie longue et intensité comprises).
+    var bikeSessionsPerWeek = 3
     var unavailabilities: [UnavailabilityPeriod] = []
     var injuries: [InjuryStatus] = []
     /// Fatigue accumulée détectée (forme très basse plusieurs jours, VFC + FC repos dégradées) :
@@ -138,6 +140,8 @@ struct PlannedWeek: Identifiable, Equatable {
     var notes: [String]
     /// Jour de la course (semaine de course uniquement).
     var raceDay: Date? = nil
+    /// Séances de vélo de la semaine (sortie longue et intensité comprises).
+    var bikeSessions: Int = 3
 
     var isReduced: Bool { availableDays < 6 }
 }
@@ -367,8 +371,15 @@ enum SeasonPlanner {
             }
             if availabilityFactor < 0.5 { intensity = min(intensity, 1) }
 
-            // Musculation (tes séances types).
-            var strength = min(phase.strengthSessions, input.strengthSessionsPerWeek)
+            // Musculation (tes séances types) : ton nombre, un peu réduit en développement et avant la course.
+            let wanted = input.strengthSessionsPerWeek
+            var strength: Int
+            switch phase {
+            case .reprise, .base: strength = wanted
+            case .build, .specific: strength = min(wanted, max(2, wanted - 1))
+            case .taper: strength = min(wanted, 1)
+            case .race: strength = 0
+            }
             if kind == .recovery { strength = max(strength - 1, min(strength, 1)) }
             strength = min(strength, Int((Double(strength) * availabilityFactor).rounded(.up)))
 
@@ -391,7 +402,8 @@ enum SeasonPlanner {
                 availableDays: availableDays,
                 projectedCTL: ctl,
                 notes: notes,
-                raceDay: phase == .race ? input.raceDate : nil))
+                raceDay: phase == .race ? input.raceDate : nil,
+                bikeSessions: max(1, min(input.bikeSessionsPerWeek, availableDays))))
         }
         return Simulation(weeks: weeks, peakCTL: peakCTL, capped: capped)
     }

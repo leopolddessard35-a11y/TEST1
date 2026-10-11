@@ -218,6 +218,8 @@ final class AthleteProfile {
     var targetRaceCTL: Double = 60
     var weeklyHoursAvailable: Double = 8
     var strengthSessionsPerWeek: Int = 3
+    /// Séances de vélo par semaine (sortie longue et intensité comprises).
+    var bikeSessionsPerWeek: Int = 3
     var sleepNeedHours: Double = 8
     var heightCm: Double = 0
     var birthYear: Int = 0
@@ -541,6 +543,7 @@ final class FrozenWeek {
     var longRideHours: Double
     var intensitySessions: Int
     var strengthSessions: Int
+    var bikeSessions: Int?
 
     init(week: PlannedWeek, calendar: Calendar = .current) {
         self.key = Self.dayKey(week.start, calendar: calendar)
@@ -552,6 +555,7 @@ final class FrozenWeek {
         self.longRideHours = week.longRideHours
         self.intensitySessions = week.intensitySessions
         self.strengthSessions = week.strengthSessions
+        self.bikeSessions = week.bikeSessions
     }
 
     /// « 2026-10-12 » (date de calendrier locale).
@@ -568,7 +572,8 @@ final class FrozenWeek {
                     targetTSS: targetTSS, targetHours: targetHours, longRideHours: longRideHours,
                     intensitySessions: intensitySessions, strengthSessions: strengthSessions,
                     runningAllowed: week.runningAllowed, availableDays: week.availableDays,
-                    projectedCTL: week.projectedCTL, notes: week.notes, raceDay: week.raceDay)
+                    projectedCTL: week.projectedCTL, notes: week.notes, raceDay: week.raceDay,
+                    bikeSessions: bikeSessions ?? week.bikeSessions)
     }
 }
 

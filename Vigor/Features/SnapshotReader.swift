@@ -92,6 +92,7 @@ struct SnapshotReader<Content: View>: View {
         hasher.combine(profile.targetRaceCTL)
         hasher.combine(profile.weeklyHoursAvailable)
         hasher.combine(profile.strengthSessionsPerWeek)
+        hasher.combine(profile.bikeSessionsPerWeek)
         hasher.combine(profile.sleepNeedHours)
         hasher.combine(profile.weightGoalRaw)
         hasher.combine(profile.calorieAdjustment)

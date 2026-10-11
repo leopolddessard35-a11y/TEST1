@@ -332,7 +332,7 @@ struct WeekDetailView: View {
                     StatTile(title: "Charge visée", value: "\(week.targetTSS.noDecimal) TSS")
                     StatTile(title: "Sortie longue", value: week.longRideHours > 0 ? week.longRideHours.hoursText : "–")
                     StatTile(title: "Séances intenses", value: "\(week.intensitySessions)")
-                    StatTile(title: "Muscu", value: "\(week.strengthSessions)×")
+                    StatTile(title: "Séances", value: "\(week.bikeSessions) vélo · \(week.strengthSessions) muscu")
                     StatTile(title: "Jours disponibles", value: "\(week.availableDays)/7")
                 }
                 if !week.notes.isEmpty {
