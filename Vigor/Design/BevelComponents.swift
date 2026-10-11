@@ -74,6 +74,19 @@ struct HealthReading {
         if isStale, let measuredOn {
             return "Mesure du \(measuredOn.formatted(.dateTime.day().month(.abbreviated)))"
         }
+        let base = statusLabel(higherIsBetter: higherIsBetter)
+        // Dernière valeur connue d'un autre jour : on dit de quand elle date.
+        guard latest != nil, let measuredOn else { return base }
+        let age = Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: measuredOn),
+                                                  to: Calendar.current.startOfDay(for: .now)).day ?? 0
+        switch age {
+        case ..<1: return base
+        case 1: return "\(base) · hier"
+        default: return "\(base) · il y a \(age) j"
+        }
+    }
+
+    private func statusLabel(higherIsBetter: Bool?) -> String {
         switch status {
         case .normal: return "Normal"
         case .unknown:

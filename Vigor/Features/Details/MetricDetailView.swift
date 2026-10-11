@@ -68,15 +68,10 @@ enum MetricKind: String, Identifiable, CaseIterable {
     }
 
     func series(from wellness: [DailyWellness]) -> [DayValue] {
-        // Poids et VO2max : une seule source sur la courbe (Apple Santé / saisie s'il y en a assez, sinon Garmin).
+        // Poids et VO2max : une seule source sur la courbe.
         if self == .weight || self == .vo2max {
-            let apple: [DayValue] = wellness.compactMap { record in
-                (self == .weight ? record.weightKg : record.vo2Max).map { DayValue(date: record.day, value: $0) }
-            }
-            let garmin: [DayValue] = wellness.compactMap { record in
-                (self == .weight ? record.weightKgGarmin : record.vo2MaxGarmin).map { DayValue(date: record.day, value: $0) }
-            }
-            return apple.count >= 4 || garmin.count < apple.count ? apple : garmin
+            let (apple, garmin) = splitSources(wellness)
+            return usesGarmin(apple: apple, garmin: garmin) ? garmin : apple
         }
         return wellness.compactMap { record in
             let value: Double?
@@ -89,6 +84,36 @@ enum MetricKind: String, Identifiable, CaseIterable {
             case .respiration: value = record.anyRespiration
             }
             return value.map { DayValue(date: record.day, value: $0) }
+        }
+    }
+
+    /// Valeurs Apple Santé (ou saisies) et Garmin, séparées (poids et VO2max).
+    private func splitSources(_ wellness: [DailyWellness]) -> (apple: [DayValue], garmin: [DayValue]) {
+        let apple: [DayValue] = wellness.compactMap { record in
+            (self == .weight ? record.weightKg : record.vo2Max).map { DayValue(date: record.day, value: $0) }
+        }
+        let garmin: [DayValue] = wellness.compactMap { record in
+            (self == .weight ? record.weightKgGarmin : record.vo2MaxGarmin).map { DayValue(date: record.day, value: $0) }
+        }
+        return (apple, garmin)
+    }
+
+    /// VO2max : Garmin en priorité (calculée sur tes sorties). Poids : ta balance ou ta saisie s'il y en a, sinon Garmin.
+    private func usesGarmin(apple: [DayValue], garmin: [DayValue]) -> Bool {
+        if garmin.isEmpty { return false }
+        if apple.isEmpty { return true }
+        return self == .vo2max || Stats.lastDays(60, of: apple, today: .now).count < 4
+    }
+
+    /// Source affichée sous la courbe.
+    func sourceLabel(from wellness: [DailyWellness]) -> String? {
+        switch self {
+        case .weight, .vo2max:
+            let (apple, garmin) = splitSources(wellness)
+            if apple.isEmpty && garmin.isEmpty { return nil }
+            return usesGarmin(apple: apple, garmin: garmin) ? "Garmin (Intervals.icu)" : (self == .weight ? "Apple Santé / saisie" : "Apple Santé")
+        default:
+            return nil
         }
     }
 

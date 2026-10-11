@@ -168,18 +168,22 @@ struct CoachSnapshot {
         }
         let recentRMSSD = Stats.lastDays(60, of: rmssd, today: now, calendar: calendar).count
         let recentSDNN = Stats.lastDays(60, of: sdnn, today: now, calendar: calendar).count
-        let useGarmin = recentRMSSD >= 14
+        // Garmin (Intervals.icu) en priorité dès qu'il a envoyé des valeurs récentes : avec une montre Garmin,
+        // Apple Santé ne reçoit presque rien de ces mesures. Apple Santé seulement en secours.
+        let useGarmin = !Stats.lastDays(30, of: rmssd, today: now, calendar: calendar).isEmpty || (recentSDNN == 0 && !rmssd.isEmpty)
         let hrvSeries: [DayValue] = useGarmin ? rmssd : sdnn
         let hrvSource = useGarmin ? "Garmin (rMSSD nocturne)" : "Apple Santé (SDNN)"
 
         // FC de repos et respiration : UNE source sur tout l'historique (même règle que la VFC),
         // jamais de mélange jour par jour entre deux capteurs qui ne mesurent pas pareil.
-        let useGarminRHR = Stats.lastDays(60, of: restingGarmin, today: now, calendar: calendar).count >= 14
+        let useGarminRHR = !Stats.lastDays(30, of: restingGarmin, today: now, calendar: calendar).isEmpty
+            || (restingApple.isEmpty && !restingGarmin.isEmpty)
         let restingHR: [DayValue] = useGarminRHR ? restingGarmin : restingApple
         let restingHRSource = useGarminRHR ? "Garmin" : "Apple Santé"
         var restingByDay: [Date: Double] = [:]
         for point in restingHR { restingByDay[point.date] = point.value }
-        let useGarminRespiration = Stats.lastDays(60, of: respirationGarmin, today: now, calendar: calendar).count >= 14
+        let useGarminRespiration = !Stats.lastDays(30, of: respirationGarmin, today: now, calendar: calendar).isEmpty
+            || (respirationApple.isEmpty && !respirationGarmin.isEmpty)
         let respirationSeries: [DayValue] = useGarminRespiration ? respirationGarmin : respirationApple
         let respirationSource = useGarminRespiration ? "Garmin" : "Apple Santé"
         let sleepSource: String = garminNights == 0 ? "Apple Santé"
