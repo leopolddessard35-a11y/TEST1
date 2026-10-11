@@ -90,6 +90,9 @@ struct InsightInput {
     var sleepNeedHours: Double
     var phase: TrainingPhase?
     var readiness: ReadinessResult?
+    var weightGoal: WeightGoal = .gain
+    /// Protéines visées (g/kg/j).
+    var proteinTargetPerKg: Double = 1.8
 }
 
 /// Le « cerveau critique » : passe tes données au crible de règles issues de la littérature scientifique.
@@ -110,7 +113,7 @@ enum InsightEngine {
     // MARK: Récupération (VFC + FC repos)
 
     static func recovery(_ input: InsightInput, calendar: Calendar) -> [Insight] {
-        let hrv = input.wellness.compactMap { sample in sample.hrv.map { DayValue(date: sample.date, value: log($0)) } }
+        let hrv = input.wellness.compactMap { sample in sample.hrv.flatMap { $0 > 0 ? DayValue(date: sample.date, value: log($0)) : nil } }
         let rhr = input.wellness.compactMap { sample in sample.restingHR.map { DayValue(date: sample.date, value: $0) } }
         let baseline = Stats.lastDays(60, of: hrv, today: input.today, calendar: calendar).map(\.value)
         let week = Stats.lastDays(7, of: hrv, today: input.today, calendar: calendar).map(\.value)
@@ -127,11 +130,11 @@ enum InsightEngine {
         let rhrSD = Stats.standardDeviation(rhrBaseline) ?? 2
 
         var evidence = [
-            String(format: "VFC moyenne 7 j : %.0f ms (normale : %.0f–%.0f ms)", exp(weekMean), exp(mean - swc), exp(mean + swc)),
-            String(format: "Écart : %+.1f %% par rapport à ta moyenne de 60 j", (exp(delta) - 1) * 100),
+            String(format: "VFC moyenne 7 j : %.0f ms (normale : %.0f–%.0f ms)", locale: Locale.current, exp(weekMean), exp(mean - swc), exp(mean + swc)),
+            String(format: "Écart : %+.1f %% par rapport à ta moyenne de 60 j", locale: Locale.current, (exp(delta) - 1) * 100),
         ]
         if !rhrWeek.isEmpty {
-            evidence.append(String(format: "FC repos 7 j : %+.1f bpm par rapport à ta moyenne", rhrDelta))
+            evidence.append(String(format: "FC repos 7 j : %+.1f bpm par rapport à ta moyenne", locale: Locale.current, rhrDelta))
         }
         let references = [Science.plews2013, Science.buchheit2014, Science.kiviniemi2007]
 
@@ -169,8 +172,8 @@ enum InsightEngine {
         var insights: [Insight] = []
         let debt = week.reduce(0) { $0 + max(0, input.sleepNeedHours - $1) }
         let evidence = [
-            String(format: "Moyenne 7 nuits : %.1f h (besoin : %.1f h)", average, input.sleepNeedHours),
-            String(format: "Dette de sommeil sur 7 j : %.1f h", debt),
+            String(format: "Moyenne 7 nuits : %.1f h (besoin : %.1f h)", locale: Locale.current, average, input.sleepNeedHours),
+            "Sommeil manquant sur les 7 dernières nuits : \(debt.oneDecimal) h",
         ]
         if debt >= 5 || average < 7 {
             insights.append(Insight(id: "sleep.debt", category: .sleep, severity: debt >= 7 ? .warning : .watch,
@@ -189,7 +192,7 @@ enum InsightEngine {
         if let sd = Stats.standardDeviation(week), sd > 1 {
             insights.append(Insight(id: "sleep.irregular", category: .sleep, severity: .watch,
                                     title: "Durée de sommeil irrégulière",
-                                    evidence: [String(format: "Écart-type sur 7 nuits : %.1f h", sd)],
+                                    evidence: [String(format: "Écart-type sur 7 nuits : %.1f h", locale: Locale.current, sd)],
                                     recommendation: "Des nuits très variables perturbent l'horloge biologique même si la moyenne est bonne. Essaie de garder des horaires de coucher et de lever stables (±30 min).",
                                     references: [Science.phillips2017]))
         }
@@ -206,8 +209,8 @@ enum InsightEngine {
         if let ramp = TrainingLoad.rampRate(points), ramp > 5 {
             insights.append(Insight(id: "load.ramp", category: .load, severity: ramp > 8 ? .warning : .watch,
                                     title: "Charge qui monte vite",
-                                    evidence: [String(format: "Condition : %+.1f points en 7 j (repère : ≤ 5)", ramp),
-                                               String(format: "Condition actuelle : %.0f", today.ctl)],
+                                    evidence: [String(format: "Condition : %+.1f points en 7 j (repère : ≤ 5)", locale: Locale.current, ramp),
+                                               String(format: "Condition actuelle : %.0f", locale: Locale.current, today.ctl)],
                                     recommendation: "Une progression trop rapide est le premier facteur de blessure. Garde la semaine prochaine au même niveau ou prévois une semaine de récupération.",
                                     references: [Science.gabbett2016, Science.allenCoggan]))
         }
@@ -216,8 +219,8 @@ enum InsightEngine {
         if let ratio = Robust.acuteChronicRatio(points.map(\.tss)) {
             let acute = Robust.ewma(points.map(\.tss), days: 7)
             let chronic = Robust.ewma(points.map(\.tss), days: 28)
-            let evidence = [String(format: "Charge 7 j : %.0f TSS/j · charge 28 j : %.0f TSS/j (moyennes exponentielles)", acute, chronic),
-                            String(format: "Ratio aigu / chronique : %.2f (zone sûre : 0,8–1,3)", ratio)]
+            let evidence = [String(format: "Charge 7 j : %.0f TSS/j · charge 28 j : %.0f TSS/j (moyennes exponentielles)", locale: Locale.current, acute, chronic),
+                            String(format: "Ratio aigu / chronique : %.2f (zone sûre : 0,8–1,3)", locale: Locale.current, ratio)]
             if ratio > 1.5 {
                 insights.append(Insight(id: "load.acwr", category: .load, severity: .warning,
                                         title: "Pic de charge inhabituel",
@@ -239,8 +242,8 @@ enum InsightEngine {
             if monotony > 2 {
                 insights.append(Insight(id: "load.monotony", category: .load, severity: .watch,
                                         title: "Entraînement trop uniforme",
-                                        evidence: [String(format: "Monotonie : %.1f (repère : < 2)", monotony),
-                                                   String(format: "Contrainte hebdo : %.0f", mean * 7 * monotony)],
+                                        evidence: [String(format: "Monotonie : %.1f (repère : < 2)", locale: Locale.current, monotony),
+                                                   String(format: "Contrainte hebdo : %.0f", locale: Locale.current, mean * 7 * monotony)],
                                         recommendation: "Alterne vraiment les jours durs et les jours faciles (ou de repos) : la même charge tous les jours fatigue plus qu'elle ne fait progresser.",
                                         references: [Science.foster1998]))
             }
@@ -249,7 +252,7 @@ enum InsightEngine {
         if today.form < -30 {
             insights.append(Insight(id: "load.form", category: .load, severity: .warning,
                                     title: "Fatigue très élevée",
-                                    evidence: [String(format: "Forme : %.0f (repère de surcharge : < −30)", today.form)],
+                                    evidence: [String(format: "Forme : %.0f (repère de surcharge : < −30)", locale: Locale.current, today.form)],
                                     recommendation: "Au-delà de −30, le risque de méforme et de maladie augmente. Prévois 2 à 3 jours faciles.",
                                     references: [Science.allenCoggan, Science.banister1975]))
         }
@@ -257,7 +260,7 @@ enum InsightEngine {
         if let readiness = input.readiness, readiness.level == .low, today.tss > 80 {
             insights.append(Insight(id: "load.ignoredReadiness", category: .recovery, severity: .watch,
                                     title: "Grosse séance malgré une récupération basse",
-                                    evidence: ["Récupération : \(readiness.score)/100", String(format: "Charge du jour : %.0f TSS", today.tss)],
+                                    evidence: ["Récupération : \(readiness.score)/100", String(format: "Charge du jour : %.0f TSS", locale: Locale.current, today.tss)],
                                     recommendation: "Ponctuellement sans conséquence ; répété, la fatigue s'accumule. Demain : endurance facile ou repos conseillés.",
                                     references: [Science.kiviniemi2007]))
         }
@@ -276,8 +279,8 @@ enum InsightEngine {
         let hard = rides.filter { ($0.intensityFactor ?? 0) >= 0.9 }.reduce(0) { $0 + $1.durationSeconds }
         let easyShare = easy / total
         let moderateShare = 1 - easyShare - hard / total
-        let evidence = [String(format: "Sur 28 j : %.0f %% facile · %.0f %% modéré · %.0f %% intense", easyShare * 100, moderateShare * 100, hard / total * 100),
-                        String(format: "Volume analysé : %.1f h", total / 3600)]
+        let evidence = [String(format: "Sur 28 j : %.0f %% facile · %.0f %% modéré · %.0f %% intense", locale: Locale.current, easyShare * 100, moderateShare * 100, hard / total * 100),
+                        String(format: "Volume analysé : %.1f h", locale: Locale.current, total / 3600)]
 
         if easyShare < 0.7 {
             return [Insight(id: "intensity.grey", category: .load, severity: .watch,
@@ -312,14 +315,14 @@ enum InsightEngine {
         if !low.isEmpty {
             insights.append(Insight(id: "strength.lowVolume", category: .strength, severity: .watch,
                                     title: "Volume insuffisant sur certains muscles",
-                                    evidence: low.map { String(format: "%@ : %.1f séries cette semaine", $0.label, volume[$0] ?? 0) },
-                                    recommendation: "Pour la prise de masse, vise au moins 10 séries par muscle et par semaine. Ajoute 2 à 3 séries sur ces muscles dans tes séances PPL (sauf zone blessée).",
+                                    evidence: low.map { String(format: "%@ : %.1f séries cette semaine", locale: Locale.current, $0.label, volume[$0] ?? 0) },
+                                    recommendation: "Pour développer un muscle, vise au moins 10 séries par semaine. Ajoute 2 à 3 séries sur ces muscles dans tes séances types (sauf zone blessée).",
                                     references: [Science.schoenfeld2017]))
         }
         if !high.isEmpty {
             insights.append(Insight(id: "strength.highVolume", category: .strength, severity: .info,
                                     title: "Volume très élevé",
-                                    evidence: high.map { String(format: "%@ : %.1f séries", $0.label, volume[$0] ?? 0) },
+                                    evidence: high.map { String(format: "%@ : %.1f séries", locale: Locale.current, $0.label, volume[$0] ?? 0) },
                                     recommendation: "Au-delà de 20 séries, le gain supplémentaire devient faible et la récupération plus difficile, surtout avec le vélo en parallèle.",
                                     references: [Science.schoenfeld2017]))
         }
@@ -337,7 +340,7 @@ enum InsightEngine {
             // Progression < 0,25 % / semaine et non significative (t < 2) = stagnation.
             let mean = Stats.mean(points.map(\.value)) ?? 1
             if perWeek / mean < 0.0025 && fit.t < 2 {
-                stalled.append(String(format: "%@ : %+.1f kg/sem de 1RM estimé sur %d séances", exercise, perWeek, points.count))
+                stalled.append(String(format: "%@ : %+.1f kg/sem de 1RM estimé sur %d séances", locale: Locale.current, exercise, perWeek, points.count))
             }
         }
         stalled.sort()
@@ -365,7 +368,7 @@ enum InsightEngine {
             insights.append(Insight(id: "strength.interference", category: .strength, severity: .info,
                                     title: "Séance jambes trop proche des séances vélo intenses",
                                     evidence: ["\(clashes.count) séances vélo intenses le jour même ou le lendemain d'une séance jambes"],
-                                    recommendation: "Place la séance Legs après la séance vélo intense (ou 48 h avant) pour garder la qualité des deux.",
+                                    recommendation: "Place la muscu des jambes après la séance vélo intense (ou 48 h avant) pour garder la qualité des deux.",
                                     references: [Science.wilson2012]))
         }
         return insights
@@ -376,16 +379,18 @@ enum InsightEngine {
     static func nutrition(_ input: InsightInput, calendar: Calendar) -> [Insight] {
         var insights: [Insight] = []
         guard let weekStart = calendar.date(byAdding: .day, value: -7, to: input.today) else { return [] }
-        let logged = input.nutrition.filter { $0.date >= weekStart && $0.kcal > 300 }
+        // Seulement les journées complètes : une journée à moitié notée fausserait la moyenne.
+        let dayStart = calendar.startOfDay(for: input.today)
+        let logged = input.nutrition.filter { $0.date >= weekStart && $0.date < dayStart && $0.kcal >= 1200 }
 
         if logged.count >= 3, input.weightKg > 0 {
             let protein = (Stats.mean(logged.map(\.protein)) ?? 0) / input.weightKg
-            let evidence = [String(format: "Protéines : %.1f g/kg/j en moyenne sur %d jours", protein, logged.count)]
-            if protein < 1.6 {
-                insights.append(Insight(id: "nutrition.protein", category: .nutrition, severity: .warning,
-                                        title: "Protéines insuffisantes pour la prise de masse",
+            let evidence = [String(format: "Protéines : %.1f g/kg/j en moyenne sur %d jours", locale: Locale.current, protein, logged.count)]
+            if protein < min(1.6, input.proteinTargetPerKg * 0.9) {
+                insights.append(Insight(id: "nutrition.protein", category: .nutrition, severity: .watch,
+                                        title: "Protéines en dessous de ton objectif",
                                         evidence: evidence,
-                                        recommendation: String(format: "Vise %.0f g par jour (1,8 g/kg) répartis en 4 prises de 30–40 g.", input.weightKg * 1.8),
+                                        recommendation: "Vise \((input.weightKg * input.proteinTargetPerKg).noDecimal) g par jour (\(input.proteinTargetPerKg.oneDecimal) g/kg) répartis en 4 prises de 30–40 g.",
                                         references: [Science.morton2018]))
             } else if protein <= 2.4 {
                 insights.append(Insight(id: "nutrition.proteinOK", category: .nutrition, severity: .positive,
@@ -402,13 +407,13 @@ enum InsightEngine {
             if !lowCarbLongDays.isEmpty {
                 insights.append(Insight(id: "nutrition.carbs", category: .nutrition, severity: .watch,
                                         title: "Pas assez de glucides les jours de sortie longue",
-                                        evidence: lowCarbLongDays.map { String(format: "%@ : %.1f g/kg de glucides", $0.date.formatted(date: .abbreviated, time: .omitted), $0.carbs / input.weightKg) },
+                                        evidence: lowCarbLongDays.map { String(format: "%@ : %.1f g/kg de glucides", locale: Locale.current, $0.date.formatted(date: .abbreviated, time: .omitted), $0.carbs / input.weightKg) },
                                         recommendation: "Les jours de 2 h et plus, vise 6 à 10 g/kg de glucides, dont 60 à 90 g par heure pendant la sortie.",
                                         references: [Science.burke2011, Science.jeukendrup2014]))
             }
         }
 
-        // Vitesse de prise de poids (tendance lissée).
+        // Vitesse d'évolution du poids (tendance lissée), jugée selon ton objectif.
         let weights = input.wellness.compactMap { sample in sample.weightKg.map { DayValue(date: sample.date, value: $0) } }
         let recentWeights = Stats.lastDays(28, of: weights, today: input.today, calendar: calendar)
         if recentWeights.count >= 8 {
@@ -416,9 +421,9 @@ enum InsightEngine {
             if let first = trend.first, let last = trend.last {
                 let weeks = max(last.date.timeIntervalSince(first.date) / (7 * 86_400), 1)
                 let ratePercent = (last.value - first.value) / first.value / weeks * 100
-                let evidence = [String(format: "Tendance du poids : %+.2f %% par semaine (%+.2f kg/sem)", ratePercent, (last.value - first.value) / weeks),
-                                String(format: "Poids lissé actuel : %.1f kg", last.value)]
-                let gaining = input.phase.map { [TrainingPhase.reprise, .base, .build].contains($0) } ?? true
+                let evidence = [String(format: "Tendance du poids : %+.2f %% par semaine (%+.2f kg/sem)", locale: Locale.current, ratePercent, (last.value - first.value) / weeks),
+                                String(format: "Poids lissé actuel : %.1f kg", locale: Locale.current, last.value)]
+                let gaining = input.weightGoal == .gain
                 // Seuils alignés sur les textes : idéal 0,25–0,5 %/semaine, alerte au-delà de 0,5 %.
                 if gaining && ratePercent > 0.5 {
                     insights.append(Insight(id: "nutrition.gainFast", category: .nutrition, severity: .watch,
@@ -434,10 +439,28 @@ enum InsightEngine {
                                             references: [Science.iraki2019, Science.hall2008]))
                 } else if gaining {
                     insights.append(Insight(id: "nutrition.gainOK", category: .nutrition, severity: .positive,
-                                            title: "Prise de masse au bon rythme",
+                                            title: "Prise de poids au bon rythme",
                                             evidence: evidence,
                                             recommendation: "Rythme idéal : 0,25 à 0,5 % du poids par semaine.",
                                             references: [Science.iraki2019]))
+                } else if input.weightGoal == .lose && ratePercent < -1 {
+                    insights.append(Insight(id: "nutrition.loseFast", category: .nutrition, severity: .watch,
+                                            title: "Perte de poids trop rapide",
+                                            evidence: evidence,
+                                            recommendation: "Au-delà de 1 %/semaine, tu perds aussi du muscle et la récupération en pâtit. Remonte d'environ 200 kcal par jour.",
+                                            references: [Science.hall2008]))
+                } else if input.weightGoal == .lose && ratePercent > -0.1 {
+                    insights.append(Insight(id: "nutrition.loseSlow", category: .nutrition, severity: .info,
+                                            title: "Poids stable",
+                                            evidence: evidence,
+                                            recommendation: "Ton objectif est de perdre du poids : un déficit d'environ 300 à 400 kcal par jour suffit, sans toucher aux glucides autour des séances.",
+                                            references: [Science.hall2008]))
+                } else if input.weightGoal == .maintain && abs(ratePercent) > 0.5 {
+                    insights.append(Insight(id: "nutrition.maintainDrift", category: .nutrition, severity: .info,
+                                            title: ratePercent > 0 ? "Poids en hausse" : "Poids en baisse",
+                                            evidence: evidence,
+                                            recommendation: "Ton objectif est de maintenir ton poids : ajuste d'environ 150 à 200 kcal par jour.",
+                                            references: [Science.hall2008]))
                 }
             }
         }
@@ -452,9 +475,11 @@ enum InsightEngine {
         let byDay = Dictionary(input.wellness.map { (calendar.startOfDay(for: $0.date), $0) }, uniquingKeysWith: { first, _ in first })
 
         let missingHRV = lastWeek.filter { byDay[$0]?.hrv == nil }.count
-        if missingHRV >= 3 {
+        // Seulement si tu as déjà eu de la VFC (montre portée la nuit) : sinon ce n'est pas un oubli.
+        let hadHRV = input.wellness.contains { $0.hrv != nil }
+        if missingHRV >= 3, hadHRV {
             insights.append(Insight(id: "data.hrvMissing", category: .data, severity: .info,
-                                    title: "VFC manquante",
+                                    title: "Quelques nuits sans VFC",
                                     evidence: ["\(missingHRV) nuits sans VFC sur les 7 dernières"],
                                     recommendation: "Porte ta montre la nuit (bracelet bien ajusté) : le score de récupération en dépend.",
                                     references: [Science.plews2013]))
@@ -469,13 +494,13 @@ enum InsightEngine {
         }
 
         // Valeur de VFC aberrante (> 3 écarts-types) : artefact probable.
-        let hrv = input.wellness.compactMap { sample in sample.hrv.map { DayValue(date: sample.date, value: log($0)) } }
+        let hrv = input.wellness.compactMap { sample in sample.hrv.flatMap { $0 > 0 ? DayValue(date: sample.date, value: log($0)) : nil } }
         let baseline = Stats.lastDays(60, of: hrv, today: input.today, calendar: calendar).map(\.value)
         if baseline.count >= 21, let mean = Stats.mean(baseline), let sd = Stats.standardDeviation(baseline), sd > 0,
            let latest = hrv.max(by: { $0.date < $1.date }), abs(latest.value - mean) > 3 * sd {
             insights.append(Insight(id: "data.hrvOutlier", category: .data, severity: .info,
                                     title: "Mesure de VFC inhabituelle",
-                                    evidence: [String(format: "Dernière VFC : %.0f ms, très loin de ta moyenne (%.0f ms)", exp(latest.value), exp(mean))],
+                                    evidence: [String(format: "Dernière VFC : %.0f ms, très loin de ta moyenne (%.0f ms)", locale: Locale.current, exp(latest.value), exp(mean))],
                                     recommendation: "Alcool, repas tardif, maladie qui commence ou capteur mal placé ? Une valeur isolée ne change pas le plan : c'est la tendance qui compte.",
                                     references: [Science.plews2013]))
         }
@@ -491,7 +516,7 @@ enum InsightEngine {
                 insights.append(Insight(id: "data.ftpLow", category: .data, severity: .watch,
                                         title: "FTP probablement sous-estimée",
                                         evidence: ["\(strongRides.count) sortie(s) de 20 min ou plus avec une puissance moyenne au-dessus de ta FTP (\(Int(ftp)) W)"],
-                                        recommendation: "Une FTP trop basse surestime la charge de toutes tes sorties. Fais un test (20 min ou rampe) dès que ta blessure le permet et mets-la à jour.",
+                                        recommendation: "Une FTP trop basse surestime la charge de toutes tes sorties. Fais un test (20 min ou rampe) quand tu peux et mets-la à jour.",
                                         references: [Science.allenCoggan]))
             }
         }
@@ -502,7 +527,7 @@ enum InsightEngine {
             insights.append(Insight(id: "data.weightMissing", category: .data, severity: .info,
                                     title: "Pas de pesée récente",
                                     evidence: ["Aucun poids enregistré depuis 7 jours"],
-                                    recommendation: "Pèse-toi au moins 3 fois par semaine, le matin à jeun : c'est indispensable pour ajuster tes apports à ton objectif.",
+                                    recommendation: "Pour suivre ton objectif de poids, pèse-toi 2 à 3 fois par semaine, le matin à jeun : Vigor ajuste mieux tes apports.",
                                     references: [Science.iraki2019]))
         }
         return insights

@@ -47,7 +47,7 @@ struct InsightEngineTests {
         var input = baseInput()
         input.nutrition = (0..<5).map { NutritionDay(date: date(daysAgo: $0), kcal: 2400, protein: 90, carbs: 300, fat: 80) }
         let insights = InsightEngine.nutrition(input, calendar: .current)
-        #expect(insights.contains { $0.id == "nutrition.protein" && $0.severity == .warning })
+        #expect(insights.contains { $0.id == "nutrition.protein" && $0.severity == .watch })
     }
 
     @Test func flagsUnderestimatedFTP() {

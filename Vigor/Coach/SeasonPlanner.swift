@@ -16,10 +16,10 @@ enum TrainingPhase: String, CaseIterable {
 
     var summary: String {
         switch self {
-        case .reprise: "Retour progressif après blessure : endurance facile, aucune intensité, renfo adapté."
-        case .base: "Construire le moteur : beaucoup d'endurance (zone 2), sortie longue qui s'allonge, muscu prioritaire pour la masse."
+        case .reprise: "Remise en route progressive : endurance facile, pas encore d'intensité, muscu sans charge maximale."
+        case .base: "Construire le moteur : beaucoup d'endurance (zone 2), sortie longue qui s'allonge, muscu régulière."
         case .build: "Ajouter de l'intensité (seuil, sweet spot, VO2max) tout en gardant la sortie longue."
-        case .specific: "Simuler la course : longues sorties gravel, efforts au seuil sur terrain varié, nutrition d'effort testée."
+        case .specific: "Simuler la course : longues sorties sur le terrain de la course, efforts au seuil sur terrain varié, nutrition d'effort testée."
         case .taper: "Réduire le volume pour arriver frais, garder un peu d'intensité pour rester vif."
         case .race: "Semaine de course : repos, déblocage et c'est parti."
         }
@@ -27,8 +27,8 @@ enum TrainingPhase: String, CaseIterable {
 
     var nutritionFocus: String {
         switch self {
-        case .reprise, .base: "Prise de masse : léger surplus (+250 à +300 kcal/j), protéines 1,8–2,2 g/kg."
-        case .build: "Surplus léger puis maintien, glucides augmentés les jours d'intensité."
+        case .reprise, .base: "Phase idéale pour ton objectif de poids (prise ou perte) : protéines 1,8–2,2 g/kg."
+        case .build: "Écart calorique modéré, glucides augmentés les jours d'intensité."
         case .specific, .taper: "Maintien du poids, glucides adaptés aux sorties longues (60–90 g/h pendant l'effort)."
         case .race: "Charge glucidique les 2 jours avant la course."
         }
@@ -117,6 +117,9 @@ struct PlannerInput {
     /// Fatigue accumulée détectée (forme très basse plusieurs jours, VFC + FC repos dégradées) :
     /// la semaine en cours devient une semaine allégée.
     var fatigueDetected = false
+    /// Semaines de charge consécutives juste avant la semaine en cours (semaines figées) :
+    /// le cycle 3 semaines de charge / 1 de récupération continue d'une semaine à l'autre.
+    var priorLoadWeeks = 0
 }
 
 struct PlannedWeek: Identifiable, Equatable {
@@ -133,6 +136,8 @@ struct PlannedWeek: Identifiable, Equatable {
     var availableDays: Int
     var projectedCTL: Double
     var notes: [String]
+    /// Jour de la course (semaine de course uniquement).
+    var raceDay: Date? = nil
 
     var isReduced: Bool { availableDays < 6 }
 }
@@ -195,7 +200,7 @@ enum SeasonPlanner {
 
         let result = simulate(input, phases: phases, starts: starts, availability: availability, ramp: ramp)
         if result.capped {
-            warnings.append("Certaines semaines sont limitées par tes heures disponibles (\(String(format: "%.0f", input.weeklyHoursAvailable)) h/sem).")
+            warnings.append("Certaines semaines sont limitées par tes heures disponibles (\(String(format: "%.0f", locale: Locale.current, input.weeklyHoursAvailable)) h/sem).")
         }
         if input.injuries.contains(where: { $0.severity >= 3 }) {
             warnings.append("Blessure sévère déclarée : fais valider la reprise par un médecin ou un kiné.")
@@ -269,7 +274,7 @@ enum SeasonPlanner {
 
         var ctl = input.currentCTL
         var longRide = min(2.0, max(1.0, ctl / 20))
-        var loadStreak = 0
+        var loadStreak = input.priorLoadWeeks
         var peakCTL = ctl
         var capped = false
         var weeks: [PlannedWeek] = []
@@ -350,8 +355,9 @@ enum SeasonPlanner {
             switch phase {
             case .reprise, .race: intensity = 0
             case .base:
-                let position = baseIndices.firstIndex(of: index) ?? 0
-                intensity = position >= baseIndices.count / 2 ? 1 : 0
+                // Une séance d'intensité sur les 4 dernières semaines de foncier (repère fixe par rapport à la course).
+                let remaining = baseIndices.filter { $0 >= index }.count
+                intensity = remaining <= 4 ? 1 : 0
             case .build, .specific: intensity = 2
             case .taper: intensity = 1
             }
@@ -361,7 +367,7 @@ enum SeasonPlanner {
             }
             if availabilityFactor < 0.5 { intensity = min(intensity, 1) }
 
-            // Musculation (Push / Pull / Legs).
+            // Musculation (tes séances types).
             var strength = min(phase.strengthSessions, input.strengthSessionsPerWeek)
             if kind == .recovery { strength = max(strength - 1, min(strength, 1)) }
             strength = min(strength, Int((Double(strength) * availabilityFactor).rounded(.up)))
@@ -384,7 +390,8 @@ enum SeasonPlanner {
                 runningAllowed: runningAllowed,
                 availableDays: availableDays,
                 projectedCTL: ctl,
-                notes: notes))
+                notes: notes,
+                raceDay: phase == .race ? input.raceDate : nil))
         }
         return Simulation(weeks: weeks, peakCTL: peakCTL, capped: capped)
     }
@@ -409,7 +416,7 @@ enum SeasonPlanner {
             case .illness: notes.append("\(prefix) : repos complet tant qu'il y a fièvre ou symptômes sous le cou.")
             case .travel: notes.append("\(prefix) : séances courtes possibles (gainage, mobilité, renfo au poids du corps).")
             case .vacation: notes.append("\(prefix) : profite ! Une sortie plaisir si l'envie est là.")
-            case .motivation: notes.append("\(prefix) : on ne rattrape pas les séances manquées, on reprend le plan normalement.")
+            case .motivation: notes.append("\(prefix) : rien à rattraper, la semaine se réorganise.")
             case .injury, .fatigue, .other: notes.append("\(prefix).")
             }
         }

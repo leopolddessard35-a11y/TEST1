@@ -19,8 +19,15 @@ struct WeekPlannerView: View {
                         }
                         .pickerStyle(.segmented)
                     }
-                    if let plan = showNextWeek ? snapshot.nextWeekPlan : snapshot.weekPlan {
+                    let showingNext = showNextWeek && snapshot.nextWeekPlan != nil
+                    if let plan = showingNext ? snapshot.nextWeekPlan : snapshot.weekPlan {
                         header(plan)
+                        if showingNext {
+                            Label("Provisoire : la semaine prochaine se fixe lundi, d'après ta forme du moment. Tes choix de jours sont gardés.",
+                                  systemImage: "info.circle")
+                                .font(.caption).foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                         daysCard(plan, profile: profile)
                         let dropped = plan.items.filter { $0.state == .dropped }
                         if !dropped.isEmpty { droppedCard(dropped, plan: plan, profile: profile) }
@@ -38,6 +45,9 @@ struct WeekPlannerView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 24)
+                .task(id: snapshot.plan.currentWeek.map { FrozenWeek.dayKey($0.start) }) {
+                    if WeekFreezer.update(plan: snapshot.plan, context: context) { app.dataVersion += 1 }
+                }
             }
         }
         .background(AppBackground())
@@ -133,9 +143,15 @@ struct WeekPlannerView: View {
                         .frame(width: 28)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(session.title).font(.subheadline.weight(.semibold))
-                        Text("En plus du plan · \((Double(session.minutes) / 60).hoursText)").font(.caption).foregroundStyle(.secondary)
+                        Text("\(plan.excluded.contains(session.id) ? "Exclue du plan" : "En plus du plan") · \((Double(session.minutes) / 60).hoursText)")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
+                    if plan.excluded.contains(session.id) {
+                        Button("Recompter") { setExcluded(session, false, plan: plan) }
+                            .font(.caption.weight(.semibold))
+                            .frame(minHeight: 44)
+                    }
                 }
             }
         }
@@ -163,7 +179,17 @@ struct WeekPlannerView: View {
                 }
             }
             Spacer(minLength: 4)
-            if !item.isDone && item.category != .race {
+            if let done = item.doneSession {
+                Menu {
+                    Button { setExcluded(done, true, plan: plan) } label: {
+                        Label("Ne compte pas pour cette séance", systemImage: "xmark.circle")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle").font(.title3).foregroundStyle(.secondary)
+                        .frame(width: 44, height: 44).contentShape(.rect)
+                }
+                .accessibilityLabel("Options de \(done.title)")
+            } else if item.category != .race {
                 moveMenu(item, plan: plan, profile: profile)
             }
         }
@@ -262,6 +288,21 @@ struct WeekPlannerView: View {
         save()
     }
 
+    /// « Ne compte pas pour cette séance » (ex. une sortie vélotaf reconnue à tort).
+    private func setExcluded(_ session: DoneSession, _ excluded: Bool, plan: WeekPlan) {
+        let weekStart = Calendar.current.startOfDay(for: plan.week.start)
+        let slot = WeekPlan.exclusionPrefix + session.id
+        let key = SessionPlacement.key(weekStart: weekStart, slot: slot)
+        let descriptor = FetchDescriptor<SessionPlacement>(predicate: #Predicate { $0.key == key })
+        let existing = try? context.fetch(descriptor).first
+        if excluded {
+            if existing == nil { context.insert(SessionPlacement(weekStart: weekStart, slot: slot, day: nil)) }
+        } else if let existing {
+            context.delete(existing)
+        }
+        save()
+    }
+
     private func reset(_ item: WeekPlan.Item, plan: WeekPlan) {
         if let placement = existing(item, plan: plan) { context.delete(placement) }
         save()
@@ -271,5 +312,31 @@ struct WeekPlannerView: View {
         try? context.save()
         app.dataVersion += 1
         Feedback.tick()
+    }
+}
+
+/// Fige la semaine en cours le jour où elle commence (ses séances ne bougent plus ensuite)
+/// et oublie les choix de jours de plus de 4 semaines.
+@MainActor
+enum WeekFreezer {
+    /// Vrai si quelque chose a été enregistré.
+    @discardableResult
+    static func update(plan: SeasonPlan, context: ModelContext) -> Bool {
+        guard let week = plan.currentWeek else { return false }
+        var changed = false
+        let key = FrozenWeek.dayKey(week.start)
+        let descriptor = FetchDescriptor<FrozenWeek>(predicate: #Predicate { $0.key == key })
+        if ((try? context.fetchCount(descriptor)) ?? 0) == 0 {
+            context.insert(FrozenWeek(week: week))
+            changed = true
+        }
+        let limit = Calendar.current.date(byAdding: .day, value: -28, to: Calendar.current.startOfDay(for: week.start)) ?? week.start
+        let old = FetchDescriptor<SessionPlacement>(predicate: #Predicate { $0.weekStart < limit })
+        for placement in (try? context.fetch(old)) ?? [] {
+            context.delete(placement)
+            changed = true
+        }
+        if changed { try? context.save() }
+        return changed
     }
 }

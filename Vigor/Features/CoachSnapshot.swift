@@ -46,9 +46,6 @@ struct CoachSnapshot {
     let milestones: [Milestone]
     /// Poids en moyenne mobile 7 jours.
     let weightMA7: [DayValue]
-    /// Objectif d'eau du jour et eau bue (conservés pour l'affichage ; plus d'alerte hydratation).
-    let hydrationTarget: Double
-    let waterToday: Double
     let shoeKm: [(name: String, km: Double)]
     let lifeLoad7: Double
     /// Apports par jour (jours renseignés).
@@ -99,6 +96,7 @@ struct CoachSnapshot {
                       shoes: [Shoe] = [],
                       baselines: [PlanBaseline] = [],
                       placements: [SessionPlacement] = [],
+                      frozenWeeks: [FrozenWeek] = [],
                       now: Date = .now) -> CoachSnapshot {
         let calendar = Calendar.current
         let thresholds = profile.thresholds
@@ -237,7 +235,18 @@ struct CoachSnapshot {
         let hrvScore: Double = todayReadiness?.components.first { $0.name == "VFC" }?.score ?? 60
         let rhrScore: Double = todayReadiness?.components.first { $0.name == "FC au repos" }?.score ?? 60
         let fatigueDetected: Bool = tiredDays >= 5 || (hrvScore < 38 && rhrScore < 45)
-        let plannerInput = PlannerInput(
+        // Semaines de charge consécutives juste avant celle-ci (semaines figées) : le cycle 3/1 continue.
+        let isoCalendar = SeasonPlanner.isoCalendar
+        let thisWeekStart: Date = isoCalendar.dateInterval(of: .weekOfYear, for: now)?.start ?? todayStart
+        var frozenByKey: [String: FrozenWeek] = [:]
+        for frozen in frozenWeeks { frozenByKey[FrozenWeek.dayKey(frozen.weekStart, calendar: calendar)] = frozen }
+        var priorLoadWeeks = 0
+        var cursor: Date = isoCalendar.date(byAdding: .day, value: -7, to: thisWeekStart) ?? thisWeekStart
+        while let frozen = frozenByKey[FrozenWeek.dayKey(cursor, calendar: calendar)], frozen.kind == .load, priorLoadWeeks < 3 {
+            priorLoadWeeks += 1
+            cursor = isoCalendar.date(byAdding: .day, value: -7, to: cursor) ?? cursor
+        }
+        var plannerInput = PlannerInput(
             today: now,
             raceDate: profile.raceDate,
             raceName: profile.raceName,
@@ -248,7 +257,18 @@ struct CoachSnapshot {
             unavailabilities: periods,
             injuries: injuryStatuses,
             fatigueDetected: fatigueDetected)
-        let plan: SeasonPlan = SeasonPlanner.makePlan(plannerInput)
+        plannerInput.priorLoadWeeks = priorLoadWeeks
+        // Pas d'objectif renseigné : pas de plan inventé, seulement le suivi et l'analyse.
+        let hasGoal = !profile.raceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let rawPlan: SeasonPlan = hasGoal
+            ? SeasonPlanner.makePlan(plannerInput)
+            : SeasonPlan(weeks: [], startCTL: currentCTL, targetCTL: profile.targetRaceCTL, projectedPeakCTL: currentCTL, warnings: [])
+        // La semaine en cours garde la composition figée le jour où elle a commencé.
+        var plan: SeasonPlan = rawPlan
+        if let first = rawPlan.weeks.first, let frozen = frozenByKey[FrozenWeek.dayKey(first.start, calendar: calendar)] {
+            plan = SeasonPlan(weeks: [frozen.apply(to: first)] + rawPlan.weeks.dropFirst(), startCTL: rawPlan.startCTL,
+                              targetCTL: rawPlan.targetCTL, projectedPeakCTL: rawPlan.projectedPeakCTL, warnings: rawPlan.warnings)
+        }
 
         // Nutrition (boucles explicites : plus rapides à compiler).
         var totalsByDay: [Date: NutritionDay] = [:]
@@ -267,10 +287,18 @@ struct CoachSnapshot {
 
         var weights: [DayValue] = []
         var activeEnergy: [DayValue] = []
+        // Poids : une seule source (Apple Santé / saisie si ≥ 4 pesées sur 60 j, sinon Garmin).
+        var weightsGarmin: [DayValue] = []
         for record in sortedWellness {
             if let weight = record.weightKg { weights.append(DayValue(date: record.day, value: weight)) }
+            if let weight = record.weightKgGarmin { weightsGarmin.append(DayValue(date: record.day, value: weight)) }
             if let active = record.activeEnergyKcal { activeEnergy.append(DayValue(date: record.day, value: active)) }
         }
+        let useGarminWeight = Stats.lastDays(60, of: weights, today: now, calendar: calendar).count < 4
+            && Stats.lastDays(60, of: weightsGarmin, today: now, calendar: calendar).count >= 4
+        if useGarminWeight { weights = weightsGarmin }
+        var weightByDay: [Date: Double] = [:]
+        for point in weights { weightByDay[point.date] = point.value }
         let recentWeights: [DayValue] = Stats.lastDays(14, of: weights, today: now, calendar: calendar)
         let trendWeight: Double? = Stats.exponentialTrend(recentWeights).last?.value
         let profileWeight: Double = profile.weightKg > 0 ? profile.weightKg : 0
@@ -292,6 +320,11 @@ struct CoachSnapshot {
                                                                      today: now, calendar: calendar)
 
         let trainingHours: Double = max(doneToday, plannedSeconds) / 3600
+        // Entraînement d'hier (glucides de la veille jugés selon l'entraînement réel).
+        var doneYesterday: Double = 0
+        for sample in samples where calendar.isDate(sample.date, inSameDayAs: calendar.date(byAdding: .day, value: -1, to: now) ?? now) {
+            doneYesterday += sample.durationSeconds
+        }
         let macroTargets: MacroTargets? = NutritionPlanner.targets(
             weightKg: currentWeight,
             heightCm: profile.heightCm,
@@ -300,7 +333,8 @@ struct CoachSnapshot {
             activeKcal: averageActive,
             trainingHours: trainingHours,
             phase: plan.currentWeek?.phase,
-            adaptiveExpenditure: adaptive)
+            adaptiveExpenditure: adaptive,
+            goal: profile.nutritionGoal)
 
         // Analyse critique.
         let strengthSessions: [ExerciseSession] = strength.flatMap(\.exerciseSessions)
@@ -308,7 +342,7 @@ struct CoachSnapshot {
         for record in sortedWellness {
             let hrv: Double? = useGarmin ? record.hrvRMSSD : record.hrvMs
             insightWellness.append(WellnessSample(date: record.day, sleepHours: sleepByDay[record.day], hrv: hrv,
-                                                  restingHR: restingByDay[record.day], weightKg: record.weightKg))
+                                                  restingHR: restingByDay[record.day], weightKg: weightByDay[record.day]))
         }
         let insightInput = InsightInput(
             today: now,
@@ -322,7 +356,10 @@ struct CoachSnapshot {
             ftp: thresholds.ftp,
             sleepNeedHours: profile.sleepNeedHours,
             phase: plan.currentWeek?.phase,
-            readiness: todayReadiness)
+            readiness: todayReadiness,
+            weightGoal: profile.weightGoal,
+            proteinTargetPerKg: profile.manualTargets && profile.manualProtein > 0 && currentWeight > 0
+                ? profile.manualProtein / currentWeight : profile.proteinPerKg)
         var insights: [Insight] = InsightEngine.analyze(insightInput, calendar: calendar)
 
         // Suivi avancé : discipline, volume, hors sport, sommeil, symptômes, chaussures, hydratation.
@@ -419,10 +456,6 @@ struct CoachSnapshot {
             if let zone = zoneByKey[pattern.key], legZones.contains(zone) { recurrentLeg.append(pattern.key) }
         }
 
-        // Hydratation : ~35 ml/kg + 600 ml par heure d'entraînement prévue (affichage seulement).
-        let hydrationTarget: Double = (currentWeight > 0 ? currentWeight * 35 : 2500) + trainingHours * 600
-        let waterToday: Double = wellnessByDay[todayStart]?.waterMl ?? 0
-
         let advanced: [Insight] = AdvancedInsights.analyze(
             disciplineLoads: disciplineLoads,
             volumeAlerts: volumeAlerts,
@@ -474,19 +507,24 @@ struct CoachSnapshot {
         }
 
         // Organisation de la semaine : séances du plan, jours choisis à la main, séances faites reconnues par type.
+        // Seules les séances de vélo, de course et de muscu comptent pour le plan (pas une marche ou du yoga),
+        // sur 9 semaines : assez pour la semaine et les habitudes.
         var doneSessions: [DoneSession] = []
-        for (index, activity) in activities.enumerated() {
+        let organizerStart: Date = calendar.date(byAdding: .day, value: -63, to: todayStart) ?? todayStart
+        for (index, activity) in activities.enumerated() where activity.start >= organizerStart {
             let minutes = Int(activity.durationSeconds / 60)
             if activity.sport == .strength {
                 doneSessions.append(DoneSession(id: "cardio-\(activity.externalID)", date: activity.start, title: activity.title,
                                                 symbol: "dumbbell.fill", minutes: minutes, isStrength: true, isIntense: false))
                 continue
             }
-            let intense = (samples[index].intensityFactor ?? 0) >= 0.82 || (activity.rpe ?? 0) >= 7
+            guard activity.sport.isCycling || activity.sport == .running else { continue }
+            // Tempo et sweet spot comptent comme intenses (IF ≥ 0,76), comme un effort ressenti ≥ 7.
+            let intense = (samples[index].intensityFactor ?? 0) >= 0.76 || (activity.rpe ?? 0) >= 7
             doneSessions.append(DoneSession(id: "cardio-\(activity.externalID)", date: activity.start, title: activity.title,
                                             symbol: activity.sport.symbol, minutes: minutes, isStrength: false, isIntense: intense))
         }
-        for workout in strength {
+        for workout in strength where workout.start >= organizerStart {
             var lowerSets = 0
             for session in workout.exerciseSessions
             where MuscleMap.targets(for: session.exercise).primary.contains(where: { $0.region == .lowerBody }) {
@@ -496,20 +534,27 @@ struct CoachSnapshot {
                                             symbol: "dumbbell.fill", minutes: Int(workout.durationSeconds / 60),
                                             isStrength: true, isIntense: false, isLegs: lowerSets >= 3))
         }
-        func organize(_ week: PlannedWeek) -> WeekPlan {
+        func organize(_ week: PlannedWeek, at moment: Date) -> WeekPlan {
             let weekStart = calendar.startOfDay(for: week.start)
             var pinned: [String: Date] = [:]
             var removed = Set<String>()
+            var excluded = Set<String>()
             for placement in placements where calendar.isDate(placement.weekStart, inSameDayAs: weekStart) {
-                if let day = placement.day { pinned[placement.slot] = day } else { removed.insert(placement.slot) }
+                if placement.slot.hasPrefix(WeekPlan.exclusionPrefix) {
+                    excluded.insert(String(placement.slot.dropFirst(WeekPlan.exclusionPrefix.count)))
+                } else if let day = placement.day {
+                    pinned[placement.slot] = day
+                } else {
+                    removed.insert(placement.slot)
+                }
             }
             let habits = TrainingHabits.learn(from: doneSessions, before: weekStart, calendar: calendar)
             return WeekPlanner.make(week: week, ftp: thresholds.ftp, done: doneSessions, habits: habits,
-                                    pinned: pinned, removed: removed, unavailable: periods,
-                                    availableMinutes: { profile.availableMinutes(weekday: $0) }, now: now, calendar: calendar)
+                                    pinned: pinned, removed: removed, excluded: excluded, unavailable: periods,
+                                    availableMinutes: { profile.availableMinutes(weekday: $0) }, now: moment, calendar: calendar)
         }
-        let weekPlan: WeekPlan? = plan.currentWeek.map(organize)
-        let nextWeekPlan: WeekPlan? = plan.weeks.dropFirst().first.map(organize)
+        let weekPlan: WeekPlan? = plan.currentWeek.map { organize($0, at: now) }
+        let nextWeekPlan: WeekPlan? = plan.weeks.dropFirst().first.map { organize($0, at: now) }
         let milestones: [Milestone] = PlanTracking.milestones(plan: plan)
         // Coach du jour : croisement santé × entraînement × nutrition.
         var nights: [(daysAgo: Int, hours: Double)] = []
@@ -522,8 +567,9 @@ struct CoachSnapshot {
         // Dette sur 14 jours, les nuits anciennes pesant moins (× 0,85 par jour).
         let sleepDebt: Double = Robust.decayedSleepDebt(need: profile.sleepNeedHours, sleeps: nights)
         let yesterdayStart: Date = calendar.date(byAdding: .day, value: -1, to: todayStart) ?? todayStart
+        // Calendrier Intervals.icu : utilisé seulement sans plan de saison (sinon c'est ta semaine organisée qui compte).
         var externalPlan: [PlannedSessionInput] = []
-        for workout in plannedToday {
+        for workout in plannedToday where weekPlan == nil {
             let minutes: Int = Int((workout.plannedSeconds ?? 3600) / 60)
             externalPlan.append(PlannedSessionInput(name: workout.name, sport: workout.sport, minutes: minutes, tss: workout.plannedTSS))
         }
@@ -544,7 +590,7 @@ struct CoachSnapshot {
         let respiratory: RespiratorySignal? = RespiratoryMonitor.signal(respiration: respirationSeries, restingHR: restingHR,
                                                                         today: now, calendar: calendar)
         if let respiratory, respiratory.isWarning {
-            var evidence = [String(format: "Respiration nocturne : %.1f resp/min (ta normale : %.1f, %+.1f)", respiratory.latest, respiratory.baseline, respiratory.delta)]
+            var evidence = [String(format: "Respiration nocturne : %.1f resp/min (ta normale : %.1f, %+.1f)", locale: Locale.current, respiratory.latest, respiratory.baseline, respiratory.delta)]
             if respiratory.restingHRUp { evidence.append("FC de repos également au-dessus de ta moyenne") }
             insights.insert(Insight(id: "illness.respiration", category: .recovery,
                                     severity: respiratory.restingHRUp ? .warning : .watch,
@@ -588,6 +634,10 @@ struct CoachSnapshot {
             week: plan.currentWeek,
             externalPlan: externalPlan,
             scheduledToday: weekPlan.map { plan in plan.items(on: todayStart).filter(\.isPending).map(\.session) },
+            doneToday: weekPlan.map { plan in (plan.items(on: todayStart).compactMap(\.doneSession) + plan.extras(on: todayStart)).map(\.title) } ?? [],
+            yesterdayTrainingHours: doneYesterday / 3600,
+            weightGoal: profile.weightGoal,
+            calorieAdjustment: profile.manualTargets ? 0 : profile.calorieAdjustment,
             ftp: thresholds.ftp,
             injuries: injuryStatuses,
             unavailableToday: unavailableToday,
@@ -610,7 +660,9 @@ struct CoachSnapshot {
             guard let day = calendar.date(byAdding: .day, value: -offset, to: todayStart) else { continue }
             effortHistory.append(DayValue(date: day, value: EffortScore.score(load: daily[day] ?? 0)))
         }
-        let effortTarget: ClosedRange<Double> = EffortScore.target(for: todayReadiness?.level, verdict: brief.verdict)
+        // Rien de prévu aujourd'hui : la cible devient un plafond (comme un jour de repos).
+        let effortTarget: ClosedRange<Double> = EffortScore.target(for: todayReadiness?.level,
+                                                                   verdict: brief.adapted.isEmpty ? .rest : brief.verdict)
 
         // Besoin de sommeil de la nuit à venir : effort du jour (fait ou prévu) + dette.
         var plannedLoad: Double = 0
@@ -655,14 +707,16 @@ struct CoachSnapshot {
                 reportDay.kcal = nutrition.kcal
                 reportDay.protein = nutrition.protein
             }
-            reportDay.weight = wellnessByDay[day]?.weightKg
+            reportDay.weight = weightByDay[day]
             reportDays.append(reportDay)
         }
         let weeklyReport: WeeklyReport? = WeeklyReportBuilder.build(days: reportDays.sorted { $0.date < $1.date }, today: now, calendar: calendar)
 
         // Demain : les séances placées par l'organisateur (cette semaine ou la suivante).
         let tomorrow: Date = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? todayStart
-        let tomorrowWeekPlan: WeekPlan? = (weekPlan?.contains(tomorrow) ?? false) ? weekPlan : nextWeekPlan
+        // Calculé « comme demain matin » : ce qui n'est pas fait aujourd'hui est déjà replacé.
+        let tomorrowWeek: PlannedWeek? = (weekPlan?.contains(tomorrow) ?? false) ? plan.currentWeek : plan.weeks.dropFirst().first
+        let tomorrowWeekPlan: WeekPlan? = tomorrowWeek.map { organize($0, at: tomorrow) }
         let tomorrowPlan: [SessionPrescription] = tomorrowWeekPlan.map { plan in
             plan.items(on: tomorrow).filter(\.isPending).map(\.session)
         } ?? []
@@ -729,8 +783,8 @@ struct CoachSnapshot {
            last.value - first.value <= -0.5, let ramp = TrainingLoad.rampRate(load), ramp > 2 {
             insights.insert(Insight(id: "nutrition.deficit", category: .nutrition, severity: .warning,
                                     title: "Déficit énergétique probable",
-                                    evidence: [String(format: "Poids lissé : %.1f kg en 3 semaines", last.value - first.value),
-                                               String(format: "Condition : %+.1f points sur 7 j", ramp)],
+                                    evidence: [String(format: "Poids lissé : %.1f kg en 3 semaines", locale: Locale.current, last.value - first.value),
+                                               String(format: "Condition : %+.1f points sur 7 j", locale: Locale.current, ramp)],
                                     recommendation: "Ton poids baisse pendant que ta charge monte : apports en dessous de ta dépense. Ajoute 300 à 400 kcal par jour, surtout en glucides autour des séances.",
                                     references: [Science.mountjoy2018, Science.hall2008]), at: 0)
         }
@@ -748,9 +802,9 @@ struct CoachSnapshot {
             if !declared, trained < 3600, (yesterday.steps ?? 0) > 18_000 || activeHigh {
                 insights.insert(Insight(id: "life.undeclared", category: .data, severity: .info,
                                         title: "Journée physique non déclarée ?",
-                                        evidence: [String(format: "Hier : %.0f pas, %.0f kcal actives, sans séance ni activité hors sport déclarée",
+                                        evidence: [String(format: "Hier : %.0f pas, %.0f kcal actives, sans séance ni activité hors sport déclarée", locale: Locale.current,
                                                           yesterday.steps ?? 0, yesterday.activeEnergyKcal ?? 0)],
-                                        recommendation: "Si tu as fait des travaux ou une journée debout, ajoute-la dans Journal → Hors sport : elle compte dans ta fatigue.",
+                                        recommendation: "Si tu as fait des travaux ou une journée debout, ajoute-la avec le bouton + → Hors sport : elle compte dans ta fatigue.",
                                         references: []), at: 0)
             }
         }
@@ -761,15 +815,16 @@ struct CoachSnapshot {
             plannedLastWeek = baselines.first { calendar.isDate($0.weekStart, inSameDayAs: lastWeekStart) }?.targetHours
         }
         let doneStrength: Int = strength.filter { $0.start >= weekAgo }.count
-        let missed: Int = weekPlan?.droppedCount ?? 0
         let weeklyReview: WeeklyReport.Review? = weeklyReport.map {
-            WeeklyReport.review(report: $0, plannedHours: plannedLastWeek, plannedStrength: profile.strengthSessionsPerWeek,
-                                doneStrength: doneStrength, acuteChronic: Robust.acuteChronicRatio(load.map(\.tss)),
-                                missedSessions: missed)
+            WeeklyReport.review(report: $0, plannedHours: plannedLastWeek,
+                                plannedStrength: plan.currentWeek?.strengthSessions ?? profile.strengthSessionsPerWeek,
+                                doneStrength: doneStrength, acuteChronic: Robust.acuteChronicRatio(load.map(\.tss)))
         }
 
         var loggedMeals = Set<Meal>()
-        for entry in foods where calendar.isDate(entry.date, inSameDayAs: now) {
+        // Seuls les repas notés après 4 h comptent pour la journée (un en-cas de 0 h 30 n'annule pas le dîner du soir).
+        let dayBegins: Date = todayStart.addingTimeInterval(4 * 3600)
+        for entry in foods where calendar.isDate(entry.date, inSameDayAs: now) && entry.date >= dayBegins {
             loggedMeals.insert(entry.meal)
         }
 
@@ -804,8 +859,6 @@ struct CoachSnapshot {
             nextWeekPlan: nextWeekPlan,
             milestones: milestones,
             weightMA7: weightMA7,
-            hydrationTarget: hydrationTarget,
-            waterToday: waterToday,
             shoeKm: shoeKm,
             lifeLoad7: lifeLoad7,
             nutritionDays: nutritionDays,
@@ -846,6 +899,9 @@ extension StrengthWorkout {
 final class SnapshotCache {
     private var key: Int?
     private var value: CoachSnapshot?
+
+    /// Dernier calcul (ex. récupération du jour pour la séance de muscu en cours).
+    var latest: CoachSnapshot? { value }
 
     func snapshot(for key: Int, build: () -> CoachSnapshot) -> CoachSnapshot {
         if let value, self.key == key { return value }

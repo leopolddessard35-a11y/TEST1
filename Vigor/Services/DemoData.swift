@@ -227,7 +227,16 @@ enum DemoData {
         try context.delete(model: Goal.self)
         try context.delete(model: PlanBaseline.self)
         try context.delete(model: SessionPlacement.self)
+        try context.delete(model: FrozenWeek.self)
         try context.save()
+        // Marqueurs de synchro, séances supprimées et brouillon de séance : la prochaine synchro repart de zéro.
+        let defaults = UserDefaults.standard
+        for key in ["sync.last", "sync.sleep.lastSuccess", NotificationScheduler.Keys.lastMorningBrief,
+                    NotificationScheduler.Keys.morningScheduledDay,
+                    DataStore.deletedIDsKey, DataStore.deletedSessionsKey] {
+            defaults.removeObject(forKey: key)
+        }
+        WorkoutDraft.clear()
     }
 }
 

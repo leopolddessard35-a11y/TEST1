@@ -109,7 +109,7 @@ struct WeightEntryForm: View {
                         Button { weight = max(Self.range.lowerBound, weight - 0.1) } label: { Image(systemName: "minus.circle.fill").font(.title) }
                             .buttonStyle(.plain)
                         Spacer()
-                        Text(String(format: "%.1f kg", weight)).font(.system(.largeTitle, design: .rounded).weight(.bold)).monospacedDigit()
+                        Text(String(format: "%.1f kg", locale: Locale.current, weight)).font(.system(.largeTitle, design: .rounded).weight(.bold)).monospacedDigit()
                         Spacer()
                         Button { weight = min(Self.range.upperBound, weight + 0.1) } label: { Image(systemName: "plus.circle.fill").font(.title) }
                             .buttonStyle(.plain)
@@ -134,7 +134,7 @@ struct WeightEntryForm: View {
                 guard !loaded else { return }
                 loaded = true
                 // Dernière pesée, sinon le poids du profil, sinon 72 kg.
-                if let last = wellness.first(where: { $0.weightKg != nil })?.weightKg {
+                if let last = wellness.first(where: { $0.anyWeightKg != nil })?.anyWeightKg {
                     weight = clamp(last)
                 } else if let profileWeight = profiles.first?.weightKg, profileWeight > 0 {
                     weight = clamp(profileWeight)

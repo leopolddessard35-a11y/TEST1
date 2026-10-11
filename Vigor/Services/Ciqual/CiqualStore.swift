@@ -266,16 +266,16 @@ final class CiqualStore {
     /// Une table importée remplace la table intégrée ; la supprimer revient à la table intégrée.
     var hasImportedTable: Bool { FileManager.default.fileExists(atPath: fileURL.path) }
 
-    /// Recherche hors ligne : chaque mot tapé doit commencer un mot du nom (accents et casse ignorés) ;
-    /// les noms qui commencent par le premier mot et les plus courts passent devant.
+    /// Recherche hors ligne : chaque mot tapé doit commencer un mot du nom (accents et casse ignorés,
+    /// pluriel en « s »/« x » toléré) ; les noms qui commencent par le premier mot et les plus courts passent devant.
     func search(_ query: String, limit: Int = 20) -> [CiqualFood] {
-        let tokens = Self.words(Self.fold(query)).filter { $0.count >= 2 }
-        guard !tokens.isEmpty else { return [] }
+        let tokens = Self.queryTokens(query)
+        guard let first = tokens.first else { return [] }
         var hits: [(food: CiqualFood, rank: Int)] = []
-        for (index, words) in foldedWords.enumerated()
-        where tokens.allSatisfy({ token in words.contains { $0.hasPrefix(token) } }) {
+        for (index, words) in foldedWords.enumerated() where Self.matches(tokens, words: words) {
             let name = folded[index]
-            let rank = ((words.first?.hasPrefix(tokens[0]) ?? false) ? 0 : 1000) + name.count
+            let startsWithFirst = first.contains { variant in words.first?.hasPrefix(variant) ?? false }
+            let rank = (startsWithFirst ? 0 : 1000) + name.count
             hits.append((foods[index], rank))
         }
         return hits.sorted { $0.rank < $1.rank }.prefix(limit).map(\.food)
@@ -377,6 +377,22 @@ final class CiqualStore {
             .replacingOccurrences(of: "æ", with: "ae")
             .replacingOccurrences(of: "Æ", with: "ae")
             .replacingOccurrences(of: ",", with: " ")
+    }
+
+    /// Mots tapés (2 lettres ou plus), repliés. Chaque mot vient avec ses variantes : « oeufs » cherche aussi
+    /// « oeuf », « pommes » aussi « pomme » (« s »/« x » final retiré à partir de 4 lettres).
+    nonisolated static func queryTokens(_ query: String) -> [[String]] {
+        words(fold(query)).filter { $0.count >= 2 }.map { token -> [String] in
+            guard token.count >= 4, token.hasSuffix("s") || token.hasSuffix("x") else { return [token] }
+            return [token, String(token.dropLast())]
+        }
+    }
+
+    /// Chaque mot tapé (ou une de ses variantes) commence un mot du nom : « riz » ne trouve pas « chorizo ».
+    nonisolated static func matches(_ tokens: [[String]], words: [String]) -> Bool {
+        tokens.allSatisfy { variants in
+            variants.contains { variant in words.contains { $0.hasPrefix(variant) } }
+        }
     }
 
     /// Découpe un texte replié en mots (lettres et chiffres).

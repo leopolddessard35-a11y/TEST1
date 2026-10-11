@@ -9,6 +9,8 @@ struct WorkoutDraft: Codable, Equatable {
         var reps: Int?
         var warmup = false
         var done = false
+        /// Heure de validation : la durée réelle de la séance va de la première à la dernière série.
+        var doneAt: Date?
     }
 
     struct ExerciseDraft: Codable, Equatable, Identifiable {
@@ -57,6 +59,18 @@ struct WorkoutDraft: Codable, Equatable {
         exercises.filter { exercise in exercise.sets.contains { $0.done && ($0.reps ?? 0) > 0 } }.count
     }
 
+    /// Première et dernière série validées.
+    var firstSetAt: Date? { exercises.flatMap(\.sets).compactMap(\.doneAt).min() }
+    var lastSetAt: Date? { exercises.flatMap(\.sets).compactMap(\.doneAt).max() }
+
+    /// Durée estimée : de la première à la dernière série + un repos ; sinon depuis l'ouverture (4 h au plus).
+    var estimatedMinutes: Int {
+        if let first = firstSetAt, let last = lastSetAt {
+            return max(5, Int((last.timeIntervalSince(first) + 120) / 60))
+        }
+        return min(240, max(5, Int(Date.now.timeIntervalSince(start) / 60)))
+    }
+
     var tonnage: Double {
         var total = 0.0
         for exercise in exercises {
@@ -87,6 +101,8 @@ struct WorkoutLoggerView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AppModel.self) private var app
     @Query(sort: \StrengthWorkout.start, order: .reverse) private var workouts: [StrengthWorkout]
+    @Query(sort: \WorkoutRoutine.order) private var routines: [WorkoutRoutine]
+    @Query private var injuries: [Injury]
     /// Séance type à lancer (sinon séance libre).
     var routine: WorkoutRoutine?
     @State private var draft = WorkoutDraft()
@@ -114,7 +130,7 @@ struct WorkoutLoggerView: View {
                         let sessions: [ExerciseSession] = history[exercise.name] ?? []
                         ExerciseLogCard(exercise: $exercise,
                                         previous: sessions.last,
-                                        advice: StrengthProgression.advise(exercise: exercise.name, sessions: sessions),
+                                        advice: advice(for: exercise.name, sessions: sessions, target: exercise.targetReps),
                                         focus: $focus,
                                         onSetDone: { setID in startRest(after: setID, in: exercise.id) },
                                         onBeforeDelete: { message in offerUndo(message) },
@@ -163,8 +179,9 @@ struct WorkoutLoggerView: View {
                 // En salle : ajuster sans retaper (±2,5 kg, ±1 rep), puis passer au champ suivant.
                 ToolbarItemGroup(placement: .keyboard) {
                     if case .weight(let id) = focus {
-                        Button("−2,5") { adjust(id, weight: -2.5) }
-                        Button("+2,5") { adjust(id, weight: 2.5) }
+                        let step = weightStep(for: id)
+                        Button("−\(step.formatted())") { adjust(id, weight: -step) }
+                        Button("+\(step.formatted())") { adjust(id, weight: step) }
                     }
                     if case .reps(let id) = focus {
                         Button("−1") { adjust(id, reps: -1) }
@@ -204,7 +221,7 @@ struct WorkoutLoggerView: View {
                 ExercisePicker { name in add(name, history: history) }
             }
             .sheet(isPresented: $finishing) {
-                FinishWorkoutSheet(draft: draft) { rpe, notes in save(rpe: rpe, notes: notes) }
+                FinishWorkoutSheet(draft: draft) { rpe, notes, minutes in save(rpe: rpe, notes: notes, minutes: minutes) }
                     .presentationDetents([.medium, .large])
             }
             .onAppear {
@@ -249,7 +266,8 @@ struct WorkoutLoggerView: View {
                     try? await Task.sleep(for: .seconds(min(1, remaining)))
                     if Task.isCancelled { return }
                 }
-                Feedback.restFinished()
+                // Retour dans l'app longtemps après la fin du repos : pas de son en retard (la notification a déjà sonné).
+                if -end.timeIntervalSinceNow < 2 { Feedback.restFinished() }
             }
         }
     }
@@ -279,10 +297,14 @@ struct WorkoutLoggerView: View {
                 HStack(spacing: 16) {
                     Label { Text(draft.start, style: .timer).monospacedDigit() } icon: { Image(systemName: "stopwatch") }
                     Label("\(draft.completedSets) séries", systemImage: "checkmark.circle")
-                    Label(String(format: "%.0f kg", draft.tonnage), systemImage: "scalemass")
+                    Label(String(format: "%.0f kg", locale: Locale.current, draft.tonnage), systemImage: "scalemass")
                 }
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
+                if !draft.exercises.isEmpty {
+                    Text("Touche le numéro d'une série pour la passer en échauffement, appui long pour la supprimer.")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
             }
         }
     }
@@ -298,6 +320,28 @@ struct WorkoutLoggerView: View {
             if recent.count == 4 { break }
         }
         return Group {
+            if !routines.isEmpty {
+                GlassCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Tes séances types").font(.headline)
+                        ForEach(routines) { routine in
+                            Button { start(routine, history: history) } label: {
+                                HStack {
+                                    Image(systemName: "dumbbell.fill").foregroundStyle(Theme.accent)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(routine.name).font(.subheadline.weight(.semibold))
+                                        Text("\(routine.items.count) exercices").font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                }
+                                .frame(minHeight: 44)
+                                .contentShape(.rect)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
             if !recent.isEmpty {
                 GlassCard {
                     VStack(alignment: .leading, spacing: 10) {
@@ -343,10 +387,16 @@ struct WorkoutLoggerView: View {
         let sessions: [ExerciseSession] = history[name] ?? []
         var sets: [WorkoutDraft.SetDraft] = []
         if let last = sessions.last {
-            let advice = StrengthProgression.advise(exercise: name, sessions: sessions)
+            let progression = advice(for: name, sessions: sessions, target: target)
             for set in last.sets where (set.reps ?? 0) > 0 {
-                let weight: Double? = set.isWarmup ? set.weightKg : (advice?.suggestedWeightKg ?? set.weightKg)
+                let weight: Double? = set.isWarmup ? set.weightKg : (progression?.suggestedWeightKg ?? set.weightKg)
                 sets.append(WorkoutDraft.SetDraft(weight: weight, reps: set.reps, warmup: set.isWarmup))
+            }
+            // Décharge conseillée : moitié des séries de travail (au moins 2).
+            if progression?.action == .deload {
+                let warmups = sets.filter(\.warmup)
+                let working = sets.filter { !$0.warmup }
+                sets = warmups + Array(working.prefix(max(2, working.count / 2)))
             }
         }
         // Nombre de séries de travail imposé par la séance type.
@@ -365,6 +415,22 @@ struct WorkoutLoggerView: View {
         }
         draft.exercises.append(WorkoutDraft.ExerciseDraft(name: name, sets: sets, restSeconds: rest, targetReps: target,
                                                           note: (note ?? "").isEmpty ? nil : note))
+    }
+
+    /// Conseil de progression avec la plage de ta séance type, ta récup du jour et tes blessures
+    /// (le même que sur la page Progression).
+    private func advice(for name: String, sessions: [ExerciseSession], target: String?) -> ProgressionAdvice? {
+        let injured = injuries.filter(\.isActive).reduce(into: Set<Muscle>()) { $0.formUnion($1.muscles) }
+        return StrengthProgression.advise(exercise: name, sessions: sessions,
+                                          readiness: app.snapshotCache.latest?.readiness?.level,
+                                          injuredMuscles: injured,
+                                          targetReps: StrengthProgression.repRange(fromText: target))
+    }
+
+    /// Pas des boutons ± du clavier : 2 kg pour les haltères, 2,5 kg sinon.
+    private func weightStep(for setID: UUID) -> Double {
+        let name = draft.exercises.first { $0.sets.contains { $0.id == setID } }?.name ?? ""
+        return MuscleMap.equipment(for: name) == .dumbbell ? 2 : 2.5
     }
 
     private func offerUndo(_ message: String) {
@@ -410,11 +476,21 @@ struct WorkoutLoggerView: View {
         draft.exercises.removeAll { $0.id == id }
     }
 
-    /// Lance le repos après une série validée : Dynamic Island + notification avec la prochaine série.
+    /// Lance le repos après une série validée : notification avec la prochaine série.
     private func startRest(after setID: UUID, in exerciseID: UUID) {
         guard let index = draft.exercises.firstIndex(where: { $0.id == exerciseID }) else { return }
         let exercise = draft.exercises[index]
-        let seconds = Double(exercise.restSeconds ?? (MuscleMap.isCompound(exercise.name) ? 150 : 90))
+        // Première série validée : c'est le bon moment pour demander les notifications (fin de repos écran verrouillé).
+        if draft.completedSets <= 1 {
+            Task { await NotificationScheduler.requestAuthorizationIfNeeded() }
+        }
+        // Plus aucune série à faire : pas de repos, la séance est finie.
+        guard draft.exercises.contains(where: { $0.sets.contains { !$0.done } }) else {
+            setRest(until: nil)
+            return
+        }
+        let isWarmup = exercise.sets.first { $0.id == setID }?.warmup ?? false
+        let seconds = isWarmup ? 60 : Double(exercise.restSeconds ?? (MuscleMap.isCompound(exercise.name) ? 150 : 90))
         restExercise = exercise.name
         restNext = nextSetText(from: index)
         setRest(until: Date.now.addingTimeInterval(seconds))
@@ -447,10 +523,13 @@ struct WorkoutLoggerView: View {
                         workout: draft.title.isEmpty ? "Séance" : draft.title)
     }
 
-    private func save(rpe: Int?, notes: String) {
-        let end: Date = min(Date.now, draft.start.addingTimeInterval(4 * 3600))
+    /// `minutes` : durée confirmée dans la feuille de fin (par défaut, de la première à la dernière série).
+    private func save(rpe: Int?, notes: String, minutes: Int) {
+        // Datée de la première série validée (une séance reprise le lendemain garde le bon jour et la bonne durée).
+        let start: Date = draft.firstSetAt.map { $0.addingTimeInterval(-60) } ?? draft.start
+        let end: Date = start.addingTimeInterval(Double(max(5, minutes)) * 60)
         let title = draft.title.trimmingCharacters(in: .whitespaces).isEmpty ? "Séance" : draft.title
-        let workout = StrengthWorkout(externalID: "vigor-\(UUID().uuidString)", title: title, start: draft.start, end: end, notes: notes)
+        let workout = StrengthWorkout(externalID: "vigor-\(UUID().uuidString)", title: title, start: start, end: end, notes: notes)
         workout.rpe = rpe
         context.insert(workout)
         var models: [StrengthSet] = []
@@ -501,13 +580,14 @@ struct WorkoutLoggerView: View {
         var result: [String] = []
         for exercise in draft.exercises {
             var best: (e1rm: Double, weight: Double, reps: Int)?
-            for set in exercise.sets where set.done && !set.warmup && (set.reps ?? 0) > 0 {
+            // Records sur 12 répétitions au plus : au-delà, le 1RM estimé n'est pas fiable.
+            for set in exercise.sets where set.done && !set.warmup && (1...12).contains(set.reps ?? 0) {
                 guard let weight = set.weight, weight > 0, let reps = set.reps, reps > 0 else { continue }
                 let e1rm = StrengthProgression.estimated1RM(weight: weight, reps: reps)
                 if best == nil || e1rm > best!.e1rm { best = (e1rm, weight, reps) }
             }
             guard let best else { continue }
-            let previous = (history[exercise.name] ?? []).map(\.bestEstimated1RM).max() ?? 0
+            let previous = (history[exercise.name] ?? []).map { $0.best1RM(maxReps: 12) }.max() ?? 0
             if previous > 0 && best.e1rm > previous {
                 result.append("\(exercise.name) \(best.weight.formatted()) kg × \(best.reps)")
             }
@@ -544,7 +624,7 @@ private struct ExerciseLogCard: View {
                         Button("Ajouter une série", systemImage: "plus") { addSet() }
                         Menu("Temps de repos") {
                             ForEach(Self.restPresets, id: \.self) { seconds in
-                                Button(String(format: "%d:%02d", seconds / 60, seconds % 60)) { exercise.restSeconds = seconds }
+                                Button(String(format: "%d:%02d", locale: Locale.current, seconds / 60, seconds % 60)) { exercise.restSeconds = seconds }
                             }
                         }
                         Button("Supprimer l'exercice", systemImage: "trash", role: .destructive, action: onDelete)
@@ -570,11 +650,11 @@ private struct ExerciseLogCard: View {
                         .foregroundStyle(advice.action == .increase ? Theme.recovery : .secondary)
                 }
                 HStack(spacing: 8) {
-                    Text("Série").frame(width: 34)
+                    Text("Série").frame(width: 40)
                     Text("Précédent").frame(maxWidth: .infinity, alignment: .leading)
                     Text("kg").frame(width: 64)
-                    Text("Reps").frame(width: 52)
-                    Image(systemName: "checkmark").frame(width: 36)
+                    Text("Reps").frame(width: 56)
+                    Image(systemName: "checkmark").frame(width: 44)
                 }
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
@@ -589,6 +669,10 @@ private struct ExerciseLogCard: View {
                                 exercise.sets.removeAll { $0.id == set.id }
                             }
                         }
+                        .accessibilityAction(named: "Supprimer la série") {
+                            onBeforeDelete("Série \(number) supprimée")
+                            exercise.sets.removeAll { $0.id == set.id }
+                        }
                 }
 
                 Button { addSet() } label: {
@@ -601,7 +685,7 @@ private struct ExerciseLogCard: View {
 
     private var restText: String {
         let seconds = exercise.restSeconds ?? (MuscleMap.isCompound(exercise.name) ? 150 : 90)
-        return String(format: "Repos %d:%02d", seconds / 60, seconds % 60)
+        return String(format: "Repos %d:%02d", locale: Locale.current, seconds / 60, seconds % 60)
     }
 
     private func previousText(_ index: Int) -> String {
@@ -631,10 +715,12 @@ private struct SetLogRow: View {
                 Text(set.warmup ? "É" : "\(number)")
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(set.warmup ? Theme.nutrition : Color.primary)
-                    .frame(width: 34, height: 44)
+                    .frame(width: 40, height: 44)
+                    .contentShape(.rect)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(set.warmup ? "Série d'échauffement" : "Série \(number)")
+            .accessibilityHint("Touche pour basculer en série d'échauffement")
 
             Text(previous).font(.caption).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading).lineLimit(1)
@@ -643,16 +729,17 @@ private struct SetLogRow: View {
             DecimalField("kg", value: $set.weight, keyboard: .decimalPad)
                 .focused(focus, equals: .weight(set.id))
                 .multilineTextAlignment(.center)
-                .frame(width: 64, height: 40)
+                .frame(width: 64, height: 44)
                 .background(Color.secondary.opacity(0.12), in: .rect(cornerRadius: 8))
             IntegerField("reps", value: $set.reps)
                 .focused(focus, equals: .reps(set.id))
                 .multilineTextAlignment(.center)
-                .frame(width: 52, height: 40)
+                .frame(width: 56, height: 44)
                 .background(Color.secondary.opacity(0.12), in: .rect(cornerRadius: 8))
 
             Button {
                 set.done.toggle()
+                set.doneAt = set.done ? .now : nil
                 if set.done {
                     Feedback.setDone()
                     onDone()
@@ -661,10 +748,11 @@ private struct SetLogRow: View {
                 Image(systemName: set.done ? "checkmark.circle.fill" : "circle")
                     .font(.title2)
                     .foregroundStyle(set.done ? Theme.recovery : Color.secondary)
-                    .frame(width: 36, height: 44)
+                    .frame(width: 44, height: 44)
                     .contentShape(.rect)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(set.done ? "Série \(number) validée" : "Valider la série \(number)")
         }
         .font(.subheadline.monospacedDigit())
         .padding(.vertical, 2)
@@ -684,7 +772,7 @@ private struct RestBanner: View {
             let remaining = Int(max(0, end.timeIntervalSince(timeline.date)).rounded(.up))
             HStack(spacing: 10) {
                 Image(systemName: "timer").foregroundStyle(Theme.strain)
-                Text(remaining > 0 ? String(format: "Repos %d:%02d", remaining / 60, remaining % 60) : "Repos terminé")
+                Text(remaining > 0 ? String(format: "Repos %d:%02d", locale: Locale.current, remaining / 60, remaining % 60) : "Repos terminé")
                     .font(.headline.monospacedDigit())
                 Spacer()
                 Button("−15 s") { onAdjust(-15) }
@@ -704,19 +792,24 @@ private struct RestBanner: View {
 
 private struct FinishWorkoutSheet: View {
     let draft: WorkoutDraft
-    let onSave: (Int?, String) -> Void
+    let onSave: (Int?, String, Int) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var rpe: Int?
     @State private var notes = ""
+    @State private var minutes: Int?
+    /// Évite d'enregistrer deux fois sur un double tap.
+    @State private var saving = false
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    LabeledContent("Durée", value: (Date.now.timeIntervalSince(draft.start) / 3600).hoursText)
+                    Stepper(value: Binding(get: { minutes ?? draft.estimatedMinutes }, set: { minutes = $0 }), in: 5...300, step: 5) {
+                        LabeledContent("Durée", value: (Double(minutes ?? draft.estimatedMinutes) / 60).hoursText)
+                    }
                     LabeledContent("Exercices", value: "\(draft.loggedExercises)")
                     LabeledContent("Séries validées", value: "\(draft.completedSets)")
-                    LabeledContent("Tonnage", value: String(format: "%.0f kg", draft.tonnage))
+                    LabeledContent("Tonnage", value: String(format: "%.0f kg", locale: Locale.current, draft.tonnage))
                 }
                 Section("Effort ressenti de la séance") {
                     RPEPicker(value: rpe) { rpe = $0 }
@@ -731,9 +824,12 @@ private struct FinishWorkoutSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Retour") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Enregistrer") {
-                        onSave(rpe, notes)
+                        guard !saving else { return }
+                        saving = true
+                        onSave(rpe, notes, minutes ?? draft.estimatedMinutes)
                         dismiss()
                     }
+                    .disabled(saving)
                 }
             }
         }

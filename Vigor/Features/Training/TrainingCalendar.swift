@@ -262,9 +262,10 @@ struct TrainingCalendarCard: View {
                     })
                     legend
                 } else {
+                    // Semaine du lundi au dimanche, comme l'organisateur, quel que soit le réglage de région.
                     let week = TrainingCalendar.week(containing: .now, activities: activities, workouts: workouts,
                                                      unavailabilities: unavailabilities, planned: planned,
-                                                     plans: plans)
+                                                     plans: plans, calendar: SeasonPlanner.isoCalendar)
                     HStack(spacing: 4) {
                         ForEach(week) { day in
                             Button { selected = day } label: { CalendarDayCell(day: day) }

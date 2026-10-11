@@ -55,3 +55,20 @@ struct CiqualTests {
         #expect(CiqualParser.number("-") == nil)
     }
 }
+
+struct FoodSearchTests {
+    private func found(_ query: String, in name: String) -> Bool {
+        CiqualStore.matches(CiqualStore.queryTokens(query), words: CiqualStore.words(CiqualStore.fold(name)))
+    }
+
+    @Test func matchesWordStartsOnly() {
+        #expect(found("riz", in: "Riz blanc, cuit"))
+        #expect(!found("riz", in: "Chorizo"))
+    }
+
+    @Test func toleratesPlurals() {
+        #expect(found("oeufs", in: "Œuf, cru"))
+        #expect(found("pommes", in: "Pomme, crue"))
+        #expect(found("pommes de terre", in: "Pomme de terre, cuite"))
+    }
+}

@@ -136,25 +136,27 @@ struct IntervalsClient {
         }
     }
 
-    static let dayFormatter: DateFormatter = {
+    /// Recréés à chaque usage : ils suivent le fuseau horaire actuel (voyage, changement d'heure en cours de route).
+    static var dayFormatter: DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = .current
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter
-    }()
+    }
 
-    static let localDateTimeFormatter: DateFormatter = {
+    static var localDateTimeFormatter: DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = .current
         formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
         return formatter
-    }()
+    }
 
     static func parseLocal(_ raw: String?) -> Date? {
         guard let raw else { return nil }
-        return localDateTimeFormatter.date(from: String(raw.prefix(19))) ?? dayFormatter.date(from: String(raw.prefix(10)))
+        if let date = localDateTimeFormatter.date(from: String(raw.prefix(19))) { return date }
+        return dayFormatter.date(from: String(raw.prefix(10)))
     }
 
     func wellness(oldest: Date, newest: Date) async throws -> [Wellness] {

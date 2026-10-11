@@ -48,7 +48,7 @@ enum SleepScoreCalculator {
             let score = clamp((efficiency - 0.70) / 0.20 * 100)
             parts.append((ReadinessComponent(name: "Efficacité",
                                              score: score,
-                                             detail: String(format: "%.0f %% du temps au lit passé à dormir · %@ d'éveils",
+                                             detail: String(format: "%.0f %% du temps au lit passé à dormir · %@ d'éveils", locale: Locale.current,
                                                             efficiency * 100, awake.hoursText)), 0.15))
         }
 
@@ -58,7 +58,7 @@ enum SleepScoreCalculator {
             let score = (min(1, deepShare / 0.15) + min(1, remShare / 0.20)) / 2 * 100
             parts.append((ReadinessComponent(name: "Stades",
                                              score: score,
-                                             detail: String(format: "Profond %.0f %% (repère ≥ 15 %%) · paradoxal %.0f %% (repère ≥ 20 %%)",
+                                             detail: String(format: "Profond %.0f %% (repère ≥ 15 %%) · paradoxal %.0f %% (repère ≥ 20 %%)", locale: Locale.current,
                                                             deepShare * 100, remShare * 100)), 0.2))
         }
 
@@ -68,7 +68,7 @@ enum SleepScoreCalculator {
             let score = clamp(100 - max(0, deviation - 15) * 1.5)
             parts.append((ReadinessComponent(name: "Régularité",
                                              score: score,
-                                             detail: String(format: "Coucher à %.0f min de ton heure habituelle", deviation)), 0.15))
+                                             detail: String(format: "Coucher à %.0f min de ton heure habituelle", locale: Locale.current, deviation)), 0.15))
         }
 
         let total = parts.reduce(0) { $0 + $1.1 }

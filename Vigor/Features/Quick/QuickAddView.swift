@@ -7,6 +7,8 @@ struct QuickAddView: View {
     @Environment(AppModel.self) private var app
     var isSheet = false
     @State private var sheet: Entry?
+    /// Brouillon de séance en cours (relu à l'apparition et à la fermeture d'une feuille).
+    @State private var hasDraft = false
     /// Dernières saisies utilisées (les plus récentes d'abord), pour les proposer en tête.
     @AppStorage("quickAdd.recent") private var recentRaw = ""
 
@@ -53,7 +55,7 @@ struct QuickAddView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 12) {
-                    if WorkoutDraft.load()?.exercises.isEmpty == false {
+                    if hasDraft {
                         Button { sheet = .workout } label: {
                             Label("Reprendre la séance en cours", systemImage: "play.circle.fill")
                                 .font(.headline).frame(maxWidth: .infinity)
@@ -92,6 +94,8 @@ struct QuickAddView: View {
                     ToolbarItem(placement: .confirmationAction) { Button("OK") { dismiss() } }
                 }
             }
+            .onAppear { hasDraft = WorkoutDraft.load()?.exercises.isEmpty == false }
+            .onChange(of: sheet == nil) { hasDraft = WorkoutDraft.load()?.exercises.isEmpty == false }
             .sheet(item: $sheet) { entry in
                 switch entry {
                 case .food: AddFoodView { app.dataVersion += 1 }

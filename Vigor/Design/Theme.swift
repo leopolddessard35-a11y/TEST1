@@ -409,7 +409,7 @@ extension Double {
         let totalMinutes = Int((self * 60).rounded())
         let hours = totalMinutes / 60, minutes = totalMinutes % 60
         if hours == 0 { return "\(minutes) min" }
-        return minutes == 0 ? "\(hours) h" : String(format: "%d h %02d", hours, minutes)
+        return minutes == 0 ? "\(hours) h" : String(format: "%d h %02d", locale: Locale.current, hours, minutes)
     }
 }
 

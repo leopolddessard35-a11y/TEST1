@@ -222,7 +222,7 @@ struct DayExplorer: View {
                             StatTile(title: "FC repos", value: record?.anyRestingHeartRate?.noDecimal ?? "–")
                             StatTile(title: "Charge", value: point.map { $0.tss.noDecimal } ?? "–")
                             StatTile(title: "Forme", value: point.map { $0.form.noDecimal } ?? "–")
-                            StatTile(title: "Poids", value: record?.weightKg?.oneDecimal ?? "–")
+                            StatTile(title: "Poids", value: record?.anyWeightKg?.oneDecimal ?? "–")
                             StatTile(title: "Calories", value: nutrition.map { $0.kcal.noDecimal } ?? "–")
                             StatTile(title: "Protéines", value: nutrition.map { "\($0.protein.noDecimal) g" } ?? "–")
                             StatTile(title: "Respiration", value: record?.anyRespiration?.oneDecimal ?? "–")

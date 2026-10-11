@@ -47,7 +47,7 @@ struct GoalsCard: View {
                 Text("\(goal.date.formatted(date: .abbreviated, time: .omitted)) · \(goal.distanceKm.noDecimal) km · \(goal.sport.label)")
                     .font(.caption).foregroundStyle(.secondary)
                 if let week {
-                    Text(String(format: "Condition prévue ≈ %.0f · phase %@", week.projectedCTL, week.phase.label))
+                    Text(String(format: "Condition prévue ≈ %.0f · phase %@", locale: Locale.current, week.projectedCTL, week.phase.label))
                         .font(.caption2).foregroundStyle(.secondary)
                 }
             }

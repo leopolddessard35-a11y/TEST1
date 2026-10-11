@@ -52,7 +52,10 @@ enum CoachSummary {
 
         // 2. Ce que tu en fais.
         let action: String
-        if isRestDay {
+        let doneToday = brief.doneToday
+        if isRestDay, let done = doneToday.first {
+            action = "Séance faite (\(done)) : place à la récupération, protéines et glucides au prochain repas, et coucher à l'heure."
+        } else if isRestDay {
             switch brief.verdict {
             case .push, .go: action = "Rien de prévu aujourd'hui : tu peux ajouter une séance si l'envie est là, sinon bien manger et te coucher à l'heure."
             default: action = "Rien de prévu aujourd'hui, ça tombe bien : marche, étirements et sommeil."
@@ -73,7 +76,10 @@ enum CoachSummary {
 
         let pill: String
         let symbol: String
-        if isRestDay {
+        if isRestDay && !doneToday.isEmpty {
+            pill = "Séance faite"
+            symbol = "checkmark.circle.fill"
+        } else if isRestDay {
             pill = "Jour de repos"
             symbol = "bed.double.fill"
         } else {

@@ -16,6 +16,7 @@ struct SnapshotReader<Content: View>: View {
     @Query private var shoes: [Shoe]
     @Query(sort: \PlanBaseline.weekStart) private var baselines: [PlanBaseline]
     @Query private var placements: [SessionPlacement]
+    @Query private var frozenWeeks: [FrozenWeek]
     @Query private var profiles: [AthleteProfile]
 
     private let content: (AthleteProfile, CoachSnapshot) -> Content
@@ -30,7 +31,7 @@ struct SnapshotReader<Content: View>: View {
                 CoachSnapshot.build(profile: profile, wellness: wellness, activities: activities, strength: strength,
                                     unavailabilities: unavailabilities, injuries: injuries, foods: foods, planned: planned,
                                     lifeActivities: lifeActivities, symptoms: symptoms, shoes: shoes,
-                                    baselines: baselines, placements: placements)
+                                    baselines: baselines, placements: placements, frozenWeeks: frozenWeeks)
             }
             content(profile, snapshot)
         } else {
@@ -62,6 +63,14 @@ struct SnapshotReader<Content: View>: View {
         hasher.combine(foods.reduce(0) { $0 + $1.kcal })
         hasher.combine(foods.last?.date)
         hasher.combine(planned.count)
+        for item in planned { hasher.combine(item.date) }
+        for item in unavailabilities {
+            hasher.combine(item.start)
+            hasher.combine(item.end)
+        }
+        hasher.combine(frozenWeeks.count)
+        // L'organisation de la semaine change de règle après 20 h (plus de nouvelle séance ce soir).
+        hasher.combine(Calendar.current.component(.hour, from: .now) >= 20)
         for placement in placements {
             hasher.combine(placement.key)
             hasher.combine(placement.day)
@@ -84,6 +93,15 @@ struct SnapshotReader<Content: View>: View {
         hasher.combine(profile.weeklyHoursAvailable)
         hasher.combine(profile.strengthSessionsPerWeek)
         hasher.combine(profile.sleepNeedHours)
+        hasher.combine(profile.weightGoalRaw)
+        hasher.combine(profile.calorieAdjustment)
+        hasher.combine(profile.proteinPerKg)
+        hasher.combine(profile.fatPerKg)
+        hasher.combine(profile.manualTargets)
+        hasher.combine(profile.manualKcal)
+        hasher.combine(profile.manualProtein)
+        hasher.combine(profile.manualCarbs)
+        hasher.combine(profile.manualFat)
         return hasher.finalize()
     }
 }

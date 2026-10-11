@@ -87,7 +87,7 @@ struct EffortDetailView: View {
                 ExplanationCard(title: "Comment c'est calculé", symbol: "function", text: """
                 L'effort additionne tout ce qui fatigue ton corps dans la journée : séances (charge TSS, via puissance, FC ou effort ressenti), musculation, activités hors sport et pas au-delà de 12 000.
                 L'échelle va de 0 à 21 et elle est logarithmique : passer de 10 à 14 demande autant que de 0 à 10, et dépasser 18 demande un très gros effort. Repères : 1 h facile ≈ 9 · 1 h au seuil ≈ 14 · 3 h de sortie longue ≈ 18.
-                La cible dépend de ta récupération du matin : 14–18 si tu es prêt, 10–14 si la récup est moyenne, 4–9 si elle est basse.
+                La cible dépend de ta récupération du matin : 14–18 si tu es prêt, 10–14 si la récup est moyenne, 4–9 si elle est basse. Jour de repos ou sans séance prévue : 0–6, un plafond à ne pas dépasser plutôt qu'un objectif.
                 """)
             }
             .padding(.horizontal, 16)
@@ -130,7 +130,7 @@ struct SleepNeedDetailView: View {
                             Image(systemName: "moon.zzz.fill").foregroundStyle(Theme.sleep)
                             Text("Couche-toi vers \(need.bedtimeText)").font(.headline)
                         }
-                        Text(String(format: "pour %@ au lit (efficacité de sommeil %.0f %%) avant ton réveil habituel de %@",
+                        Text(String(format: "pour %@ au lit (efficacité de sommeil %.0f %%) avant ton réveil habituel de %@", locale: Locale.current,
                                     need.timeInBed.hoursText, need.efficiency * 100, need.wakeText))
                             .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     }
@@ -141,7 +141,7 @@ struct SleepNeedDetailView: View {
                         SectionTitle(title: "D'où vient ce besoin", symbol: "plus.forwardslash.minus")
                         row("Besoin de base", need.base, "réglable dans Réglages")
                         row("Effort du jour", need.effortExtra, "+4 min par point d'effort au-delà de 10")
-                        row("Rattrapage de dette", need.debtExtra, "¼ de la dette des 7 derniers jours, 1 h max")
+                        row("Rattrapage de dette", need.debtExtra, "¼ de ta dette de sommeil (14 nuits), 1 h max")
                         Divider()
                         row("Total", need.total, "")
                     }
@@ -150,7 +150,7 @@ struct SleepNeedDetailView: View {
                     StatTile(title: "Nuit dernière", value: lastNight?.hoursText ?? "–")
                     StatTile(title: "Performance", value: performance.map { "\(Int(($0 * 100).rounded())) %" } ?? "–", caption: "sommeil / besoin")
                     StatTile(title: "Coucher moyen", value: regularity?.average ?? "–")
-                    StatTile(title: "Régularité", value: regularity.map { String(format: "±%.0f min", $0.sd) } ?? "–", caption: "repère : ±30 min")
+                    StatTile(title: "Régularité", value: regularity.map { String(format: "±%.0f min", locale: Locale.current, $0.sd) } ?? "–", caption: "repère : ±30 min")
                 }
                 ExplanationCard(title: "Pourquoi ton besoin change chaque jour", symbol: "lightbulb", text: "Plus la journée a été exigeante, plus le corps a besoin de sommeil pour réparer les muscles et reconstituer ses réserves. Une dette accumulée se rembourse progressivement, pas en une nuit. Viser ce besoin plutôt qu'un chiffre fixe est la meilleure façon de garder une récupération haute.")
             }
@@ -226,7 +226,7 @@ struct WeeklyReportCard: View {
 
 // MARK: - Revue du dimanche
 
-/// Prévu vs réalisé, charge, 1 point fort, 1 point de vigilance, ajustement proposé.
+/// Volume, muscu, charge, 1 point fort, 1 point de vigilance, ajustement proposé.
 struct WeeklyReviewCard: View {
     let report: WeeklyReport
     let review: WeeklyReport.Review
@@ -240,7 +240,7 @@ struct WeeklyReviewCard: View {
                     StatTile(title: "Réalisé / prévu",
                              value: "\(review.doneHours.oneDecimal) / \(review.plannedHours.map { $0.oneDecimal } ?? "–") h")
                     StatTile(title: "Muscu", value: "\(review.doneStrength) / \(review.plannedStrength)")
-                    StatTile(title: "Charge", value: report.current.load.noDecimal, caption: "TSS sur 7 j")
+                    StatTile(title: "Charge", value: report.current.load.noDecimal, caption: "points sur 7 j")
                 }
                 Label(review.strongPoint, systemImage: "hand.thumbsup.fill").font(.footnote)
                 Label(review.vigilance, systemImage: "eye.fill").font(.footnote)

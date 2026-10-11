@@ -26,6 +26,10 @@ struct TodayView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 24)
+                    // Le lundi (ou à la première ouverture de la semaine), la semaine en cours est figée.
+                    .task(id: snapshot.plan.currentWeek.map { FrozenWeek.dayKey($0.start) }) {
+                        if WeekFreezer.update(plan: snapshot.plan, context: context) { app.dataVersion += 1 }
+                    }
                 }
             }
             .background(AppBackground())
@@ -58,9 +62,6 @@ struct TodayView: View {
 /// Carte principale façon Bevel : effort, récupération, sommeil en anneaux, puis le coaching du jour.
 private struct RingsCoachingCard: View {
     let snapshot: CoachSnapshot
-    @Query(sort: \WorkoutRoutine.order) private var routines: [WorkoutRoutine]
-    @State private var startingRoutine: WorkoutRoutine?
-    @State private var startingFree = false
 
     var body: some View {
         let brief = snapshot.brief
@@ -69,7 +70,7 @@ private struct RingsCoachingCard: View {
             HStack(alignment: .top, spacing: 4) {
                 NavigationLink {
                     EffortDetailView(today: snapshot.effortToday, target: snapshot.effortTarget, history: snapshot.effortHistory,
-                                     verdict: brief.verdict)
+                                     verdict: brief.adapted.isEmpty ? .rest : brief.verdict)
                 } label: {
                     SideRing(title: "Effort", fraction: snapshot.effortToday / 21,
                              text: snapshot.effortToday < 0.05 ? "0" : snapshot.effortToday.oneDecimal,
@@ -83,7 +84,7 @@ private struct RingsCoachingCard: View {
                     // Même taille que les deux autres ; couleur selon la zone (vert / blé / brique).
                     SideRing(title: "Récupération", fraction: Double(snapshot.readiness?.score ?? 0) / 100,
                              text: snapshot.readiness.map { "\($0.score)" } ?? "–",
-                             suffix: snapshot.readiness == nil ? "après 1 nuit" : "/100",
+                             suffix: snapshot.readiness == nil ? "calibrage" : "/100",
                              colors: snapshot.readiness.map { [Theme.color(for: $0.level).opacity(0.5), Theme.color(for: $0.level)] }
                                 ?? Theme.recoveryGradient)
                 }
@@ -106,10 +107,10 @@ private struct RingsCoachingCard: View {
                 let summary = CoachSummary.make(snapshot)
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        CapsLabel("Coaching")
+                        CapsLabel("Coach du jour")
                         Spacer()
                         StatusPill(text: summary.pill, symbol: summary.pillSymbol,
-                                   color: summary.isRestDay ? Theme.sleep : brief.verdict.color)
+                                   color: summary.pill == "Séance faite" ? Theme.good : (summary.isRestDay ? Theme.sleep : brief.verdict.color))
                         DetailChevron()
                     }
                     Text(summary.text)
@@ -131,13 +132,7 @@ private struct RingsCoachingCard: View {
                             SessionRow(session: session, changed: !brief.planned.contains(session), compact: true)
                             Spacer(minLength: 4)
                             if session.kind.isStrength {
-                                Button {
-                                    if let routine = routine(for: session.kind) { startingRoutine = routine } else { startingFree = true }
-                                } label: {
-                                    Label("Démarrer", systemImage: "play.fill").font(.subheadline.weight(.semibold))
-                                }
-                                .buttonStyle(.glassProminent)
-                                .tint(Theme.accent)
+                                RoutineStartMenu()
                             }
                         }
                         .padding(10)
@@ -156,26 +151,10 @@ private struct RingsCoachingCard: View {
                 }
             }
         }
-        .sheet(item: $startingRoutine) { routine in WorkoutLoggerView(routine: routine) }
-        .sheet(isPresented: $startingFree) { WorkoutLoggerView() }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
         .card()
         .scrollAppear()
-    }
-
-    /// Séance type correspondant à la séance prescrite (Push → « Push A », Legs → « Legs »…).
-    private func routine(for kind: SessionKind) -> WorkoutRoutine? {
-        let keys: [String]
-        switch kind {
-        case .push: keys = ["push"]
-        case .pull: keys = ["pull"]
-        case .legs: keys = ["leg", "jambe"]
-        case .upper: keys = ["upper", "haut"]
-        case .fullBody: keys = ["full", "complet"]
-        default: keys = []
-        }
-        return routines.first { routine in keys.contains { routine.name.lowercased().contains($0) } }
     }
 }
 
@@ -205,5 +184,8 @@ private struct SideRing: View {
                 .minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity)
+        // Lu d'un bloc par VoiceOver : « Récupération, 72 /100 ».
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title), \(text) \(suffix)")
     }
 }

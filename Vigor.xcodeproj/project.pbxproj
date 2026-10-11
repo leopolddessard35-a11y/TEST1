@@ -280,8 +280,8 @@
 				INFOPLIST_FILE = Vigor/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Vigor;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Vigor utilise la caméra pour scanner le code-barres des aliments.";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Vigor lit tes données de santé (sommeil, VFC, fréquence cardiaque, séances, poids, nutrition) pour analyser ta forme et adapter ton entraînement.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Vigor peut enregistrer tes repas dans Apple Santé.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Vigor lit tes données de santé (sommeil, VFC, fréquence cardiaque, respiration, pas, énergie active, séances, poids, VO2max) pour analyser ta forme et adapter ton entraînement.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Vigor n'écrit aucune donnée dans Apple Santé : il se contente de lire.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -315,8 +315,8 @@
 				INFOPLIST_FILE = Vigor/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Vigor;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Vigor utilise la caméra pour scanner le code-barres des aliments.";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Vigor lit tes données de santé (sommeil, VFC, fréquence cardiaque, séances, poids, nutrition) pour analyser ta forme et adapter ton entraînement.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Vigor peut enregistrer tes repas dans Apple Santé.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Vigor lit tes données de santé (sommeil, VFC, fréquence cardiaque, respiration, pas, énergie active, séances, poids, VO2max) pour analyser ta forme et adapter ton entraînement.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Vigor n'écrit aucune donnée dans Apple Santé : il se contente de lire.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

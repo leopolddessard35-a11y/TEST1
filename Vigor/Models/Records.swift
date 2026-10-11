@@ -29,6 +29,9 @@ final class DailyWellness {
     var sleepHoursGarmin: Double?
     var restingHeartRateGarmin: Double?
     var respirationGarmin: Double?
+    /// VO2max et poids Garmin (Intervals.icu) : à part, pour ne jamais mélanger deux capteurs jour par jour.
+    var vo2MaxGarmin: Double?
+    var weightKgGarmin: Double?
     /// Heure d'endormissement et de réveil (régularité du sommeil).
     var bedtime: Date?
     var wakeTime: Date?
@@ -222,6 +225,30 @@ final class AthleteProfile {
     var intervalsAthleteID: String = "0"
     /// Minutes disponibles par jour, du dimanche au samedi, séparées par des virgules (0 = pas de limite).
     var weekdayMinutesRaw: String = "0,0,0,0,0,0,0"
+    /// Objectif de poids (WeightGoal.rawValue).
+    var weightGoalRaw: String = WeightGoal.gain.rawValue
+    /// Écart calorique visé par rapport à la dépense (kcal/j), en mode automatique.
+    var calorieAdjustment: Double = 300
+    var proteinPerKg: Double = 1.8
+    var fatPerKg: Double = 1.0
+    /// Mode manuel : calories et macros fixées à la main, chaque jour.
+    var manualTargets: Bool = false
+    var manualKcal: Double = 0
+    var manualProtein: Double = 0
+    var manualCarbs: Double = 0
+    var manualFat: Double = 0
+
+    var weightGoal: WeightGoal { WeightGoal(rawValue: weightGoalRaw) ?? .gain }
+
+    /// Réglages nutrition passés au calcul des objectifs.
+    var nutritionGoal: NutritionGoal {
+        var goal = NutritionGoal(goal: weightGoal, adjustment: calorieAdjustment,
+                                 proteinPerKg: proteinPerKg, fatPerKg: fatPerKg)
+        if manualTargets, manualKcal > 0 {
+            goal.manual = ManualMacros(kcal: manualKcal, protein: manualProtein, carbs: manualCarbs, fat: manualFat)
+        }
+        return goal
+    }
 
     var weekdayMinutes: [Int] {
         let values = weekdayMinutesRaw.split(separator: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
@@ -495,8 +522,53 @@ final class SessionPlacement {
         self.day = day
     }
 
-    static func key(weekStart: Date, slot: String) -> String {
-        "\(Int(weekStart.timeIntervalSince1970))|\(slot)"
+    /// Clé par date de calendrier (« 2026-10-12|threshold-0 ») : stable même après un changement de fuseau.
+    static func key(weekStart: Date, slot: String, calendar: Calendar = .current) -> String {
+        "\(FrozenWeek.dayKey(weekStart, calendar: calendar))|\(slot)"
+    }
+}
+
+/// Composition d'une semaine figée le jour où elle devient la semaine en cours :
+/// les séances ne changent plus en cours de semaine (le coach du jour adapte l'intensité au jour le jour).
+@Model
+final class FrozenWeek {
+    @Attribute(.unique) var key: String
+    var weekStart: Date
+    var phaseRaw: String
+    var kindRaw: String
+    var targetTSS: Double
+    var targetHours: Double
+    var longRideHours: Double
+    var intensitySessions: Int
+    var strengthSessions: Int
+
+    init(week: PlannedWeek, calendar: Calendar = .current) {
+        self.key = Self.dayKey(week.start, calendar: calendar)
+        self.weekStart = calendar.startOfDay(for: week.start)
+        self.phaseRaw = week.phase.rawValue
+        self.kindRaw = week.kind.rawValue
+        self.targetTSS = week.targetTSS
+        self.targetHours = week.targetHours
+        self.longRideHours = week.longRideHours
+        self.intensitySessions = week.intensitySessions
+        self.strengthSessions = week.strengthSessions
+    }
+
+    /// « 2026-10-12 » (date de calendrier locale).
+    static func dayKey(_ date: Date, calendar: Calendar = .current) -> String {
+        let parts = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+    }
+
+    var kind: WeekKind { WeekKind(rawValue: kindRaw) ?? .load }
+
+    /// La semaine du plan avec la composition figée (séances, volume) ; le reste vient du plan recalculé.
+    func apply(to week: PlannedWeek) -> PlannedWeek {
+        PlannedWeek(id: week.id, start: week.start, phase: TrainingPhase(rawValue: phaseRaw) ?? week.phase, kind: kind,
+                    targetTSS: targetTSS, targetHours: targetHours, longRideHours: longRideHours,
+                    intensitySessions: intensitySessions, strengthSessions: strengthSessions,
+                    runningAllowed: week.runningAllowed, availableDays: week.availableDays,
+                    projectedCTL: week.projectedCTL, notes: week.notes, raceDay: week.raceDay)
     }
 }
 
@@ -525,4 +597,8 @@ extension DailyWellness {
     var anyRestingHeartRate: Double? { restingHeartRate ?? restingHeartRateGarmin }
     /// Respiration nocturne, quelle que soit la source (affichage d'un jour isolé).
     var anyRespiration: Double? { respiration ?? respirationGarmin }
+    /// Poids du jour : pesée Apple Santé ou saisie, sinon Garmin.
+    var anyWeightKg: Double? { weightKg ?? weightKgGarmin }
+    /// VO2max du jour, quelle que soit la source (affichage d'un jour isolé).
+    var anyVO2Max: Double? { vo2Max ?? vo2MaxGarmin }
 }

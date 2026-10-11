@@ -49,7 +49,7 @@ struct TrainingView: View {
                                     DetailPage(title: "Hors sport") { LifeSection(lifeLoad7: snapshot.lifeLoad7) }
                                 } label: {
                                     LinkRow(symbol: "hammer", title: "Hors sport",
-                                            subtitle: "Travaux, journées debout, pas : \(snapshot.lifeLoad7.noDecimal) pts sur 7 jours")
+                                            subtitle: "Travaux, journées debout : \(snapshot.lifeLoad7.noDecimal) points sur 7 jours")
                                 }
                             }
                         }
@@ -117,6 +117,17 @@ private struct SeasonCard: View {
     let raceDate: Date
 
     var body: some View {
+        if raceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            GlassCard {
+                LinkRow(symbol: "flag.checkered", title: "Pas encore d'objectif",
+                        subtitle: "Ajoute ta course (nom et date) dans Réglages : Vigor en déduit un plan de saison et les séances de chaque semaine.")
+            }
+        } else {
+            goalCard
+        }
+    }
+
+    @ViewBuilder private var goalCard: some View {
         let days = max(0, Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: .now),
                                                           to: Calendar.current.startOfDay(for: raceDate)).day ?? 0)
         let progress = plan.targetCTL > 0 ? min(1, plan.startCTL / plan.targetCTL) : 0
@@ -178,13 +189,13 @@ struct StrengthProgressContent: View {
                         NavigationLink {
                             DetailPage(title: "Volume par muscle") { MuscleVolumeCard(workouts: workouts) }
                         } label: {
-                            SimpleTile(title: "Volume 7 j", value: lowMuscles == 0 ? "OK" : "\(lowMuscles) en retard",
+                            SimpleTile(title: "Volume 7 j", value: lowMuscles == 0 ? "OK" : "\(lowMuscles) à compléter",
                                        caption: "objectif 10–20 séries", symbol: "figure.arms.open", tint: Theme.recovery)
                         }
                         NavigationLink {
                             DetailPage(title: "Tonnage") { TonnageCard(volumes: snapshot.weeklyVolumes) }
                         } label: {
-                            SimpleTile(title: "Tonnage", value: snapshot.weeklyVolumes.dropLast().last.map { String(format: "%.1f t", $0.tonnage / 1000) } ?? "–",
+                            SimpleTile(title: "Tonnage", value: snapshot.weeklyVolumes.dropLast().last.map { String(format: "%.1f t", locale: Locale.current, $0.tonnage / 1000) } ?? "–",
                                        caption: "semaine dernière", symbol: "chart.bar.fill", tint: Theme.nutrition)
                         }
                         NavigationLink {
@@ -227,7 +238,7 @@ private struct MuscleVolumeCard: View {
         GlassCard {
             VStack(alignment: .leading, spacing: 10) {
                 SectionTitle(title: "Volume par muscle · 7 derniers jours", symbol: "figure.arms.open")
-                Text("Objectif prise de masse : \(Int(range.lowerBound))–\(Int(range.upperBound)) séries par muscle et par semaine.")
+                Text("Repère pour développer un muscle : \(Int(range.lowerBound))–\(Int(range.upperBound)) séries par semaine.")
                     .font(.caption).foregroundStyle(.secondary)
                 ForEach(BodyRegion.allCases, id: \.self) { region in
                     Text(region.label).font(.caption.weight(.semibold)).padding(.top, 4)
@@ -377,6 +388,7 @@ struct StrengthWorkoutDetailView: View {
                 dismiss()
                 Task { @MainActor in
                     try? await Task.sleep(for: .milliseconds(400))
+                    DataStore.markDeleted(externalID: target.externalID)
                     context.delete(target)
                     try? context.save()
                     app.dataVersion += 1
@@ -426,10 +438,11 @@ private struct ActivityRow: View {
     let thresholds: Thresholds
 
     var body: some View {
+        // Même calcul que le coach (effort ressenti compris).
         let tss = activity.providedTSS ?? TrainingLoad.estimateTSS(
             sport: activity.sport, durationSeconds: activity.durationSeconds,
             normalizedPower: activity.normalizedPower, averagePower: activity.averagePower,
-            averageHeartRate: activity.averageHeartRate, thresholds: thresholds)
+            averageHeartRate: activity.averageHeartRate, rpe: activity.rpe, thresholds: thresholds)
         HStack(spacing: 12) {
             Image(systemName: activity.sport.symbol).font(.title3).frame(width: 30)
             VStack(alignment: .leading, spacing: 2) {
@@ -442,7 +455,7 @@ private struct ActivityRow: View {
                 HStack(spacing: 6) {
                     if let power = activity.averagePower { Text("\(power.noDecimal) W") }
                     if let hr = activity.averageHeartRate { Text("\(hr.noDecimal) bpm") }
-                    Text("TSS \(tss.noDecimal)")
+                    Text("Charge \(tss.noDecimal)")
                 }
                 .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             }
@@ -466,7 +479,7 @@ private struct TonnageCard: View {
                 }
                 .frame(height: 140)
                 if let last = volumes.dropLast().last {
-                    Text(String(format: "Semaine dernière : %.1f t soulevées (séries de travail).", last.tonnage / 1000))
+                    Text(String(format: "Semaine dernière : %.1f t soulevées (séries de travail).", locale: Locale.current, last.tonnage / 1000))
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -518,7 +531,7 @@ private struct LoadSummarySection: View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
             NavigationLink { detail } label: {
                 SimpleTile(title: "Charge récente", value: ratioWord(global?.ratio),
-                           caption: global?.ratio.map { String(format: "ratio 7 j / 28 j : %.2f", $0) } ?? "moyennes exponentielles",
+                           caption: global?.ratio.map { String(format: "ratio 7 j / 28 j : %.2f", locale: Locale.current, $0) } ?? "moyennes exponentielles",
                            symbol: "gauge.with.needle", tint: ratioColor(global?.ratio))
             }
             NavigationLink { detail } label: {
@@ -531,7 +544,7 @@ private struct LoadSummarySection: View {
             }
             NavigationLink { detail } label: {
                 SimpleTile(title: "Variété des séances", value: (snapshot.monotony ?? 0) > 2 ? "Trop uniforme" : "OK",
-                           caption: snapshot.monotony.map { String(format: "monotonie %.1f (repère < 2)", $0) } ?? "repère < 2",
+                           caption: snapshot.monotony.map { String(format: "monotonie %.1f (repère < 2)", locale: Locale.current, $0) } ?? "repère < 2",
                            symbol: "waveform", tint: (snapshot.monotony ?? 0) > 2 ? Theme.caution : Theme.good)
             }
             NavigationLink {
@@ -540,12 +553,12 @@ private struct LoadSummarySection: View {
                     ExplanationCard(title: "Ce que ça mesure", symbol: "lightbulb", text: "Puissance produite par battement cardiaque, sur des sorties d'endurance comparables (≥ 45 min, peu de dénivelé). Il monte quand ta base aérobie progresse : c'est l'indicateur de progrès sans chrono.")
                 }
             } label: {
-                SimpleTile(title: "Endurance aérobie", value: snapshot.efSeries.last.map { String(format: "%.2f", $0.value) } ?? "–",
+                SimpleTile(title: "Endurance aérobie", value: snapshot.efSeries.last.map { String(format: "%.2f", locale: Locale.current, $0.value) } ?? "–",
                            caption: "puissance / FC", symbol: "bolt.heart.fill", tint: Theme.recovery)
             }
             NavigationLink { detail } label: {
                 SimpleTile(title: "Hors sport 7 j", value: "\(snapshot.lifeLoad7.noDecimal) pts",
-                           caption: "travaux, debout, pas", symbol: "hammer.fill", tint: Theme.strain)
+                           caption: "travaux, journées debout", symbol: "hammer.fill", tint: Theme.strain)
             }
         }
         .buttonStyle(.plain)

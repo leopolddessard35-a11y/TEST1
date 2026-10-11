@@ -41,6 +41,13 @@ struct NutritionContent: View {
                         MacroSummaryTile(targets: targets, totals: totals)
                     }
                     .buttonStyle(.plain)
+                    NavigationLink {
+                        NutritionGoalsView()
+                    } label: {
+                        Label("Modifier mes objectifs", systemImage: "slider.horizontal.3")
+                            .font(.footnote.weight(.medium))
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
                 } else {
                     EmptyStateCard(title: "Objectifs du jour indisponibles",
                                    message: "Renseigne ton poids et ta taille dans Réglages → Profil et objectif pour calculer tes calories et tes macros.",
@@ -84,7 +91,7 @@ struct NutritionContent: View {
             }
         }
         .sheet(isPresented: $adding) {
-            AddFoodView(meal: Calendar.current.isDateInToday(day) ? Meal.suggested() : .lunch, day: day) { app.dataVersion += 1 }
+            AddFoodView(meal: FoodTiming.defaultMeal(for: day), day: day) { app.dataVersion += 1 }
         }
         .onAppear { rollOverToToday() }
         .onChange(of: scenePhase) { _, phase in
@@ -184,6 +191,7 @@ private struct MealCard: View {
     @Environment(AppModel.self) private var app
     let meal: Meal
     let entries: [FoodEntry]
+    @State private var editing: FoodEntry?
 
     var body: some View {
         GlassCard {
@@ -195,19 +203,23 @@ private struct MealCard: View {
                 }
                 ForEach(entries) { entry in
                     HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(entry.name).font(.subheadline).lineLimit(1)
-                            Text("\(entry.grams.noDecimal) g · P \(entry.protein.noDecimal) · G \(entry.carbs.noDecimal) · L \(entry.fat.noDecimal)")
-                                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Text("\(entry.kcal.noDecimal) kcal").font(.footnote.monospacedDigit())
-                        Menu {
-                            Button("Supprimer", systemImage: "trash", role: .destructive) {
-                                context.delete(entry)
-                                try? context.save()
-                                app.dataVersion += 1
+                        Button { editing = entry } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(entry.name).font(.subheadline).lineLimit(1)
+                                    Text("\(entry.grams.noDecimal) g · P \(entry.protein.noDecimal) · G \(entry.carbs.noDecimal) · L \(entry.fat.noDecimal)")
+                                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Text("\(entry.kcal.noDecimal) kcal").font(.footnote.monospacedDigit())
                             }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Modifier la quantité ou le repas")
+                        Menu {
+                            Button("Modifier", systemImage: "pencil") { editing = entry }
+                            Button("Supprimer", systemImage: "trash", role: .destructive) { delete(entry) }
                         } label: {
                             Image(systemName: "ellipsis.circle")
                                 .foregroundStyle(.secondary)
@@ -219,6 +231,119 @@ private struct MealCard: View {
                 }
             }
         }
+        .sheet(item: $editing) { entry in
+            FoodEntryEditor(entry: entry) { app.dataVersion += 1 }
+        }
+    }
+
+    /// Suppression annulable quelques secondes (bandeau « Annuler »).
+    private func delete(_ entry: FoodEntry) {
+        let copy = FoodEntryCopy(entry)
+        context.delete(entry)
+        try? context.save()
+        app.dataVersion += 1
+        app.offerUndo("\(copy.name) supprimé") { undoContext in
+            undoContext.insert(copy.makeEntry())
+        }
+    }
+}
+
+/// Copie des valeurs d'un aliment noté, pour le recréer si la suppression est annulée.
+private struct FoodEntryCopy {
+    let date: Date
+    let meal: Meal
+    let grams: Double
+    let itemKey: String
+    let name: String
+    let brand: String
+    let kcal100: Double
+    let protein100: Double
+    let carbs100: Double
+    let fat100: Double
+    let fiber100: Double?
+    let sugar100: Double?
+
+    init(_ entry: FoodEntry) {
+        date = entry.date
+        meal = entry.meal
+        grams = entry.grams
+        itemKey = entry.itemKey
+        name = entry.name
+        brand = entry.brand
+        kcal100 = entry.kcal100
+        protein100 = entry.protein100
+        carbs100 = entry.carbs100
+        fat100 = entry.fat100
+        fiber100 = entry.fiber100
+        sugar100 = entry.sugar100
+    }
+
+    func makeEntry() -> FoodEntry {
+        // Aliment temporaire (jamais inséré) : sert seulement à recopier les valeurs dans l'entrée.
+        let item = FoodItem(key: itemKey, name: name, brand: brand, barcode: nil, source: "",
+                            kcal100: kcal100, protein100: protein100, carbs100: carbs100, fat100: fat100)
+        item.fiber100 = fiber100
+        item.sugar100 = sugar100
+        return FoodEntry(date: date, meal: meal, grams: grams, item: item)
+    }
+}
+
+/// Modification d'un aliment déjà noté : quantité et repas (les valeurs pour 100 g ne changent pas).
+private struct FoodEntryEditor: View {
+    @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
+    let entry: FoodEntry
+    let onSaved: () -> Void
+    @State private var grams: Double
+    @State private var meal: Meal
+
+    init(entry: FoodEntry, onSaved: @escaping () -> Void) {
+        self.entry = entry
+        self.onSaved = onSaved
+        self._grams = State(initialValue: entry.grams)
+        self._meal = State(initialValue: entry.meal)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text(entry.name).font(.headline)
+                    if !entry.brand.isEmpty { Text(entry.brand).foregroundStyle(.secondary) }
+                }
+                Section("Quantité") {
+                    HStack {
+                        DecimalFieldNonOptional("Grammes", value: $grams)
+                        Text("g").foregroundStyle(.secondary)
+                    }
+                    Picker("Repas", selection: $meal) {
+                        ForEach(Meal.allCases) { Text($0.label).tag($0) }
+                    }
+                }
+                Section("Pour \(grams.noDecimal) g") {
+                    LabeledContent("Calories", value: "\((entry.kcal100 * grams / 100).noDecimal) kcal")
+                    LabeledContent("Protéines", value: "\((entry.protein100 * grams / 100).oneDecimal) g")
+                    LabeledContent("Glucides", value: "\((entry.carbs100 * grams / 100).oneDecimal) g")
+                    LabeledContent("Lipides", value: "\((entry.fat100 * grams / 100).oneDecimal) g")
+                }
+            }
+            .navigationTitle("Modifier")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Annuler") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Enregistrer") { save() }.disabled(grams <= 0)
+                }
+            }
+        }
+    }
+
+    private func save() {
+        entry.grams = grams
+        entry.mealRaw = meal.rawValue
+        try? context.save()
+        onSaved()
+        dismiss()
     }
 }
 
@@ -285,10 +410,10 @@ struct EnergyBalanceCard: View {
     private func verdict(intake: Double?, change: Double?) -> String {
         guard let intake, let change else { return "Note tes repas et pèse-toi 3 fois par semaine pour vérifier que ton apport tient face à ta dépense." }
         if abs(change) < 0.3 {
-            return String(format: "Poids stable à ~%.0f kcal/j : c'est ton niveau de maintien actuel.", intake)
+            return "Poids stable à ~\(intake.noDecimal) kcal/j : c'est ton niveau de maintien actuel."
         }
         return change > 0
-            ? String(format: "Tu prends du poids à ~%.0f kcal/j : tu es au-dessus de ton maintien.", intake)
-            : String(format: "Tu perds du poids à ~%.0f kcal/j : ton maintien est plus haut que ça.", intake)
+            ? "Tu prends du poids à ~\(intake.noDecimal) kcal/j : tu es au-dessus de ton maintien."
+            : "Tu perds du poids à ~\(intake.noDecimal) kcal/j : ton maintien est plus haut que ça."
     }
 }

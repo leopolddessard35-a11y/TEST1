@@ -3,6 +3,40 @@ import SwiftData
 import VisionKit
 import AVFoundation
 
+/// Entre minuit et 4 h, ce que tu manges compte pour la soirée de la veille : totaux et rappels restent
+/// sur le bon jour, et le dîner de la veille n'est pas pris pour celui du nouveau jour.
+enum FoodTiming {
+    static let dayStartHour = 4
+
+    static func isLateNight(_ now: Date = .now) -> Bool {
+        Calendar.current.component(.hour, from: now) < dayStartHour
+    }
+
+    /// Le jour choisi est aujourd'hui, ou hier pendant la nuit (soirée encore en cours).
+    private static func isCurrentEvening(_ day: Date, now: Date) -> Bool {
+        let calendar = Calendar.current
+        if calendar.isDate(day, inSameDayAs: now) { return true }
+        guard isLateNight(now), let yesterday = calendar.date(byAdding: .day, value: -1, to: now) else { return false }
+        return calendar.isDate(day, inSameDayAs: yesterday)
+    }
+
+    /// Repas proposé : collation la nuit, sinon selon l'heure ; déjeuner pour un autre jour.
+    static func defaultMeal(for day: Date = .now, now: Date = .now) -> Meal {
+        guard isCurrentEvening(day, now: now) else { return .lunch }
+        return isLateNight(now) ? .snack : Meal.suggested(for: now)
+    }
+
+    /// Date de l'entrée : maintenant ; la veille à 23 h 59 entre minuit et 4 h ; midi pour un autre jour.
+    static func entryDate(for day: Date, now: Date = .now) -> Date {
+        let calendar = Calendar.current
+        if isCurrentEvening(day, now: now) {
+            guard isLateNight(now) else { return now }
+            return calendar.startOfDay(for: now).addingTimeInterval(-60)
+        }
+        return calendar.date(bySettingHour: 12, minute: 0, second: 0, of: day) ?? day
+    }
+}
+
 /// Ajout d'un aliment, pensé pour aller vite :
 /// une seule liste (recherche + récents + favoris), ajout en un tap de ta portion habituelle,
 /// repas choisi automatiquement selon l'heure, scan à portée de pouce.
@@ -30,10 +64,17 @@ struct AddFoodView: View {
     @State private var pendingCustom: FoodProduct?
     @State private var lastScanned: String?
     @State private var added: [String] = []
-    @State private var installingCiqual = false
+    /// Dernier ajout en un tap, annulable depuis le bandeau du bas.
+    @State private var undoable: QuickAdded?
     @State private var ciqual = CiqualStore.shared
 
-    init(meal: Meal = Meal.suggested(), day: Date = .now, onSaved: @escaping () -> Void = {}) {
+    private struct QuickAdded {
+        let entry: FoodEntry
+        let item: FoodItem
+        let label: String
+    }
+
+    init(meal: Meal = FoodTiming.defaultMeal(), day: Date = .now, onSaved: @escaping () -> Void = {}) {
         self._meal = State(initialValue: meal)
         self.day = day
         self.onSaved = onSaved
@@ -61,21 +102,26 @@ struct AddFoodView: View {
             }
             .safeAreaInset(edge: .bottom) {
                 if !added.isEmpty {
-                    Text("✓ Ajouté : " + added.suffix(2).joined(separator: ", "))
-                        .font(.footnote.weight(.semibold))
-                        .padding(.horizontal, 16).padding(.vertical, 10)
-                        .glassEffect(.regular.tint(Theme.recovery.opacity(0.4)), in: .capsule)
-                        .padding(.bottom, 8)
+                    HStack(spacing: 12) {
+                        Text("✓ Ajouté : " + added.suffix(2).joined(separator: ", "))
+                            .font(.footnote.weight(.semibold))
+                        if let undoable {
+                            Button("Annuler") { undoQuickAdd(undoable) }
+                                .font(.footnote.weight(.bold))
+                                .accessibilityLabel("Annuler l'ajout de \(undoable.label)")
+                        }
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .glassEffect(.regular.tint(Theme.recovery.opacity(0.4)), in: .capsule)
+                    .padding(.bottom, 8)
                 }
             }
             .sheet(item: $selected) { product in
                 FoodPortionView(product: product, meal: meal, day: day) {
                     added.append(product.name)
+                    undoable = nil
                     onSaved()
                 }
-            }
-            .sheet(isPresented: $installingCiqual) {
-                NavigationStack { CiqualImportView(isSheet: true) }
             }
             .sheet(isPresented: $creatingCustom, onDismiss: {
                 // Une seule feuille à la fois : la quantité s'ouvre après la fermeture du formulaire.
@@ -120,7 +166,6 @@ struct AddFoodView: View {
             }
 
             if query.isEmpty {
-                if !ciqual.isInstalled { ciqualSuggestion }
                 let frequent = recents.filter { $0.useCount >= 3 }.sorted { $0.useCount > $1.useCount }.prefix(6)
                 if !frequent.isEmpty {
                     Section("Favoris · + = ta portion habituelle") {
@@ -138,8 +183,11 @@ struct AddFoodView: View {
             } else {
                 let generic = ciqual.search(query)
                 let reference = generic.isEmpty ? CommonFoods.search(query) : []
-                let needle = CiqualStore.fold(query.trimmingCharacters(in: .whitespaces))
-                let matchingRecents = recents.filter { CiqualStore.fold($0.name).contains(needle) }
+                // Même règle que la recherche CIQUAL : début de mot, pluriel toléré (« riz » ≠ « chorizo »).
+                let tokens = CiqualStore.queryTokens(query)
+                let matchingRecents: [FoodItem] = tokens.isEmpty ? [] : recents.filter {
+                    CiqualStore.matches(tokens, words: CiqualStore.words(CiqualStore.fold("\($0.name) \($0.brand)")))
+                }
                 if !matchingRecents.isEmpty {
                     Section("Déjà mangés") {
                         ForEach(matchingRecents.prefix(8)) { item in quickRow(item) }
@@ -155,7 +203,6 @@ struct AddFoodView: View {
                         ForEach(reference) { product in productRow(product) }
                     }
                 }
-                if !ciqual.isInstalled { ciqualSuggestion }
                 if !results.isEmpty {
                     Section("Open Food Facts") {
                         ForEach(results) { product in productRow(product) }
@@ -167,17 +214,6 @@ struct AddFoodView: View {
                 }
             }
             if let error { Section { Text(error).foregroundStyle(Theme.warning) } }
-        }
-    }
-
-    /// Proposition d'installer la table CIQUAL (aliments sans code-barres).
-    private var ciqualSuggestion: some View {
-        Section {
-            Button { installingCiqual = true } label: {
-                Label("Ajouter 3 000 aliments génériques (table CIQUAL)", systemImage: "leaf.fill")
-            }
-        } footer: {
-            Text("Riz, viandes, légumes, plats… sans code-barres, au gramme près, hors ligne.")
         }
     }
 
@@ -229,11 +265,22 @@ struct AddFoodView: View {
     private func quickAdd(_ item: FoodItem, grams: Double) {
         item.lastUsed = .now
         item.useCount += 1
-        let calendar = Calendar.current
-        let date = calendar.isDateInToday(day) ? Date.now : (calendar.date(bySettingHour: 12, minute: 0, second: 0, of: day) ?? day)
-        context.insert(FoodEntry(date: date, meal: meal, grams: grams, item: item))
+        let entry = FoodEntry(date: FoodTiming.entryDate(for: day), meal: meal, grams: grams, item: item)
+        context.insert(entry)
         try? context.save()
-        added.append("\(item.name) \(grams.noDecimal) g")
+        let label = "\(item.name) \(grams.noDecimal) g"
+        added.append(label)
+        undoable = QuickAdded(entry: entry, item: item, label: label)
+        onSaved()
+    }
+
+    /// « Annuler » : retire le dernier ajout en un tap.
+    private func undoQuickAdd(_ last: QuickAdded) {
+        context.delete(last.entry)
+        last.item.useCount = max(0, last.item.useCount - 1)
+        try? context.save()
+        if let index = added.lastIndex(of: last.label) { added.remove(at: index) }
+        undoable = nil
         onSaved()
     }
 
@@ -431,7 +478,20 @@ struct FoodPortionView: View {
         let descriptor = FetchDescriptor<FoodItem>(predicate: #Predicate { $0.key == key })
         let item: FoodItem
         if let existing = try? context.fetch(descriptor).first {
+            // Valeurs de l'écran recopiées dans l'aliment connu : l'entrée enregistrée est celle affichée.
             item = existing
+            item.name = product.name
+            item.brand = product.brand
+            item.kcal100 = product.kcal100
+            item.protein100 = product.protein100
+            item.carbs100 = product.carbs100
+            item.fat100 = product.fat100
+            item.fiber100 = product.fiber100
+            item.sugar100 = product.sugar100
+            item.saturatedFat100 = product.saturatedFat100
+            item.salt100 = product.salt100
+            if let barcode = product.barcode { item.barcode = barcode }
+            if let serving = product.servingGrams { item.servingGrams = serving }
         } else {
             item = FoodItem(key: product.key, name: product.name, brand: product.brand, barcode: product.barcode,
                             source: product.source, kcal100: product.kcal100, protein100: product.protein100,
@@ -446,10 +506,8 @@ struct FoodPortionView: View {
         item.lastUsed = .now
         item.useCount += 1
 
-        // On garde l'heure actuelle si c'est aujourd'hui, sinon midi du jour choisi.
-        let calendar = Calendar.current
-        let date = calendar.isDateInToday(day) ? Date.now : (calendar.date(bySettingHour: 12, minute: 0, second: 0, of: day) ?? day)
-        context.insert(FoodEntry(date: date, meal: meal, grams: grams, item: item))
+        // L'heure actuelle aujourd'hui (la veille à 23 h 59 après minuit), sinon midi du jour choisi.
+        context.insert(FoodEntry(date: FoodTiming.entryDate(for: day), meal: meal, grams: grams, item: item))
         try? context.save()
         onSaved()
         dismiss()
@@ -476,12 +534,16 @@ struct CustomFoodForm: View {
                     TextField("Nom", text: $name)
                     TextField("Marque (facultatif)", text: $brand)
                 }
-                Section("Pour 100 g (voir l'étiquette)") {
+                Section {
                     field("Calories (kcal)", $kcal)
                     field("Protéines (g)", $protein)
                     field("Glucides (g)", $carbs)
                     field("Lipides (g)", $fat)
                     field("Fibres (g)", $fiber)
+                } header: {
+                    Text("Pour 100 g (voir l'étiquette)")
+                } footer: {
+                    Text("Eau, café, thé : laisse 0 partout.")
                 }
                 Section("Portion habituelle") {
                     field("Grammes (0 = aucune)", $serving)
@@ -492,12 +554,14 @@ struct CustomFoodForm: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Annuler") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Continuer") {
-                        onCreate(FoodProduct(key: "custom|\(UUID().uuidString)", barcode: nil, name: name, brand: brand,
+                        onCreate(FoodProduct(key: "custom|\(UUID().uuidString)", barcode: nil,
+                                             name: name.trimmingCharacters(in: .whitespaces), brand: brand,
                                              source: "Créé par toi", kcal100: kcal, protein100: protein, carbs100: carbs,
                                              fat100: fat, fiber100: fiber > 0 ? fiber : nil, sugar100: nil,
                                              saturatedFat100: nil, salt100: nil, servingGrams: serving > 0 ? serving : nil))
                     }
-                    .disabled(name.isEmpty || kcal <= 0)
+                    // 0 kcal accepté (eau, café) : seul le nom est obligatoire.
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || kcal < 0)
                 }
             }
         }

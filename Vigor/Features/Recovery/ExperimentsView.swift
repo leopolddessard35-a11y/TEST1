@@ -48,7 +48,7 @@ struct ExperimentsCard: View {
                         HStack {
                             StatTile(title: "Avant", value: result.before.map { $0.oneDecimal } ?? "–", caption: "\(result.nBefore) j")
                             StatTile(title: "Pendant", value: result.during.map { $0.oneDecimal } ?? "–", caption: "\(result.nDuring) j")
-                            StatTile(title: "Écart", value: result.changePercent.map { String(format: "%+.0f %%", $0) } ?? "–",
+                            StatTile(title: "Écart", value: result.changePercent.map { String(format: "%+.0f %%", locale: Locale.current, $0) } ?? "–",
                                      caption: result.effectSize.map { "d = \($0.decimals(2))" } ?? "")
                         }
                         Text(result.verdict).font(.footnote)

@@ -26,6 +26,12 @@ struct ExerciseSession: Equatable {
     var bestEstimated1RM: Double {
         workingSets.map { StrengthProgression.estimated1RM(weight: $0.weightKg ?? 0, reps: $0.reps ?? 0) }.max() ?? 0
     }
+
+    /// Meilleur 1RM estimé sur les séries d'au plus `maxReps` répétitions (au-delà, l'estimation est peu fiable).
+    func best1RM(maxReps: Int) -> Double {
+        workingSets.filter { ($0.reps ?? 0) <= maxReps }
+            .map { StrengthProgression.estimated1RM(weight: $0.weightKg ?? 0, reps: $0.reps ?? 0) }.max() ?? 0
+    }
 }
 
 struct ProgressionAdvice: Equatable, Identifiable {
@@ -74,11 +80,22 @@ enum StrengthProgression {
         (weight / step).rounded() * step
     }
 
+    /// « 8–12 », « 8-12 » ou « 5 » (objectif de ta séance type) → plage de répétitions.
+    static func repRange(fromText text: String?) -> ClosedRange<Int>? {
+        guard let text else { return nil }
+        let numbers = text.split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }.filter { $0 > 0 && $0 <= 50 }
+        guard let low = numbers.first else { return nil }
+        let high = numbers.dropFirst().first ?? low
+        return min(low, high)...max(low, high)
+    }
+
+    /// `targetReps` : plage de ta séance type ; sinon repère selon l'exercice (6–10 polyarticulaire, 10–15 isolation).
     static func advise(exercise: String,
                        sessions: [ExerciseSession],
                        readiness: ReadinessLevel? = nil,
-                       injuredMuscles: Set<Muscle> = []) -> ProgressionAdvice? {
-        let range = MuscleMap.repRange(for: exercise)
+                       injuredMuscles: Set<Muscle> = [],
+                       targetReps: ClosedRange<Int>? = nil) -> ProgressionAdvice? {
+        let range = targetReps ?? MuscleMap.repRange(for: exercise)
         let increment = MuscleMap.increment(for: exercise)
         let targets = MuscleMap.targets(for: exercise)
         let ordered = sessions.filter { !$0.workingSets.isEmpty }.sorted { $0.date < $1.date }
@@ -139,6 +156,6 @@ enum StrengthProgression {
     }
 
     private static func format(_ weight: Double) -> String {
-        weight.truncatingRemainder(dividingBy: 1) == 0 ? String(format: "%.0f", weight) : String(format: "%.1f", weight)
+        weight.truncatingRemainder(dividingBy: 1) == 0 ? String(format: "%.0f", locale: Locale.current, weight) : String(format: "%.1f", locale: Locale.current, weight)
     }
 }

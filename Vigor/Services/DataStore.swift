@@ -14,6 +14,59 @@ struct SyncReport {
 /// Écrit les données importées dans la base locale de l'app (SwiftData).
 @MainActor
 enum DataStore {
+    // MARK: Séances supprimées
+
+    /// Identifiants des séances importées que tu as supprimées : jamais réimportées.
+    static let deletedIDsKey = "import.deletedExternalIDs"
+    /// Empreintes (sport, début, durée) des séances d'endurance supprimées : la même sortie arrivée par
+    /// une autre source (Apple Santé ↔ Intervals.icu) ne revient pas non plus.
+    static let deletedSessionsKey = "import.deletedSessions"
+    private static let deletedLimit = 1000
+
+    /// À appeler juste avant de supprimer une séance importée (Apple Santé, Intervals.icu, Hevy).
+    static func markDeleted(externalID: String) {
+        var ids = UserDefaults.standard.stringArray(forKey: deletedIDsKey) ?? []
+        guard !ids.contains(externalID) else { return }
+        ids.append(externalID)
+        UserDefaults.standard.set(Array(ids.suffix(deletedLimit)), forKey: deletedIDsKey)
+    }
+
+    /// Séance d'endurance : identifiant + empreinte, pour bloquer aussi son doublon venu d'une autre source.
+    static func markDeleted(activity: CardioActivity) {
+        markDeleted(externalID: activity.externalID)
+        var sessions = UserDefaults.standard.stringArray(forKey: deletedSessionsKey) ?? []
+        sessions.append("\(activity.sportRaw)|\(activity.start.timeIntervalSince1970)|\(activity.durationSeconds)")
+        UserDefaults.standard.set(Array(sessions.suffix(deletedLimit)), forKey: deletedSessionsKey)
+    }
+
+    static var deletedExternalIDs: Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: deletedIDsKey) ?? [])
+    }
+
+    private struct DeletedSession {
+        let sport: Sport
+        let start: Date
+        let duration: Double
+    }
+
+    private static var deletedSessions: [DeletedSession] {
+        (UserDefaults.standard.stringArray(forKey: deletedSessionsKey) ?? []).compactMap { line -> DeletedSession? in
+            let parts = line.split(separator: "|").map(String.init)
+            guard parts.count == 3, let sport = Sport(rawValue: parts[0]),
+                  let start = Double(parts[1]), let duration = Double(parts[2]) else { return nil }
+            return DeletedSession(sport: sport, start: Date(timeIntervalSince1970: start), duration: duration)
+        }
+    }
+
+    private static func wasDeleted(sport: Sport, start: Date, duration: Double, among deleted: [DeletedSession]) -> Bool {
+        deleted.contains {
+            ActivityDeduplicator.isSameSession(sportA: $0.sport, startA: $0.start, durationA: $0.duration,
+                                               sportB: sport, startB: start, durationB: duration)
+        }
+    }
+
+    // MARK: Apple Santé
+
     /// Écrit les valeurs Apple Santé dans les champs Apple (`sleepHours`, `restingHeartRate`, `respiration`…).
     /// `resetAppleFields` : efface d'abord ces champs sur la période relue (réparation unique : d'anciennes
     /// versions y mélangeaient des valeurs Garmin). Rien n'est effacé si la lecture échoue.
@@ -81,9 +134,12 @@ enum DataStore {
 
         var activities = try context.fetch(FetchDescriptor<CardioActivity>())
         let knownIDs = Set(activities.map(\.externalID))
+        let deletedIDs = deletedExternalIDs
+        let deleted = deletedSessions
         for workout in try await health.workouts(days: days) {
             let id = "healthkit|\(workout.id.uuidString)"
-            guard !knownIDs.contains(id) else { continue }
+            guard !knownIDs.contains(id), !deletedIDs.contains(id),
+                  !wasDeleted(sport: workout.sport, start: workout.start, duration: workout.duration, among: deleted) else { continue }
 
             if let duplicate = activities.first(where: {
                 ActivityDeduplicator.isSameSession(sportA: $0.sport, startA: $0.start, durationA: $0.durationSeconds,
@@ -115,7 +171,7 @@ enum DataStore {
         if let thresholds {
             let cutoff = Calendar.current.date(byAdding: .day, value: -120, to: .now) ?? .now
             for activity in activities where !activity.zonesComputed && activity.start >= cutoff {
-                guard let bounds = HeartRateZones.bounds(thresholds: thresholds, sport: activity.sport) else { break }
+                guard let bounds = HeartRateZones.bounds(thresholds: thresholds, sport: activity.sport) else { continue }
                 let end = activity.start.addingTimeInterval(activity.durationSeconds)
                 let samples = (try? await health.heartRateSamples(from: activity.start, to: end)) ?? []
                 guard samples.count > 10 else { continue }
@@ -135,9 +191,10 @@ enum DataStore {
     static func importHevy(_ workouts: [HevyWorkout], into context: ModelContext) throws -> (added: Int, updated: Int) {
         let existing = try context.fetch(FetchDescriptor<StrengthWorkout>())
         let byID = Dictionary(existing.map { ($0.externalID, $0) }, uniquingKeysWith: { first, _ in first })
+        let deletedIDs = deletedExternalIDs
         var added = 0, updated = 0
 
-        for workout in workouts {
+        for workout in workouts where !deletedIDs.contains(workout.externalID) {
             let model: StrengthWorkout
             if let old = byID[workout.externalID] {
                 model = old
@@ -176,8 +233,9 @@ enum DataStore {
         // Bien-être Garmin.
         let existingDays = try context.fetch(FetchDescriptor<DailyWellness>())
         var byDay = Dictionary(existingDays.map { ($0.day, $0) }, uniquingKeysWith: { first, _ in first })
+        let dayFormatter = IntervalsClient.dayFormatter
         for item in wellness {
-            guard let date = IntervalsClient.dayFormatter.date(from: item.id) else { continue }
+            guard let date = dayFormatter.date(from: item.id) else { continue }
             let day = calendar.startOfDay(for: date)
             let record: DailyWellness
             if let existing = byDay[day] {
@@ -196,8 +254,9 @@ enum DataStore {
             if let value = item.avgSleepingHR { record.sleepingHeartRate = value }
             if let value = item.spO2 { record.spO2 = value }
             if let value = item.respiration { record.respirationGarmin = value }
-            if let value = item.vo2max { record.vo2Max = value }
-            if let value = item.weight { record.weightKg = value }
+            // VO2max et poids Garmin à part : Apple Santé et la saisie gardent `vo2Max` / `weightKg`.
+            if let value = item.vo2max { record.vo2MaxGarmin = value }
+            if let value = item.weight { record.weightKgGarmin = value }
             if let value = item.bodyFat { record.bodyFatPercent = value }
             if let value = item.steps, record.steps == nil { record.steps = value }
         }
@@ -205,11 +264,16 @@ enum DataStore {
         // Séances : Intervals est la source la plus riche, elle enrichit les doublons Apple Santé.
         var stored = try context.fetch(FetchDescriptor<CardioActivity>())
         let knownIDs = Set(stored.map(\.externalID))
+        let deletedIDs = deletedExternalIDs
+        let deleted = deletedSessions
         var added = 0
         for item in activities {
             guard let sport = item.sport, let start = IntervalsClient.parseLocal(item.startDateLocal),
                   let duration = item.movingTime, duration > 0 else { continue }
             let id = "intervals|\(item.id.value)"
+            // Supprimée par toi (ici ou sa copie Apple Santé) : ne revient pas.
+            guard !deletedIDs.contains(id),
+                  !wasDeleted(sport: sport, start: start, duration: duration, among: deleted) else { continue }
             let target: CardioActivity
             if knownIDs.contains(id), let existing = stored.first(where: { $0.externalID == id }) {
                 target = existing

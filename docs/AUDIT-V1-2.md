@@ -78,3 +78,35 @@ Bonnes nouvelles : aucune erreur de compilation certaine dans l'app, aucun risqu
 1. Lot A (A1 à A13).
 2. Lot B : semaine et calendrier, coach et scores, muscu.
 3. Lot C : virgule décimale et accessibilité de la séance d'abord.
+
+---
+
+## État après corrections
+
+**Choix retenus**
+- **Muscu** : le plan prévoit des séances « Musculation » sans exercices imposés ; au démarrage, tu choisis une de tes séances types (ou une séance libre).
+- **Nutrition** : objectif « Prendre du poids » par défaut, réglable (perdre / maintenir / prendre), avec écart calorique, protéines et lipides ajustables, ou calories et macros fixées à la main (Réglages → Objectif nutrition, ou Nutrition → Modifier mes objectifs).
+- **Sans objectif de course** : pas de plan inventé, seulement le suivi et l'analyse.
+
+**Lot A** : corrigé (A1 à A13).
+- Semaine figée le lundi (les séances ne changent plus en cours de semaine), identifiants de séance par type, cycle charge / récupération qui continue d'une semaine à l'autre.
+- Course placée à sa vraie date ; seules les séances de vélo, course et muscu comptent pour le plan.
+- « Séance faite » sur l'accueil une fois la séance du jour terminée.
+
+**Lot B** : corrigé, dont :
+- habitudes réellement prises en compte, séance replacée jamais collée à une autre séance dure, Intervals.icu seulement sans plan de saison ;
+- « ne compte pas pour cette séance » ;
+- calibrage de la récup les premiers jours, sommeil et fatigue comptés une seule fois ;
+- cible d'effort en plafond les jours sans séance, nutrition de la veille jugée sur l'entraînement réel et les journées complètes ;
+- durée réelle des séances de muscu (première → dernière série, modifiable) ;
+- repos (dernière série, échauffement, double alerte, son en retard), double enregistrement, records ≤ 12 reps, décharge appliquée ;
+- VO2max et poids d'une seule source, export complet en format français, recherche au pluriel, alertes en double, zones FC.
+
+**Lot C** : virgule décimale partout, jargon réduit (Charge au lieu de TSS, Coach du jour), textes culpabilisants et personnels retirés, accessibilité de la séance (zones de 44 pt, libellés VoiceOver, actions), anneaux lus d'un bloc, notifications demandées au bon moment.
+
+**Reste ouvert (non bloquant)**
+- Schéma de base de données versionné.
+- Règles d'enchaînement entre deux semaines.
+- Temps disponible additionné sur la journée.
+- Réparation des anciennes valeurs VO2max / poids Garmin déjà stockées dans les champs Apple.
+- Une table CIQUAL importée reste prioritaire sur une version plus récente intégrée à l'app.

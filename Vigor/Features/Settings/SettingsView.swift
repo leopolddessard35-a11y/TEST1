@@ -24,6 +24,11 @@ struct SettingsView: View {
                 if let profile = profiles.first {
                     Section {
                         link(profile, .profile, "Profil et objectif", "person.crop.circle", "Course, morphologie, seuils, disponibilités")
+                        NavigationLink {
+                            NutritionGoalsView()
+                        } label: {
+                            rowLabel("Objectif nutrition", "fork.knife", "Prise de poids, calories et macros")
+                        }
                         link(profile, .connections, "Connexions", "link", "Garmin via Intervals.icu, Apple Santé")
                         link(profile, .notifications, "Notifications", "bell", "Plan du matin, repas, alertes")
                         link(profile, .data, "Données", "externaldrive", "Aliments CIQUAL, chaussures, export")
@@ -45,16 +50,20 @@ struct SettingsView: View {
                 .navigationTitle(title)
                 .navigationBarTitleDisplayMode(.inline)
         } label: {
-            HStack(spacing: 12) {
-                Image(systemName: symbol)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 30, height: 30)
-                    .background(Theme.accent.gradient, in: .rect(cornerRadius: 8, style: .continuous))
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title)
-                    Text(detail).font(.caption).foregroundStyle(.secondary)
-                }
+            rowLabel(title, symbol, detail)
+        }
+    }
+
+    private func rowLabel(_ title: String, _ symbol: String, _ detail: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 30, height: 30)
+                .background(Theme.accent.gradient, in: .rect(cornerRadius: 8, style: .continuous))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                Text(detail).font(.caption).foregroundStyle(.secondary)
             }
         }
     }
@@ -69,6 +78,8 @@ private struct ProfileForm: View {
     let page: SettingsPage
     @State private var apiKey = ""
     @State private var notificationsDenied = false
+    /// Autorisation jamais demandée : elle l'est quand tu actives un rappel (jamais au premier lancement).
+    @State private var notificationsUndetermined = false
     @State private var confirmLoadDemo = false
     @State private var confirmClearData = false
     @AppStorage(NotificationScheduler.Keys.morningEnabled) private var morningEnabled = true
@@ -98,8 +109,13 @@ private struct ProfileForm: View {
                     ForEach(Sex.allCases) { Text($0.label).tag($0.rawValue) }
                 }
                 numberField("Taille (cm)", value: $profile.heightCm)
-                Stepper("Année de naissance : \(profile.birthYear > 0 ? String(profile.birthYear) : "–")",
-                        value: birthYearBinding, in: 1940...2015)
+                // Rien n'est écrit tant que tu ne choisis pas ; les années récentes en premier.
+                Picker("Année de naissance", selection: $profile.birthYear) {
+                    Text("Non renseignée").tag(0)
+                    ForEach(Array((1940...Self.latestBirthYear).reversed()), id: \.self) { year in
+                        Text(String(year)).tag(year)
+                    }
+                }
                 numberField("Poids (kg)", value: $profile.weightKg)
             } header: {
                 Text("Morphologie")
@@ -129,20 +145,26 @@ private struct ProfileForm: View {
                 SecureField("Clé d'API", text: $apiKey)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    .submitLabel(.done)
+                    .onSubmit { keepTypedAPIKey(announce: true) }
                 TextField("Identifiant athlète (ex. i123456)", text: $profile.intervalsAthleteID)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                Button("Enregistrer la clé") {
-                    app.intervalsAPIKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-                    app.statusMessage = apiKey.isEmpty ? "Clé supprimée." : "Clé enregistrée dans le trousseau sécurisé de l'iPhone."
-                }
+                Button("Enregistrer la clé") { saveAPIKey() }
             } header: {
                 Text("Garmin via Intervals.icu")
             } footer: {
-                Text("1. Crée un compte gratuit sur intervals.icu et relie Garmin Connect (Settings → Connections).\n2. Settings → Developer Settings : copie l'« Athlete ID » et génère une « API Key ».\n3. Colle-les ici, puis synchronise. Tu récupères tes séances complètes, la VFC nocturne, le score de sommeil, la récupération Garmin et ton calendrier d'entraînement.")
+                Text("1. Crée un compte gratuit sur intervals.icu et relie Garmin Connect (Settings → Connections).\n2. Settings → Developer Settings : copie l'« Athlete ID » et génère une « API Key ».\n3. Colle-les ici : la première clé lance la synchro d'un an d'historique. Tu récupères tes séances complètes, la VFC nocturne, le score de sommeil, la récupération Garmin et ton calendrier d'entraînement.")
             }
             }
             if page == .notifications {
+            if notificationsUndetermined {
+                Section {
+                    Button("Autoriser les notifications") { askNotificationPermission() }
+                } footer: {
+                    Text("Vigor ne te le demande qu'une fois, ici ou quand tu actives un rappel : iOS affiche alors sa demande d'autorisation. Sans elle, aucun rappel n'arrive.")
+                }
+            }
             if notificationsDenied {
                 Section {
                     Label("Les notifications sont désactivées pour Vigor dans les réglages de l'iPhone : aucun rappel ne sera affiché.", systemImage: "bell.slash")
@@ -162,7 +184,7 @@ private struct ProfileForm: View {
                     DatePicker("Heure", selection: timeBinding($eveningMinutes), displayedComponents: .hourAndMinute)
                 }
                 Toggle("Alertes importantes", isOn: $alertsEnabled)
-                    .onChange(of: alertsEnabled) { app.dataVersion += 1 }
+                    .onChange(of: alertsEnabled) { _, isOn in notificationToggled(isOn) }
                 mealRow("Petit-déjeuner", isOn: $breakfastEnabled, minutes: $breakfastMinutes)
                 mealRow("Déjeuner", isOn: $lunchEnabled, minutes: $lunchMinutes)
                 mealRow("Goûter", isOn: $snackEnabled, minutes: $snackMinutes)
@@ -170,7 +192,7 @@ private struct ProfileForm: View {
             } header: {
                 Text("Notifications")
             } footer: {
-                Text("Matin : verdict du jour, séance adaptée à ta nuit et ta récup, priorité n° 1. Repas : quantités visées (ce qu'il reste à manger aujourd'hui) et conseil selon tes séances ; pas de rappel si le repas est déjà noté. Soir : protéines ou calories manquantes, préparation du lendemain. Alertes importantes : uniquement les seuils critiques (surcharge, dette de sommeil, symptôme récurrent, surmenage), une fois par jour au maximum.")
+                Text("Matin : verdict du jour, séance adaptée à ta nuit et ta récup, priorité n° 1. Repas : quantités visées (ce qu'il reste à manger aujourd'hui) et conseil selon tes séances ; pas de rappel si le repas est déjà noté. Soir : protéines ou calories manquantes, préparation du lendemain. Alertes importantes : uniquement les seuils critiques (surcharge, dette de sommeil, symptôme récurrent, surmenage), une fois par jour au maximum. Activer un rappel demande l'autorisation d'iOS la première fois.")
             }
             }
             if page == .profile {
@@ -230,26 +252,70 @@ private struct ProfileForm: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await refreshNotificationStatus() } }
         }
-        .onChange(of: morningEnabled) { app.dataVersion += 1 }
-        .onChange(of: eveningEnabled) { app.dataVersion += 1 }
+        .onChange(of: morningEnabled) { _, isOn in notificationToggled(isOn) }
+        .onChange(of: eveningEnabled) { _, isOn in notificationToggled(isOn) }
         .onDisappear {
+            // Clé tapée sans « Enregistrer » : elle n'est pas perdue.
+            keepTypedAPIKey(announce: false)
             try? context.save()
             app.dataVersion += 1
         }
     }
 
-    /// Année de naissance : « – » tant qu'elle n'est pas saisie ; le premier tap démarre à 1995.
-    private var birthYearBinding: Binding<Int> {
-        Binding(
-            get: { profile.birthYear == 0 ? 1995 : profile.birthYear },
-            set: { newValue in
-                profile.birthYear = profile.birthYear == 0 ? 1995 : newValue
-            })
+    /// Année la plus récente proposée (12 ans).
+    private static var latestBirthYear: Int { Calendar.current.component(.year, from: .now) - 12 }
+
+    /// Bouton « Enregistrer la clé » : enregistre (ou supprime si vide).
+    private func saveAPIKey() {
+        let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isFirstKey = app.intervalsAPIKey.isEmpty && !key.isEmpty
+        app.intervalsAPIKey = key
+        if key.isEmpty {
+            app.statusMessage = "Clé supprimée."
+        } else {
+            app.statusMessage = isFirstKey
+                ? "Clé enregistrée dans le trousseau sécurisé de l'iPhone. Synchronisation d'un an d'historique en cours…"
+                : "Clé enregistrée dans le trousseau sécurisé de l'iPhone."
+        }
+        if isFirstKey { syncFullHistory() }
+    }
+
+    /// Validation au clavier ou départ de l'écran : enregistre une clé non vide et modifiée.
+    private func keepTypedAPIKey(announce: Bool) {
+        let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty, key != app.intervalsAPIKey else { return }
+        if announce {
+            saveAPIKey()
+            return
+        }
+        let isFirstKey = app.intervalsAPIKey.isEmpty
+        app.intervalsAPIKey = key
+        if isFirstKey { syncFullHistory() }
+    }
+
+    /// Première clé : un an d'historique d'un coup (même synchro que « Tout synchroniser »), pas 30 jours.
+    private func syncFullHistory() {
+        Task { await app.syncAll(context: context, profile: profile) }
+    }
+
+    /// Rappel activé : demande l'autorisation la première fois, puis reprogramme.
+    private func notificationToggled(_ isOn: Bool) {
+        app.dataVersion += 1
+        if isOn { askNotificationPermission() }
+    }
+
+    private func askNotificationPermission() {
+        Task {
+            await NotificationScheduler.requestAuthorizationIfNeeded()
+            await refreshNotificationStatus()
+            app.dataVersion += 1
+        }
     }
 
     private func refreshNotificationStatus() async {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         notificationsDenied = settings.authorizationStatus == .denied
+        notificationsUndetermined = settings.authorizationStatus == .notDetermined
     }
 
     #if DEBUG
@@ -277,7 +343,7 @@ private struct ProfileForm: View {
     @ViewBuilder
     private func mealRow(_ title: String, isOn: Binding<Bool>, minutes: Binding<Int>) -> some View {
         Toggle("Rappel \(title.lowercased())", isOn: isOn)
-            .onChange(of: isOn.wrappedValue) { app.dataVersion += 1 }
+            .onChange(of: isOn.wrappedValue) { _, isOn in notificationToggled(isOn) }
         if isOn.wrappedValue {
             DatePicker("Heure", selection: timeBinding(minutes), displayedComponents: .hourAndMinute)
         }
@@ -422,7 +488,7 @@ private struct ExportSection: View {
         } header: {
             Text("Mes données")
         } footer: {
-            Text("Toutes tes données restent sur ton iPhone. L'export contient santé quotidienne, séances, séries de muscu, repas, symptômes, activités hors sport, et les versions des formules utilisées.")
+            Text("Toutes tes données restent sur ton iPhone. L'export contient santé quotidienne (Apple Santé et Garmin), séances, séries de muscu, séances types, exercices et aliments créés, repas, objectifs, indisponibilités, blessures, chaussures, profil, symptômes, activités hors sport, et les versions des formules utilisées. CSV lisibles dans Excel en français (« ; » et virgule décimale).")
         }
     }
 }

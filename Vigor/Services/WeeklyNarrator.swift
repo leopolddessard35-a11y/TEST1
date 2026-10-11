@@ -12,8 +12,8 @@ enum WeeklyNarrator {
         var facts: [String] = []
         if let recovery = report.current.recovery { facts.append(String(format: "récupération moyenne %.0f/100", recovery)) }
         if let before = report.previous.recovery { facts.append(String(format: "semaine précédente %.0f", before)) }
-        if let sleep = report.current.sleepHours { facts.append(String(format: "sommeil moyen %.1f h", sleep)) }
-        facts.append(String(format: "entraînement %.1f h", review.doneHours))
+        if let sleep = report.current.sleepHours { facts.append("sommeil moyen \(sleep.oneDecimal) h") }
+        facts.append("entraînement \(review.doneHours.oneDecimal) h")
         facts.append("point fort : \(review.strongPoint)")
         facts.append("vigilance : \(review.vigilance)")
         facts.append("ajustement : \(review.adjustment)")

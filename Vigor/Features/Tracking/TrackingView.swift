@@ -191,7 +191,7 @@ struct JournalSection: View {
                         HStack {
                             StatTile(title: "Épisodes", value: "\(pattern.count)", caption: "\(pattern.recentCount) sur 14 j")
                             StatTile(title: "Intensité", value: "\(pattern.averageIntensity.oneDecimal) / 10")
-                            StatTile(title: "Apparition", value: pattern.averageOnset.map { String(format: "%.0f min", $0) } ?? "–")
+                            StatTile(title: "Apparition", value: pattern.averageOnset.map { String(format: "%.0f min", locale: Locale.current, $0) } ?? "–")
                         }
                         let episodes = symptoms.filter { $0.key == pattern.key }
                         if episodes.count >= 2 {
@@ -295,7 +295,7 @@ struct LifeSection: View {
                     SectionTitle(title: "Pourquoi c'est compté", symbol: "lightbulb")
                     Text("Une journée de rénovation, un déménagement ou 10 h debout fatiguent autant qu'une séance. Vigor les convertit en charge (≈ 20 / 35 / 50 points par heure selon l'intensité) et ajoute les pas au-delà de 12 000 : ta fatigue et le plan du jour en tiennent compte.")
                         .font(.footnote)
-                    Text(String(format: "Cette semaine : ≈ %.0f points de charge hors sport.", lifeLoad7)).font(.footnote.weight(.semibold))
+                    Text(String(format: "Cette semaine : ≈ %.0f points de charge hors sport.", locale: Locale.current, lifeLoad7)).font(.footnote.weight(.semibold))
                 }
             }
 

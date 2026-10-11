@@ -103,10 +103,15 @@ final class SyncService {
         self.lastSyncDate = cache.lastSyncDate
     }
 
-    /// Une synchro a-t-elle déjà réussi aujourd'hui ?
+    /// Une synchro a-t-elle déjà réussi aujourd'hui ? Après 4 h, seule une synchro faite après 4 h compte :
+    /// une ouverture à 0 h 30 n'empêche pas de relire la nuit au réveil.
     var hasSyncedToday: Bool {
         guard let lastSyncDate else { return false }
-        return calendar.isDate(lastSyncDate, inSameDayAs: now())
+        let current = now()
+        let today = calendar.startOfDay(for: current)
+        let cutoff = calendar.date(byAdding: .hour, value: 4, to: today) ?? today
+        // En pleine nuit (avant 4 h), une synchro depuis minuit suffit : pas de relecture à chaque ouverture.
+        return lastSyncDate >= (current < cutoff ? today : cutoff)
     }
 
     /// Récupère les dernières nuits et les enregistre.

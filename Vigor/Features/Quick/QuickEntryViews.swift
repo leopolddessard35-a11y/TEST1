@@ -289,7 +289,7 @@ struct LifeActivityForm: View {
                 Section {
                     let perHour: Double = intensity >= 3 ? 50 : (intensity == 2 ? 35 : 20)
                     let load: Double = Double(minutes) / 60 * perHour
-                    Text(String(format: "≈ %.0f points de charge ajoutés à ta fatigue (comme une séance de %@ en endurance).", load, (load / 50).hoursText))
+                    Text(String(format: "≈ %.0f points de charge ajoutés à ta fatigue (comme une séance de %@ en endurance).", locale: Locale.current, load, (load / 50).hoursText))
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }

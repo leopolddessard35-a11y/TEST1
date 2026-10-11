@@ -14,11 +14,14 @@ private final class RecordingStore: SleepStore {
 @MainActor
 struct SyncServiceTests {
     private let night = SleepRecord(day: Calendar.current.startOfDay(for: .now), hours: 7.5, bedtime: nil, wake: nil, source: "Test")
+    /// Aujourd'hui 9 h : les tests ne dépendent pas de l'heure à laquelle ils tournent (règle des 4 h).
+    private static let morning = Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: .now)!
 
     @Test func syncsAndStoresTimestamp() async throws {
         let store = RecordingStore()
         let cache = InMemorySyncCache()
-        let service = SyncService(primary: MockSleepProvider(nights: [night]), store: store, cache: cache)
+        let service = SyncService(primary: MockSleepProvider(nights: [night]), store: store, cache: cache,
+                                  now: { Self.morning })
         try await service.syncSleepData()
         #expect(store.saved == [night])
         #expect(cache.lastSyncDate != nil)
@@ -29,7 +32,7 @@ struct SyncServiceTests {
     @Test func skipsWhenAlreadySyncedToday() async throws {
         let store = RecordingStore()
         let service = SyncService(primary: MockSleepProvider(nights: [night]), store: store,
-                                  cache: InMemorySyncCache(lastSyncDate: .now))
+                                  cache: InMemorySyncCache(lastSyncDate: Self.morning), now: { Self.morning })
         try await service.syncSleepData()
         #expect(store.saved.isEmpty)
         try await service.syncSleepData(force: true)
@@ -44,6 +47,18 @@ struct SyncServiceTests {
         #expect(!service.hasSyncedToday)
         try await service.syncSleepData()
         #expect(store.saved.count == 1)
+    }
+
+    @Test func openingAfterMidnightDoesNotCountForTheMorning() {
+        let calendar = Calendar.current
+        let halfPastMidnight = calendar.date(bySettingHour: 0, minute: 30, second: 0, of: Self.morning)!
+        let atNight = SyncService(primary: MockSleepProvider(nights: [night]), store: RecordingStore(),
+                                  cache: InMemorySyncCache(lastSyncDate: halfPastMidnight),
+                                  now: { calendar.date(byAdding: .minute, value: 30, to: halfPastMidnight)! })
+        #expect(atNight.hasSyncedToday)
+        let atWake = SyncService(primary: MockSleepProvider(nights: [night]), store: RecordingStore(),
+                                 cache: InMemorySyncCache(lastSyncDate: halfPastMidnight), now: { Self.morning })
+        #expect(!atWake.hasSyncedToday)
     }
 
     @Test func fallsBackWhenPrimaryNotReady() async throws {
@@ -128,13 +143,13 @@ struct TrainingCalendarTests {
     @Test func monthGridStartsOnTheFirstWeekday() {
         let reference = DateComponents(calendar: .current, year: 2026, month: 10, day: 15).date!
         let days = TrainingCalendar.month(containing: reference, activities: [], workouts: [], unavailabilities: [],
-                                          planned: [], weekStatus: [])
+                                          planned: [], plans: [])
         #expect(days.compactMap { $0 }.count == 31)
         // Octobre 2026 commence un jeudi : 3 cases vides avec une semaine qui commence le lundi.
         var calendar = Calendar.current
         calendar.firstWeekday = 2
         let mondayFirst = TrainingCalendar.month(containing: reference, activities: [], workouts: [], unavailabilities: [],
-                                                 planned: [], weekStatus: [], calendar: calendar)
+                                                 planned: [], plans: [], calendar: calendar)
         #expect(mondayFirst.prefix(while: { $0 == nil }).count == 3)
     }
 }

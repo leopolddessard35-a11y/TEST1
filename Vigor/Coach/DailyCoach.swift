@@ -4,9 +4,10 @@ import Foundation
 
 enum SessionKind: String, Equatable {
     case rest, mobility, recovery, endurance, tempo, sweetSpot, threshold, vo2max, openers, longRide, race
-    case push, pull, legs, upper, fullBody
+    /// Musculation : une de tes séances types, choisie au démarrage.
+    case gym
 
-    var isStrength: Bool { [SessionKind.push, .pull, .legs, .upper, .fullBody].contains(self) }
+    var isStrength: Bool { self == .gym }
     var isIntense: Bool { [SessionKind.tempo, .sweetSpot, .threshold, .vo2max, .openers, .race].contains(self) }
     var isBike: Bool { !isStrength && self != .rest && self != .mobility }
 
@@ -23,11 +24,7 @@ enum SessionKind: String, Equatable {
         case .openers: "Déblocage"
         case .longRide: "Sortie longue"
         case .race: "Course"
-        case .push: "Push (pecs, épaules, triceps)"
-        case .pull: "Pull (dos, biceps)"
-        case .legs: "Legs (jambes)"
-        case .upper: "Haut du corps (Push + Pull)"
-        case .fullBody: "Full body"
+        case .gym: "Musculation"
         }
     }
 
@@ -39,7 +36,7 @@ enum SessionKind: String, Equatable {
         case .tempo, .sweetSpot, .threshold, .vo2max, .openers: "bolt.fill"
         case .longRide: "road.lanes"
         case .race: "flag.checkered"
-        case .push, .pull, .legs, .upper, .fullBody: "dumbbell.fill"
+        case .gym: "dumbbell.fill"
         }
     }
 }
@@ -128,6 +125,8 @@ struct DailyBrief: Equatable {
     var redSignals: [String] = []
     /// Règles de décision déclenchées, dans l'ordre.
     var rules: [String] = []
+    /// Séances déjà faites aujourd'hui.
+    var doneToday: [String] = []
 }
 
 struct PlannedSessionInput: Equatable {
@@ -153,6 +152,13 @@ struct DailyCoachInput {
     var externalPlan: [PlannedSessionInput] = []
     /// Séances placées aujourd'hui par l'organisateur de la semaine (prioritaires sur le plan type).
     var scheduledToday: [SessionPrescription]?
+    /// Séances déjà faites aujourd'hui (titres).
+    var doneToday: [String] = []
+    /// Heures d'entraînement d'hier (repère glucides de la veille).
+    var yesterdayTrainingHours: Double = 0
+    var weightGoal: WeightGoal = .gain
+    /// Écart calorique voulu (un déficit voulu n'est pas signalé comme un problème).
+    var calorieAdjustment: Double = 300
     var ftp: Double?
     var injuries: [InjuryStatus] = []
     var unavailableToday: UnavailabilityReason?
@@ -189,25 +195,28 @@ enum DailyCoach {
         }
 
         if week.kind == .race {
+            // Tout se cale sur le vrai jour de la course (dimanche par défaut).
+            let raceWeekday = week.raceDay.map { Calendar.current.component(.weekday, from: $0) } ?? 1
+            func offset(_ days: Int) -> Int { ((raceWeekday - 1 - days) % 7 + 7) % 7 + 1 }
             switch weekday {
-            case 1: return [SessionPrescription(kind: .race, minutes: 0, detail: "Jour J : petit-déjeuner riche en glucides 3 h avant, 60–90 g de glucides par heure pendant la course.")]
-            case 6: return [bike(.openers, minutes: 45, ftp: ftp, phase: week.phase)]
-            case 3, 5: return [bike(.endurance, minutes: 45, ftp: ftp, phase: week.phase)]
+            case raceWeekday: return [SessionPrescription(kind: .race, minutes: 0, detail: "Jour J : petit-déjeuner riche en glucides 3 h avant, 60–90 g de glucides par heure pendant la course.")]
+            case offset(1): return [bike(.openers, minutes: 45, ftp: ftp, phase: week.phase)]
+            case offset(3), offset(5): return [bike(.endurance, minutes: 45, ftp: ftp, phase: week.phase)]
             default: return [SessionPrescription(kind: .rest, minutes: 0, detail: "Repos, hydratation, sommeil.")]
             }
         }
 
         let intensityDays: [Int] = week.intensitySessions >= 2 ? [3, 5] : (week.intensitySessions == 1 ? [3] : [])
         if intensityDays.contains(weekday) {
-            sessions.append(bike(intensityKind(phase: week.phase, slot: intensityDays.firstIndex(of: weekday) ?? 0),
-                                 minutes: 75, ftp: ftp, phase: week.phase))
+            let kind = intensityKind(phase: week.phase, slot: intensityDays.firstIndex(of: weekday) ?? 0)
+            sessions.append(bike(kind, minutes: kind == .openers ? 45 : 75, ftp: ftp, phase: week.phase))
         } else if weekday == 7, week.longRideHours > 0 {
             sessions.append(bike(.longRide, minutes: Int(week.longRideHours * 60), ftp: ftp, phase: week.phase))
         } else {
-            // Le reste du volume en endurance, réparti sur dimanche, lundi et mercredi (jamais le jour Legs).
+            // Le reste du volume en endurance, réparti sur dimanche, lundi et mercredi.
             let intensityMinutes = Double(intensityDays.count) * 75
             let remaining = max(0, week.targetHours * 60 - week.longRideHours * 60 - intensityMinutes)
-            let enduranceDays = [1, 2, 4].filter { strength[$0] != .legs }
+            let enduranceDays = [1, 2, 4]
             if enduranceDays.contains(weekday), remaining >= 30 {
                 let minutes = min(90, Int(remaining / Double(enduranceDays.count) / 15) * 15)
                 if minutes >= 30 { sessions.append(bike(.endurance, minutes: minutes, ftp: ftp, phase: week.phase)) }
@@ -221,9 +230,10 @@ enum DailyCoach {
 
     static func strengthSchedule(count: Int) -> [Int: SessionKind] {
         switch count {
-        case 3...: [2: .push, 4: .pull, 6: .legs]
-        case 2: [2: .upper, 5: .legs]
-        case 1: [4: .fullBody]
+        // Jours proposés par défaut (lundi, mercredi, vendredi) : tu les déplaces dans « Ma semaine ».
+        case 3...: [2: .gym, 4: .gym, 6: .gym]
+        case 2: [2: .gym, 4: .gym]
+        case 1: [4: .gym]
         default: [:]
         }
     }
@@ -254,22 +264,14 @@ enum DailyCoach {
         case .threshold: detail = "4 × 8 min\(watts(ftp, 0.95, 1.05)), récup 4 min."
         case .vo2max: detail = "5 × 4 min\(watts(ftp, 1.06, 1.20)), récup 4 min."
         case .openers: detail = "45 min Z2 dont 3 × 1 min\(watts(ftp, 1.10, 1.20)) pour réveiller les jambes."
-        case .longRide: detail = "Zone 2\(watts(ftp, 0.56, 0.75)), idéalement en gravel. Teste ta nutrition de course : 60–90 g de glucides/h."
+        case .longRide: detail = "Zone 2\(watts(ftp, 0.56, 0.75)), idéalement sur le terrain de ta course. Teste ta nutrition de course : 60–90 g de glucides/h."
         default: detail = ""
         }
         return SessionPrescription(kind: kind, minutes: minutes, detail: detail)
     }
 
-    static func strengthSession(_ kind: SessionKind, sets: String = "3–4 séries", rpe: String = "RPE 8 (2 reps en réserve)") -> SessionPrescription {
-        let exercises: String
-        switch kind {
-        case .push: exercises = "Développé couché, développé militaire, élévations latérales, triceps"
-        case .pull: exercises = "Tractions ou tirage, rowing, face pull, curls"
-        case .legs: exercises = "Squat ou presse, fentes, hip thrust, mollets"
-        case .upper: exercises = "Développé couché, rowing, développé militaire, tirage vertical"
-        default: exercises = "Squat, développé couché, rowing, gainage"
-        }
-        return SessionPrescription(kind: kind, minutes: 60, detail: "\(exercises) · \(sets), \(rpe).")
+    static func strengthSession(_ kind: SessionKind) -> SessionPrescription {
+        SessionPrescription(kind: kind, minutes: 60, detail: "Une de tes séances types, au choix au démarrage.")
     }
 
     // MARK: Brief du jour
@@ -307,77 +309,88 @@ enum DailyCoach {
                                        detail: "\(readiness.score)/100 · \(readiness.level.label.lowercased())"))
         }
 
-        // Santé : nuit dernière.
+        // Santé : nuit dernière. Déjà comptée dans la récupération quand elle existe : pas de double peine.
+        let sleepInReadiness = input.readiness != nil
         if let sleep = input.lastNightSleep {
             if sleep < 6 {
                 noIntensity = true
-                factors.append(CoachFactor(domain: .health, name: "Nuit courte", impact: -0.2,
-                                           detail: String(format: "%.1f h : la puissance et la force maximales baissent après moins de 6 h", sleep)))
+                factors.append(CoachFactor(domain: .health, name: "Nuit courte", impact: sleepInReadiness ? 0 : -0.2,
+                                           detail: String(format: "%.1f h : la puissance et la force maximales baissent après moins de 6 h", locale: Locale.current, sleep)))
                 priorities.append((0.9, "Nuit < 6 h : sieste de 20 min si possible, coucher avancé d'1 h ce soir."))
             } else if sleep < input.sleepNeed - 1 {
-                factors.append(CoachFactor(domain: .health, name: "Nuit un peu courte", impact: -0.08,
-                                           detail: String(format: "%.1f h pour un besoin de %.1f h", sleep, input.sleepNeed)))
+                factors.append(CoachFactor(domain: .health, name: "Nuit un peu courte", impact: sleepInReadiness ? 0 : -0.08,
+                                           detail: String(format: "%.1f h pour un besoin de %.1f h", locale: Locale.current, sleep, input.sleepNeed)))
             } else {
-                factors.append(CoachFactor(domain: .health, name: "Bonne nuit", impact: 0.03,
-                                           detail: String(format: "%.1f h de sommeil", sleep)))
+                factors.append(CoachFactor(domain: .health, name: "Bonne nuit", impact: sleepInReadiness ? 0 : 0.03,
+                                           detail: String(format: "%.1f h de sommeil", locale: Locale.current, sleep)))
             }
         }
         if let debt = input.sleepDebt7, debt >= 5 {
             factors.append(CoachFactor(domain: .health, name: "Dette de sommeil", impact: -0.1,
-                                       detail: String(format: "%.1f h manquantes sur 14 nuits (les plus récentes pèsent plus)", debt)))
-            priorities.append((0.7, String(format: "Dette de sommeil de %.0f h : vise +45 min par nuit cette semaine.", debt)))
+                                       detail: String(format: "%.1f h manquantes sur 14 nuits (les plus récentes pèsent plus)", locale: Locale.current, debt)))
+            priorities.append((0.7, String(format: "Dette de sommeil de %.0f h : vise +45 min par nuit cette semaine.", locale: Locale.current, debt)))
         }
 
         // Entraînement : fatigue accumulée.
+        // Fatigue accumulée : déjà comptée dans la récupération quand elle existe.
         if let form = input.load?.form {
+            let counted = input.readiness != nil
             if form < -35 {
-                factors.append(CoachFactor(domain: .sport, name: "Fatigue très élevée", impact: -0.3, detail: String(format: "Forme %.0f", form)))
+                factors.append(CoachFactor(domain: .sport, name: "Fatigue très élevée", impact: counted ? 0 : -0.3, detail: "Forme \(form.noDecimal)"))
                 noIntensity = true
             } else if form < -25 {
-                factors.append(CoachFactor(domain: .sport, name: "Fatigue élevée", impact: -0.15, detail: String(format: "Forme %.0f", form)))
+                factors.append(CoachFactor(domain: .sport, name: "Fatigue élevée", impact: counted ? 0 : -0.15, detail: "Forme \(form.noDecimal)"))
             } else if form > 5 {
-                factors.append(CoachFactor(domain: .sport, name: "Fraîcheur", impact: 0.05, detail: String(format: "Forme +%.0f", form)))
+                factors.append(CoachFactor(domain: .sport, name: "Fraîcheur", impact: counted ? 0 : 0.05, detail: "Forme +\(form.noDecimal)"))
             }
         }
         if let ratio = input.acuteChronicRatio, ratio > 1.5 {
             factors.append(CoachFactor(domain: .sport, name: "Pic de charge", impact: -0.2,
-                                       detail: String(format: "Ratio 7 j / 28 j : %.2f (zone sûre ≤ 1,3)", ratio)))
+                                       detail: String(format: "Ratio 7 j / 28 j : %.2f (zone sûre ≤ 1,3)", locale: Locale.current, ratio)))
         }
 
-        // Entraînement : jambes encore fatiguées par la séance Legs.
+        // Entraînement : jambes encore fatiguées par la muscu du bas du corps.
         var legsRecent = false
         if let legs = input.lastLegsSession {
             let hours = input.today.timeIntervalSince(legs) / 3600
             if hours >= 0 && hours < 30 {
                 legsRecent = true
-                factors.append(CoachFactor(domain: .sport, name: "Séance Legs récente", impact: -0.05,
-                                           detail: String(format: "Il y a %.0f h : jambes encore entamées pour une séance intense", hours)))
+                factors.append(CoachFactor(domain: .sport, name: "Muscu des jambes récente", impact: -0.05,
+                                           detail: String(format: "Il y a %.0f h : jambes encore entamées pour une séance intense", locale: Locale.current, hours)))
             }
         }
 
         // Nutrition : la veille.
         var lowCarbs = false
-        if let yesterday = input.yesterdayNutrition, yesterday.kcal > 800, input.weightKg > 0 {
+        // Nutrition de la veille : seulement si la journée a vraiment été notée (≥ 60 % de la dépense).
+        let dayLogged = input.yesterdayNutrition.map { day in
+            day.kcal > 800 && (input.expenditure.map { day.kcal >= 0.6 * $0 } ?? true)
+        } ?? false
+        if let yesterday = input.yesterdayNutrition, dayLogged, input.weightKg > 0 {
             let carbsPerKg = yesterday.carbs / input.weightKg
             let proteinPerKg = yesterday.protein / input.weightKg
-            if let expenditure = input.expenditure, yesterday.kcal < expenditure - 500 {
+            // Un déficit voulu (objectif perte de poids) n'est signalé qu'au-delà de l'écart choisi.
+            let allowedDeficit: Double = 500 + max(0, -input.calorieAdjustment)
+            if let expenditure = input.expenditure, yesterday.kcal < expenditure - allowedDeficit {
                 let deficit = expenditure - yesterday.kcal
                 factors.append(CoachFactor(domain: .nutrition, name: "Déficit calorique hier", impact: -0.1,
-                                           detail: String(format: "−%.0f kcal par rapport à ta dépense", deficit)))
-                priorities.append((0.8, String(format: "Apport d'hier : −%.0f kcal vs ta dépense. Aujourd'hui, un apport un peu plus élevé soutient récupération et prise de muscle.", deficit)))
+                                           detail: "−\(deficit.noDecimal) kcal par rapport à ta dépense"))
+                priorities.append((0.8, "Apport d'hier : −\(deficit.noDecimal) kcal vs ta dépense. Aujourd'hui, un apport un peu plus élevé soutient la récupération."))
             }
-            if carbsPerKg < 5 {
+            // Repère glucides de la veille selon l'entraînement réellement fait hier (Burke 2011), 20 % de marge.
+            let carbFloor = NutritionPlanner.carbsPerKg(trainingHours: input.yesterdayTrainingHours) * 0.8
+            if carbsPerKg < carbFloor {
                 lowCarbs = true
                 factors.append(CoachFactor(domain: .nutrition, name: "Glucides bas hier", impact: -0.05,
-                                           detail: String(format: "%.1f g/kg : réserves de glycogène probablement incomplètes", carbsPerKg)))
+                                           detail: "\(carbsPerKg.oneDecimal) g/kg pour \(input.yesterdayTrainingHours.oneDecimal) h d'entraînement : réserves de glycogène probablement incomplètes"))
             } else {
                 factors.append(CoachFactor(domain: .nutrition, name: "Glucides OK hier", impact: 0,
-                                           detail: String(format: "%.1f g/kg", carbsPerKg)))
+                                           detail: "\(carbsPerKg.oneDecimal) g/kg"))
             }
             if proteinPerKg < 1.6 {
                 factors.append(CoachFactor(domain: .nutrition, name: "Protéines basses hier", impact: -0.03,
-                                           detail: String(format: "%.1f g/kg (objectif ≥ 1,6)", proteinPerKg)))
-                priorities.append((0.6, String(format: "Protéines : vise %.0f g aujourd'hui, en 4 prises de 30–40 g.", input.weightKg * 1.8)))
+                                           detail: "\(proteinPerKg.oneDecimal) g/kg (objectif ≥ 1,6)"))
+                priorities.append((0.6, "Protéines : vise \((input.weightKg * 1.8).noDecimal) g aujourd'hui, en 4 prises de 30–40 g."))
             }
         }
 
@@ -385,11 +398,11 @@ enum DailyCoach {
         if input.lifeLoadYesterday >= 40 {
             let impact: Double = input.lifeLoadYesterday >= 80 ? -0.15 : -0.08
             factors.append(CoachFactor(domain: .sport, name: "Journée physique hier", impact: impact,
-                                       detail: String(format: "Activité hors sport ≈ %.0f TSS (travaux, debout…)", input.lifeLoadYesterday)))
+                                       detail: "Activité hors sport ≈ \(input.lifeLoadYesterday.noDecimal) points de charge (travaux, debout…)"))
         }
         if let steps = input.stepsYesterday, steps >= 20_000 {
             factors.append(CoachFactor(domain: .sport, name: "Beaucoup de pas hier", impact: -0.05,
-                                       detail: String(format: "%.0f pas", steps)))
+                                       detail: String(format: "%.0f pas", locale: Locale.current, steps)))
         }
         if !input.recurrentLegSymptoms.isEmpty {
             factors.append(CoachFactor(domain: .health, name: "Symptôme récurrent", impact: -0.05,
@@ -402,7 +415,7 @@ enum DailyCoach {
             noIntensity = true
             let impact: Double = signal.restingHRUp ? -0.35 : -0.2
             factors.append(CoachFactor(domain: .health, name: "Respiration nocturne élevée", impact: impact,
-                                       detail: String(format: "%.1f resp/min (normale %.1f)%@", signal.latest, signal.baseline,
+                                       detail: String(format: "%.1f resp/min (normale %.1f)%@", locale: Locale.current, signal.latest, signal.baseline,
                                                       signal.restingHRUp ? " + FC de repos en hausse" : "")))
             priorities.append((1.0, signal.restingHRUp
                 ? "Respiration et FC de repos en hausse : possible infection qui commence. Pas d'intensité, hydrate-toi, repos si symptômes."
@@ -420,21 +433,22 @@ enum DailyCoach {
         // Signaux rouges, décrits factuellement.
         var redSignals: [String] = []
         if let z = input.hrvZ, z < -1 {
-            redSignals.append(String(format: "VFC %+.0f %% vs ta base", input.hrvDeltaPercent ?? 0))
+            let delta = input.hrvDeltaPercent ?? 0
+            redSignals.append("VFC 7 j \(delta >= 0 ? "+" : "−")\(abs(delta).noDecimal) % vs ta base")
         }
         if let sleep = input.lastNightSleep, sleep < 6 {
             redSignals.append("sommeil \(sleep.hoursText)")
         } else if let performance = input.sleepPerformance, performance < 0.75 {
-            redSignals.append(String(format: "sommeil à %.0f %% du besoin", performance * 100))
+            redSignals.append(String(format: "sommeil à %.0f %% du besoin", locale: Locale.current, performance * 100))
         }
         if let ratio = input.acuteChronicRatio, ratio > 1.5 {
-            redSignals.append(String(format: "ratio de charge %.2f", ratio))
+            redSignals.append(String(format: "ratio de charge %.2f", locale: Locale.current, ratio))
         }
         if let form = input.load?.form, form < -30 {
-            redSignals.append(String(format: "forme %.0f", form))
+            redSignals.append(String(format: "forme %.0f", locale: Locale.current, form))
         }
         if let signal = input.respiratory, signal.isWarning {
-            redSignals.append(String(format: "respiration %+.1f/min", signal.delta))
+            redSignals.append(String(format: "respiration %+.1f/min", locale: Locale.current, signal.delta))
         }
         if let pain = input.painToday {
             redSignals.append(pain)
@@ -448,7 +462,7 @@ enum DailyCoach {
         else if capacity < 0.85 || noIntensity { verdict = .adjust }
         else if capacity >= 1.0, input.readiness?.level == .ready { verdict = .push }
         else { verdict = .go }
-        rules.append(String(format: "Capacité estimée %.0f %% → %@", capacity * 100, verdict.label.lowercased()))
+        rules.append(String(format: "Capacité estimée %.0f %% → %@", locale: Locale.current, capacity * 100, verdict.label.lowercased()))
 
         if let reason = input.unavailableToday, [UnavailabilityReason.illness, .injury].contains(reason) {
             verdict = .rest
@@ -507,7 +521,7 @@ enum DailyCoach {
             priorities.append((0.75, "Recharge en glucides avant ta séance : tes réserves sont basses depuis hier."))
         }
         if adapted.contains(where: { $0.kind.isStrength }) || intense || bikeMinutes >= 90 {
-            fueling.append(String(format: "Après : %.0f–%.0f g de protéines + glucides dans les 2 h.", input.weightKg * 0.3, input.weightKg * 0.4))
+            fueling.append(String(format: "Après : %.0f–%.0f g de protéines + glucides dans les 2 h.", locale: Locale.current, input.weightKg * 0.3, input.weightKg * 0.4))
         }
 
         if !changes.isEmpty { priorities.append((0.95, changes[0])) }
@@ -516,7 +530,7 @@ enum DailyCoach {
         return DailyBrief(
             verdict: verdict,
             capacity: capacity,
-            headline: headline(verdict: verdict, redSignals: redSignals, factors: factors, adapted: adapted),
+            headline: headline(verdict: verdict, redSignals: redSignals, factors: factors, adapted: adapted, doneToday: input.doneToday),
             planned: planned,
             adapted: adapted,
             changes: changes,
@@ -526,11 +540,12 @@ enum DailyCoach {
             references: [Science.kiviniemi2007, Science.fullagar2015, Science.burke2011, Science.jeukendrup2014,
                          Science.mountjoy2018, Science.wilson2012, Science.morton2018],
             redSignals: redSignals,
-            rules: rules)
+            rules: rules,
+            doneToday: input.doneToday)
     }
 
     static func external(from planned: PlannedSessionInput, ftp: Double?) -> SessionPrescription {
-        if planned.sport == .strength { return SessionPrescription(kind: .fullBody, minutes: planned.minutes, detail: planned.name) }
+        if planned.sport == .strength { return SessionPrescription(kind: .gym, minutes: planned.minutes, detail: planned.name) }
         // On déduit l'intensité de la charge prévue : IF = √(TSS / (heures × 100)).
         var kind: SessionKind = .endurance
         if let tss = planned.tss, planned.minutes > 0 {
@@ -554,10 +569,10 @@ enum DailyCoach {
         // Musculation.
         if session.kind.isStrength {
             var result = session
-            if session.kind == .legs && hamstring {
-                result = SessionPrescription(kind: .legs, minutes: 50,
-                                             detail: "Presse, leg extension, hip thrust léger, mollets. Pas de soulevé de terre ni de leg curl lourd (ischio).")
-                changes.append("Legs adaptée à ta blessure aux ischios.")
+            if hamstring {
+                result = SessionPrescription(kind: session.kind, minutes: session.minutes,
+                                             detail: session.detail + " Ischios blessés : pas de soulevé de terre ni de leg curl lourd.")
+                changes.append("Muscu : évite les exercices lourds pour les ischios (blessure déclarée).")
             }
             switch verdict {
             case .rest:
@@ -594,14 +609,14 @@ enum DailyCoach {
                 return [bike(.endurance, minutes: 60, ftp: ftp, phase: phase)]
             }
             if session.kind.isIntense && legsRecent {
-                changes.append("\(session.kind.label) : séance Legs il y a moins de 30 h, vise le bas des fourchettes de watts (ou décale à demain).")
+                changes.append("\(session.kind.label) : muscu des jambes il y a moins de 30 h, vise le bas des fourchettes de watts (ou décale à demain).")
             }
             if verdict == .adjust && session.kind.isIntense {
                 changes.append("\(session.kind.label) : une répétition de moins, au bas de la fourchette de watts.")
             }
             if legsRecent && session.kind == .longRide {
                 let shorter = Int(Double(session.minutes) * 0.85 / 15) * 15
-                changes.append("Séance Legs il y a moins de 30 h : sortie longue réduite à \((Double(shorter) / 60).hoursText), strictement en zone 2.")
+                changes.append("Muscu des jambes il y a moins de 30 h : sortie longue réduite à \((Double(shorter) / 60).hoursText), strictement en zone 2.")
                 return [SessionPrescription(kind: .longRide, minutes: shorter, detail: session.detail)]
             }
             if verdict == .adjust && session.kind == .longRide {
@@ -615,7 +630,8 @@ enum DailyCoach {
     }
 
     /// Phrase factuelle : les signaux (chiffrés) puis la séance retenue. Jamais de jugement.
-    private static func headline(verdict: Verdict, redSignals: [String], factors: [CoachFactor], adapted: [SessionPrescription]) -> String {
+    private static func headline(verdict: Verdict, redSignals: [String], factors: [CoachFactor], adapted: [SessionPrescription],
+                                 doneToday: [String] = []) -> String {
         let session = adapted.first.map { $0.title.lowercased() } ?? "repos"
         if adapted.isEmpty {
             // Rien de placé aujourd'hui : l'état du jour, sans séance à prescrire.
@@ -623,6 +639,9 @@ enum DailyCoach {
                 ? (factors.filter { $0.impact > 0 }.map { $0.detail }.prefix(2).joined(separator: ", "))
                 : redSignals.prefix(3).joined(separator: ", ")
             let start = context.isEmpty ? "Indicateurs dans ta normale" : context
+            if let done = doneToday.first {
+                return "Séance faite (\(done)) : place à la récupération, protéines et glucides au prochain repas."
+            }
             switch verdict {
             case .rest, .easy: return "\(start) : journée à ménager, rien de prévu aujourd'hui."
             default: return "\(start) : pas de séance prévue aujourd'hui."

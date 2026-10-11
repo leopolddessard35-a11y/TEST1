@@ -44,7 +44,7 @@ struct ReadinessDetailView: View {
                     }
                 } else {
                     EmptyStateCard(title: "Score indisponible",
-                                   message: "Il faut au moins 14 nuits de VFC ou ta nuit de sommeil. Synchronise Apple Santé et Intervals.icu.",
+                                   message: "Calibrage en cours : il faut 7 jours de FC au repos ou 14 nuits de VFC pour comparer à ta normale. En attendant, regarde ton score de sommeil.",
                                    symbol: "heart.text.square")
                 }
 
@@ -54,7 +54,8 @@ struct ReadinessDetailView: View {
                             SectionTitle(title: "30 derniers jours", symbol: "calendar")
                             Chart(history, id: \.date) { point in
                                 BarMark(x: .value("Jour", point.date, unit: .day), y: .value("Score", point.value))
-                                    .foregroundStyle(point.value >= 70 ? Theme.recovery : (point.value >= 45 ? Theme.nutrition : Theme.warning))
+                                    // Mêmes zones que le score du jour : vert ≥ 67, jaune 34–66, rouge < 34.
+                                    .foregroundStyle(point.value >= 67 ? Theme.recovery : (point.value >= 34 ? Theme.nutrition : Theme.warning))
                                     .cornerRadius(3)
                             }
                             .chartYScale(domain: 0...100)
@@ -130,7 +131,7 @@ struct LoadDetailView: View {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                     StatTile(title: "Condition (CTL)", value: load.last?.ctl.noDecimal ?? "–", caption: "moyenne 42 j")
                     StatTile(title: "Fatigue (ATL)", value: load.last?.atl.noDecimal ?? "–", caption: "moyenne 7 j")
-                    StatTile(title: "Forme (TSB)", value: load.last?.form.noDecimal ?? "–", caption: "−10 à −30 : progression")
+                    StatTile(title: "Forme (TSB)", value: load.last?.form.noDecimal ?? "–", caption: "−10 à −25 : progression")
                     StatTile(title: "Progression 7 j", value: TrainingLoad.rampRate(load).map { $0.decimals(1, signed: true) } ?? "–", caption: "repère : ≤ +5")
                     StatTile(title: "Ratio aigu/chronique", value: chronic > 0 ? (acute / chronic).decimals(2) : "–", caption: "zone sûre : 0,8–1,3")
                     StatTile(title: "Monotonie", value: monotony.map { $0.oneDecimal } ?? "–", caption: "repère : < 2")
@@ -159,7 +160,7 @@ struct LoadDetailView: View {
                                 }
                                 .font(.subheadline.monospacedDigit())
                             }
-                            Text(String(format: "TSS moyen par jour. La charge hors sport (travaux, journées debout, pas > 12 000) compte : %.0f TSS sur 7 jours.", lifeLoad7))
+                            Text(String(format: "TSS moyen par jour. La charge hors sport (travaux, journées debout, pas > 12 000) compte : %.0f TSS sur 7 jours.", locale: Locale.current, lifeLoad7))
                                 .font(.caption2).foregroundStyle(.secondary)
                         }
                     }
@@ -181,7 +182,7 @@ struct LoadDetailView: View {
                                 HStack {
                                     Text(week.weekStart.formatted(.dateTime.day().month(.abbreviated))).frame(maxWidth: .infinity, alignment: .leading)
                                     Text(week.bikeHours.hoursText).frame(width: 54)
-                                    Text(String(format: "%.0f km", week.runKm)).frame(width: 54)
+                                    Text(String(format: "%.0f km", locale: Locale.current, week.runKm)).frame(width: 54)
                                     Text("\((week.tonnage / 1000).oneDecimal) t").frame(width: 54)
                                     Text(week.lifeHours.hoursText).frame(width: 64)
                                 }
@@ -331,7 +332,7 @@ struct WeekDetailView: View {
                     StatTile(title: "Charge visée", value: "\(week.targetTSS.noDecimal) TSS")
                     StatTile(title: "Sortie longue", value: week.longRideHours > 0 ? week.longRideHours.hoursText : "–")
                     StatTile(title: "Séances intenses", value: "\(week.intensitySessions)")
-                    StatTile(title: "Muscu PPL", value: "\(week.strengthSessions)×")
+                    StatTile(title: "Muscu", value: "\(week.strengthSessions)×")
                     StatTile(title: "Jours disponibles", value: "\(week.availableDays)/7")
                 }
                 if !week.notes.isEmpty {

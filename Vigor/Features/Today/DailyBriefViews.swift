@@ -168,7 +168,7 @@ private struct FactorRow: View {
                 HStack {
                     Text(factor.name).font(.subheadline.weight(.medium))
                     Spacer()
-                    Text(factor.impact == 0 ? "neutre" : String(format: "%+.0f %%", factor.impact * 100))
+                    Text(factor.impact == 0 ? "neutre" : String(format: "%+.0f %%", locale: Locale.current, factor.impact * 100))
                         .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 }
                 Text(factor.detail).font(.caption).foregroundStyle(.secondary)

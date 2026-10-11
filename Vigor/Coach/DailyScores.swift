@@ -205,8 +205,10 @@ enum WeeklyReportBuilder {
         summary.load = days.reduce(0) { $0 + $1.load }
         summary.kcal = Stats.mean(days.compactMap(\.kcal))
         summary.protein = Stats.mean(days.compactMap(\.protein))
-        let weights = days.compactMap(\.weight)
-        if let first = weights.first, let last = weights.last, weights.count >= 2 { summary.weightChange = last - first }
+        // Tendance lissée plutôt que deux pesées brutes (±1 kg d'eau d'un jour à l'autre).
+        let weights: [DayValue] = days.compactMap { day in day.weight.map { DayValue(date: day.date, value: $0) } }
+        let trend = Stats.exponentialTrend(weights)
+        if let first = trend.first, let last = trend.last, weights.count >= 2 { summary.weightChange = last.value - first.value }
         let withRecovery = days.compactMap { day in day.recovery.map { (date: day.date, recovery: $0) } }
         summary.bestDay = withRecovery.max { $0.recovery < $1.recovery }
         summary.worstDay = withRecovery.min { $0.recovery < $1.recovery }
@@ -218,31 +220,31 @@ enum WeeklyReportBuilder {
         if let now = current.recovery, let before = previous.recovery {
             let delta = now - before
             if abs(delta) >= 3 {
-                lines.append(String(format: "Récupération moyenne %@ de %.0f points (%.0f → %.0f).", delta > 0 ? "en hausse" : "en baisse", abs(delta), before, now))
+                lines.append(String(format: "Récupération moyenne %@ de %.0f points (%.0f → %.0f).", locale: Locale.current, delta > 0 ? "en hausse" : "en baisse", abs(delta), before, now))
             } else {
-                lines.append(String(format: "Récupération stable autour de %.0f.", now))
+                lines.append(String(format: "Récupération stable autour de %.0f.", locale: Locale.current, now))
             }
         }
         if previous.load > 0 {
             let change = (current.load / previous.load - 1) * 100
             if change > 10 {
-                lines.append(String(format: "Charge en hausse de %.0f %% : surveille la fatigue la semaine prochaine.", change))
+                lines.append(String(format: "Charge en hausse de %.0f %% : surveille la fatigue la semaine prochaine.", locale: Locale.current, change))
             } else if change < -25 {
-                lines.append(String(format: "Charge en baisse de %.0f %% : semaine de récupération ou de coupure.", -change))
+                lines.append(String(format: "Charge en baisse de %.0f %% : semaine de récupération ou de coupure.", locale: Locale.current, -change))
             }
         }
         if let performance = current.sleepPerformance {
             if performance < 0.85 {
-                lines.append(String(format: "Sommeil à %.0f %% de ton besoin : c'est le levier n° 1 de la semaine prochaine.", performance * 100))
+                lines.append(String(format: "Sommeil à %.0f %% de ton besoin : c'est le levier n° 1 de la semaine prochaine.", locale: Locale.current, performance * 100))
             } else if performance >= 0.95 {
-                lines.append(String(format: "Excellent sommeil : %.0f %% de ton besoin couvert.", performance * 100))
+                lines.append(String(format: "Excellent sommeil : %.0f %% de ton besoin couvert.", locale: Locale.current, performance * 100))
             }
         }
         if let best = current.bestDay, let worst = current.worstDay, best.recovery - worst.recovery >= 20 {
             lines.append("Meilleure récup le \(best.date.formatted(.dateTime.weekday(.wide))), la plus basse le \(worst.date.formatted(.dateTime.weekday(.wide))) : regarde ce qui s'est passé la veille.")
         }
         if let change = current.weightChange, abs(change) >= 0.2 {
-            lines.append(String(format: "Poids : %+.1f kg sur la semaine.", change))
+            lines.append(String(format: "Poids : %+.1f kg sur la semaine.", locale: Locale.current, change))
         }
         return lines
     }
@@ -254,7 +256,7 @@ enum ClockTime {
     static func text(minutes: Int, calendar: Calendar = .current, reference: Date = .now) -> String {
         let normalized = ((minutes % (24 * 60)) + 24 * 60) % (24 * 60)
         guard let date = calendar.date(bySettingHour: normalized / 60, minute: normalized % 60, second: 0, of: reference) else {
-            return String(format: "%02d:%02d", normalized / 60, normalized % 60)
+            return String(format: "%02d:%02d", locale: Locale.current, normalized / 60, normalized % 60)
         }
         return date.formatted(.dateTime.hour().minute())
     }

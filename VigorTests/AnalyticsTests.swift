@@ -178,7 +178,7 @@ struct RobustAndDecisionTests {
         input.hrvDeltaPercent = -14
         let rest = DailyCoach.brief(input)
         #expect(rest.verdict == .rest)
-        #expect(rest.headline.contains("VFC -14 %") || rest.headline.contains("VFC −14 %") || rest.headline.contains("-14"))
+        #expect(rest.headline.contains("−14 %"))
     }
 
     @Test func experimentEffect() {

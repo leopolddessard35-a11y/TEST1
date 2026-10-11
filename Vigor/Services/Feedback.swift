@@ -28,9 +28,9 @@ final class NotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        // Fin de repos : l'écran de séance joue déjà son et vibration, la bannière suffit.
+        // Fin de repos : l'écran de séance affiche déjà son bandeau, son et vibration : pas de doublon.
         if notification.request.identifier == "vigor.rest" {
-            completionHandler([.banner, .list])
+            completionHandler([.list])
         } else {
             completionHandler([.banner, .sound, .list])
         }

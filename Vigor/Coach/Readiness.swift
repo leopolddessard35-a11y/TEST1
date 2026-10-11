@@ -75,11 +75,13 @@ enum ReadinessCalculator {
             let ratio = hours / max(sleepNeedHours, 1)
             // Même pente que la durée du score de sommeil (SleepScoreCalculator) : −25 points par 10 % manquants.
             let score = clamp(ratio >= 1 ? 100 : 100 - (1 - ratio) * 250)
-            let detail = String(format: "%.1f h dormies (besoin : %.1f h)", hours, sleepNeedHours)
+            let detail = String(format: "%.1f h dormies (besoin : %.1f h)", locale: Locale.current, hours, sleepNeedHours)
             weighted.append((ReadinessComponent(name: "Sommeil", score: score, detail: detail), 0.25))
         }
 
-        guard !weighted.isEmpty else { return nil }
+        // Sans VFC ni FC au repos (calibrage des premiers jours), la « récupération » ne serait qu'un score de sommeil :
+        // on n'affiche rien plutôt qu'un doublon trompeur.
+        guard weighted.contains(where: { $0.component.name != "Sommeil" }) else { return nil }
         let totalWeight = weighted.reduce(0) { $0 + $1.weight }
         var score = weighted.reduce(0) { $0 + $1.component.score * $1.weight } / totalWeight
 
@@ -95,7 +97,7 @@ enum ReadinessCalculator {
             components.append(ReadinessComponent(
                 name: "Fatigue d'entraînement",
                 score: clamp(100 + form * 2),
-                detail: String(format: "Forme %.0f : fatigue accumulée élevée (−%.0f points)", form, penalty),
+                detail: String(format: "Forme %.0f : fatigue accumulée élevée (−%.0f points)", locale: Locale.current, form, penalty),
                 penalty: penalty))
         }
 
@@ -121,7 +123,7 @@ enum ReadinessCalculator {
         let z = (blended - center) / spread
         let deltaPercent = (exp(log(last.value) - center) - 1) * 100
 
-        let detail = String(format: "%.0f ms cette nuit · %+.0f %% vs ta base (%.0f–%.0f ms)",
+        let detail = String(format: "%.0f ms cette nuit · %+.0f %% vs ta base (%.0f–%.0f ms)", locale: Locale.current,
                             last.value, deltaPercent, exp(center - spread), exp(center + spread))
         return ReadinessComponent(name: "VFC", score: clamp(60 + 22 * z), detail: detail)
     }
@@ -137,7 +139,7 @@ enum ReadinessCalculator {
         guard let center = Robust.median(samples) else { return nil }
         let spread = max(Robust.mad(samples) ?? 0, 1)
         let z = (latest.value - center) / spread
-        let detail = String(format: "%.0f bpm · %+.0f bpm vs ta base (%.0f)", latest.value, latest.value - center, center)
+        let detail = String(format: "%.0f bpm · %+.0f bpm vs ta base (%.0f)", locale: Locale.current, latest.value, latest.value - center, center)
         return ReadinessComponent(name: "FC au repos", score: clamp(60 - 15 * z), detail: detail)
     }
 

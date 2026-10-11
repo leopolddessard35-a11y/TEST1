@@ -68,7 +68,17 @@ enum MetricKind: String, Identifiable, CaseIterable {
     }
 
     func series(from wellness: [DailyWellness]) -> [DayValue] {
-        wellness.compactMap { record in
+        // Poids et VO2max : une seule source sur la courbe (Apple Santé / saisie s'il y en a assez, sinon Garmin).
+        if self == .weight || self == .vo2max {
+            let apple: [DayValue] = wellness.compactMap { record in
+                (self == .weight ? record.weightKg : record.vo2Max).map { DayValue(date: record.day, value: $0) }
+            }
+            let garmin: [DayValue] = wellness.compactMap { record in
+                (self == .weight ? record.weightKgGarmin : record.vo2MaxGarmin).map { DayValue(date: record.day, value: $0) }
+            }
+            return apple.count >= 4 || garmin.count < apple.count ? apple : garmin
+        }
+        return wellness.compactMap { record in
             let value: Double?
             switch self {
             case .sleep: value = record.anySleepHours
@@ -104,7 +114,7 @@ enum MetricKind: String, Identifiable, CaseIterable {
         case .sleep: "Via le score de sommeil, 25 % du score de récupération. Une dette de plus de 5 h sur 7 jours déclenche une alerte du coach."
         case .hrv: "50 % du score de récupération : la nuit dernière (70 %) et la tendance 7 jours (30 %), en log, comparées à tes 60 derniers jours. La tendance sur 7 jours, croisée avec la FC de repos, sert à détecter le surmenage."
         case .restingHR: "25 % du score de récupération : dernière valeur comparée à ta normale sur 60 jours (médiane et écart robuste)."
-        case .weight: "La tendance sert à piloter la prise de masse (+0,25 à 0,5 %/semaine) et à mesurer ta dépense énergétique réelle."
+        case .weight: "La tendance sert à suivre ton objectif de poids (prise : +0,25 à 0,5 %/semaine) et à mesurer ta dépense énergétique réelle."
         case .respiration: "Comparée à ta normale des 60 derniers jours (médiane et écart robuste). Au-delà de +1 resp/min (surtout avec une FC de repos en hausse), le coach supprime l'intensité et t'alerte."
         case .vo2max: "Indicateur de progression de fond : elle doit monter pendant les phases Foncier et Développement."
         }

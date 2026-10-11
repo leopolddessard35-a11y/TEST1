@@ -131,15 +131,23 @@ struct SetupChecklistCard: View {
     @Environment(SyncService.self) private var sync
     @Query private var profiles: [AthleteProfile]
     @Query private var routines: [WorkoutRoutine]
-    /// Une seule nuit suffit à prouver qu'Apple Santé est branchée.
+    /// Une seule nuit Apple Santé suffit à prouver qu'Apple Santé est branchée (pas une nuit Garmin).
     @Query(SetupChecklistCard.sleepRecordDescriptor) private var sleepRecords: [DailyWellness]
+    /// Une pesée synchronisée ou saisie remplace le poids du profil.
+    @Query(SetupChecklistCard.weightRecordDescriptor) private var weightRecords: [DailyWellness]
     @AppStorage("setup.dismissed") private var dismissed = false
     /// Lue dans le trousseau à l'apparition (et après chaque synchro), pas à chaque rendu.
     @State private var hasIntervalsKey = false
     let onOpenSettings: () -> Void
 
     static var sleepRecordDescriptor: FetchDescriptor<DailyWellness> {
-        var descriptor = FetchDescriptor<DailyWellness>(predicate: #Predicate { $0.sleepHours != nil || $0.sleepHoursGarmin != nil })
+        var descriptor = FetchDescriptor<DailyWellness>(predicate: #Predicate { $0.sleepHours != nil })
+        descriptor.fetchLimit = 1
+        return descriptor
+    }
+
+    static var weightRecordDescriptor: FetchDescriptor<DailyWellness> {
+        var descriptor = FetchDescriptor<DailyWellness>(predicate: #Predicate { $0.weightKg != nil || $0.weightKgGarmin != nil })
         descriptor.fetchLimit = 1
         return descriptor
     }
@@ -209,9 +217,10 @@ struct SetupChecklistCard: View {
             && (profile?.raceDate ?? .distantPast) > .now
         return [
             Step(title: "Objectif et date de course", done: hasRace, inSettings: true),
-            Step(title: "Taille et poids", done: (profile?.heightCm ?? 0) > 0 && (profile?.weightKg ?? 0) > 0, inSettings: true),
-            Step(title: "FTP (même approximative)", done: (profile?.ftp ?? 0) > 0, inSettings: true),
-            Step(title: "Apple Santé synchronisée", done: sync.lastSyncDate != nil || !sleepRecords.isEmpty),
+            Step(title: "Taille et poids",
+                 done: (profile?.heightCm ?? 0) > 0 && ((profile?.weightKg ?? 0) > 0 || !weightRecords.isEmpty), inSettings: true),
+            Step(title: "FTP (si capteur de puissance)", done: (profile?.ftp ?? 0) > 0, optional: true, inSettings: true),
+            Step(title: "Apple Santé synchronisée", done: !sleepRecords.isEmpty),
             Step(title: "Garmin via Intervals.icu", done: hasIntervalsKey, optional: true, inSettings: true),
             Step(title: "Programme de muscu (Sport → Musculation)", done: !routines.isEmpty, optional: true)
         ]

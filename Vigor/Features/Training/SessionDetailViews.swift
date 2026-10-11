@@ -26,16 +26,16 @@ struct ActivityDetailView: View {
             VStack(spacing: 12) {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                     StatTile(title: "Durée", value: (activity.durationSeconds / 3600).hoursText)
-                    StatTile(title: "Distance", value: activity.distanceMeters.map { String(format: "%.1f km", $0 / 1000) } ?? "–")
+                    StatTile(title: "Distance", value: activity.distanceMeters.map { String(format: "%.1f km", locale: Locale.current, $0 / 1000) } ?? "–")
                     StatTile(title: "Charge", value: "\(tss.noDecimal) TSS")
                     StatTile(title: "Puissance", value: activity.averagePower.map { "\($0.noDecimal) W" } ?? "–",
                              caption: activity.normalizedPower.map { "NP \($0.noDecimal) W" } ?? "")
                     StatTile(title: "FC moyenne", value: activity.averageHeartRate.map { "\($0.noDecimal) bpm" } ?? "–")
-                    StatTile(title: "Intensité", value: intensity.map { String(format: "IF %.2f", $0) } ?? "–")
+                    StatTile(title: "Intensité", value: intensity.map { String(format: "IF %.2f", locale: Locale.current, $0) } ?? "–")
                     StatTile(title: "Cadence", value: activity.averageCadence.map { $0.noDecimal } ?? "–",
                              caption: activity.sport == .running ? "pas/min" : "tr/min")
                     StatTile(title: "Dénivelé +", value: activity.elevationGain.map { "\($0.noDecimal) m" } ?? "–")
-                    StatTile(title: "Dérive cardiaque", value: activity.decouplingPercent.map { String(format: "%.1f %%", $0) } ?? "–",
+                    StatTile(title: "Dérive cardiaque", value: activity.decouplingPercent.map { String(format: "%.1f %%", locale: Locale.current, $0) } ?? "–",
                              caption: "repère : < 5 %")
                 }
 
@@ -56,8 +56,8 @@ struct ActivityDetailView: View {
 
                 if let drift = activity.decouplingPercent {
                     ExplanationCard(title: "Dérive cardiaque", symbol: "heart.text.square", text: drift < 5
-                        ? String(format: "%.1f %% : ta FC reste stable sur la durée. Ton endurance aérobie est solide à cette intensité.", drift)
-                        : String(format: "%.1f %% : ta FC monte en fin de séance à effort égal. Base aérobie à consolider, ou hydratation / glucides insuffisants. C'est le meilleur indicateur de progression sans chrono : il doit baisser au fil des semaines.", drift))
+                        ? String(format: "%.1f %% : ta FC reste stable sur la durée. Ton endurance aérobie est solide à cette intensité.", locale: Locale.current, drift)
+                        : String(format: "%.1f %% : ta FC monte en fin de séance à effort égal. Base aérobie à consolider, ou hydratation / glucides insuffisants. C'est le meilleur indicateur de progression sans chrono : il doit baisser au fil des semaines.", locale: Locale.current, drift))
                 }
 
                 GlassCard {
@@ -106,6 +106,8 @@ struct ActivityDetailView: View {
                 dismiss()
                 Task { @MainActor in
                     try? await Task.sleep(for: .milliseconds(400))
+                    // Retenue : une séance importée supprimée ne revient pas à la prochaine synchro.
+                    DataStore.markDeleted(activity: target)
                     context.delete(target)
                     try? context.save()
                     app.dataVersion += 1
@@ -136,7 +138,7 @@ struct ActivityDetailView: View {
                         }
                     }
                     let low = (activity.zoneSeconds[0] + activity.zoneSeconds[1]) / total
-                    Text(String(format: "%.0f %% en Z1–Z2 (endurance fondamentale)", low * 100)).font(.footnote.weight(.semibold))
+                    Text(String(format: "%.0f %% en Z1–Z2 (endurance fondamentale)", locale: Locale.current, low * 100)).font(.footnote.weight(.semibold))
                 } else {
                     Text("Zones indisponibles : renseigne ta FC seuil ou ta FC max dans Réglages, puis resynchronise.")
                         .font(.footnote).foregroundStyle(.secondary)
@@ -156,7 +158,7 @@ struct ActivityDetailView: View {
 
     static func pace(_ secondsPerKm: Double) -> String {
         let total = Int(secondsPerKm.rounded())
-        return String(format: "%d:%02d /km", total / 60, total % 60)
+        return String(format: "%d:%02d /km", locale: Locale.current, total / 60, total % 60)
     }
 }
 
@@ -224,7 +226,7 @@ struct ExerciseDetailView: View {
                         }
                     }
                 }
-                ExplanationCard(title: "Comment lire", symbol: "lightbulb", text: "1RM estimé = charge × (1 + reps / 30) sur ta meilleure série. RIR = répétitions en réserve (10 − RPE) : vise 1 à 3 en prise de masse. Si le 1RM stagne 4 séances, le coach le signale et propose une décharge.")
+                ExplanationCard(title: "Comment lire", symbol: "lightbulb", text: "1RM estimé = charge × (1 + reps / 30) sur ta meilleure série. RIR = répétitions en réserve (10 − RPE) : vise 1 à 3 pour progresser. Si le 1RM stagne 4 séances, le coach le signale et propose une décharge.")
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 24)

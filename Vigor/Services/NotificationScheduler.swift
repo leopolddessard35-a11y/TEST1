@@ -1,5 +1,6 @@
 import Foundation
 import UserNotifications
+import SwiftData
 
 /// Notifications locales (fonctionnent avec un compte Apple gratuit).
 enum NotificationScheduler {
@@ -17,6 +18,8 @@ enum NotificationScheduler {
         static let eveningEnabled = "notif.evening.enabled"
         static let eveningMinutes = "notif.evening.minutes"
         static let lastMorningBrief = "notif.morning.lastBriefDay"
+        /// Jour pour lequel le bilan du matin a été programmé à l'heure choisie (il part tout seul).
+        static let morningScheduledDay = "notif.morning.scheduledDay"
         static let alertsEnabled = "notif.alerts.enabled"
         static func mealEnabled(_ meal: Meal) -> String { "notif.meal.\(meal.rawValue).enabled" }
         static func mealMinutes(_ meal: Meal) -> String { "notif.meal.\(meal.rawValue).minutes" }
@@ -64,8 +67,58 @@ enum NotificationScheduler {
         (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])) ?? false
     }
 
+    /// Demande l'autorisation seulement si l'utilisateur n'a encore jamais répondu (au moment où il active
+    /// un rappel ou valide sa première série, jamais au premier lancement), puis reprogramme les notifications.
+    @MainActor
+    static func requestAuthorizationIfNeeded() async {
+        let center = UNUserNotificationCenter.current()
+        guard await center.notificationSettings().authorizationStatus == .notDetermined else { return }
+        guard await requestAuthorization() else { return }
+        // Même calcul que `AppModel.makeSnapshot` (garder les deux listes alignées).
+        let context = SharedStore.container.mainContext
+        guard let profile = (try? context.fetch(FetchDescriptor<AthleteProfile>()))?.first else { return }
+        let snapshot = CoachSnapshot.build(
+            profile: profile,
+            wellness: (try? context.fetch(FetchDescriptor<DailyWellness>())) ?? [],
+            activities: (try? context.fetch(FetchDescriptor<CardioActivity>())) ?? [],
+            strength: (try? context.fetch(FetchDescriptor<StrengthWorkout>())) ?? [],
+            unavailabilities: (try? context.fetch(FetchDescriptor<Unavailability>())) ?? [],
+            injuries: (try? context.fetch(FetchDescriptor<Injury>())) ?? [],
+            foods: (try? context.fetch(FetchDescriptor<FoodEntry>())) ?? [],
+            planned: (try? context.fetch(FetchDescriptor<PlannedWorkout>())) ?? [],
+            lifeActivities: (try? context.fetch(FetchDescriptor<LifeActivity>())) ?? [],
+            symptoms: (try? context.fetch(FetchDescriptor<Symptom>())) ?? [],
+            shoes: (try? context.fetch(FetchDescriptor<Shoe>())) ?? [],
+            baselines: (try? context.fetch(FetchDescriptor<PlanBaseline>())) ?? [],
+            placements: (try? context.fetch(FetchDescriptor<SessionPlacement>())) ?? [],
+            frozenWeeks: (try? context.fetch(FetchDescriptor<FrozenWeek>())) ?? [])
+        await refresh(with: snapshot)
+    }
+
+    /// Un seul `refresh` à la fois : deux appels rapprochés (retour dans l'app + fin de synchro) ne programment
+    /// pas les notifications ni les alertes en double. Un appel pendant le calcul est gardé pour la fin.
+    @MainActor private static var isRefreshing = false
+    @MainActor private static var pendingSnapshot: CoachSnapshot?
+
     /// Reprogramme les notifications à partir du dernier calcul du coach.
+    @MainActor
     static func refresh(with snapshot: CoachSnapshot, now: Date = .now) async {
+        guard !isRefreshing else {
+            pendingSnapshot = snapshot
+            return
+        }
+        isRefreshing = true
+        await performRefresh(with: snapshot, now: now)
+        // Données plus récentes arrivées pendant le calcul : on repasse avec la dernière version.
+        while let next = pendingSnapshot {
+            pendingSnapshot = nil
+            await performRefresh(with: next, now: .now)
+        }
+        isRefreshing = false
+    }
+
+    @MainActor
+    private static func performRefresh(with snapshot: CoachSnapshot, now: Date) async {
         let center = UNUserNotificationCenter.current()
         let settings = await center.notificationSettings()
         guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else { return }
@@ -84,6 +137,7 @@ enum NotificationScheduler {
             let alreadySent = UserDefaults.standard.double(forKey: Keys.lastMorningBrief) == today.timeIntervalSince1970
             if todayAt > now, !alreadySent {
                 schedule(id: morningID, content: morningBriefContent(snapshot), at: today, minutes: morningMinutes)
+                UserDefaults.standard.set(today.timeIntervalSince1970, forKey: Keys.morningScheduledDay)
             }
             // Matin de demain : séance prévue. Le contenu est remplacé par le vrai bilan si l'app
             // se réveille en arrière-plan avant (synchronisation Intervals.icu).
@@ -121,7 +175,8 @@ enum NotificationScheduler {
         return content
     }
 
-    /// Bilan du matin, envoyé tout de suite (depuis la synchronisation en arrière-plan).
+    /// Bilan du matin depuis la synchronisation en arrière-plan : programmé à l'heure choisie si elle n'est
+    /// pas encore passée (iOS réveille l'app jusqu'à 1 h avant), envoyé tout de suite sinon.
     static func sendMorningBrief(_ snapshot: CoachSnapshot, now: Date = .now) async {
         guard morningEnabled else { return }
         let calendar = Calendar.current
@@ -130,6 +185,11 @@ enum NotificationScheduler {
         guard minutes >= morningMinutes - 90, minutes <= 11 * 60,
               UserDefaults.standard.double(forKey: Keys.lastMorningBrief) != dayKey else { return }
 
+        // Programmé pour ce matin et l'heure est passée : il est parti (même s'il a été effacé depuis).
+        if minutes >= morningMinutes, UserDefaults.standard.double(forKey: Keys.morningScheduledDay) == dayKey {
+            UserDefaults.standard.set(dayKey, forKey: Keys.lastMorningBrief)
+            return
+        }
         let center = UNUserNotificationCenter.current()
         // Le bilan programmé est déjà arrivé ce matin : pas de doublon.
         let delivered = await center.deliveredNotifications()
@@ -141,6 +201,13 @@ enum NotificationScheduler {
         // L'annonce programmée la veille pour ce matin est remplacée par le vrai bilan
         // (celle de demain est reprogrammée par `refresh` juste après).
         center.removePendingNotificationRequests(withIdentifiers: [morningID, morningTomorrowID])
+        if minutes < morningMinutes {
+            // Trop tôt : le vrai bilan attend l'heure choisie. Pas de marqueur « envoyé » : `refresh` le reprogramme
+            // à la même heure, et la prochaine synchro voit qu'il est arrivé.
+            schedule(id: morningID, content: content, at: now, minutes: morningMinutes)
+            UserDefaults.standard.set(dayKey, forKey: Keys.morningScheduledDay)
+            return
+        }
         let request = UNNotificationRequest(identifier: morningID, content: content, trigger: nil)
         try? await center.add(request)
         UserDefaults.standard.set(dayKey, forKey: Keys.lastMorningBrief)
@@ -210,8 +277,8 @@ enum NotificationScheduler {
         content.title = "Revue de la semaine"
         var lines: [String] = []
         if let recovery = report.current.recovery { lines.append(String(format: "Récup moyenne %.0f", recovery)) }
-        if let effort = report.current.effort { lines.append(String(format: "effort moyen %.1f/21", effort)) }
-        if let sleep = report.current.sleepHours { lines.append(String(format: "sommeil %.1f h", sleep)) }
+        if let effort = report.current.effort { lines.append("effort moyen \(effort.oneDecimal)/21") }
+        if let sleep = report.current.sleepHours { lines.append("sommeil \(sleep.oneDecimal) h") }
         var body = [lines.joined(separator: " · ")]
         if let review = snapshot.weeklyReview {
             body.append("Point fort : \(review.strongPoint)")
@@ -237,13 +304,14 @@ enum NotificationScheduler {
             guard alertIDs.contains(where: { insight.id.hasPrefix($0) }) else { continue }
             let key = "notif.alert.\(insight.id)"
             guard UserDefaults.standard.double(forKey: key) != dayKey else { continue }
+            // Marqueur écrit avant l'envoi : un second appel pendant l'`await` ne renvoie pas la même alerte.
+            UserDefaults.standard.set(dayKey, forKey: key)
             let content = UNMutableNotificationContent()
             content.title = "⚠️ \(insight.title)"
             content.body = ([insight.evidence.first].compactMap { $0 } + [insight.recommendation]).joined(separator: "\n")
             content.sound = .default
             let request = UNNotificationRequest(identifier: "vigor.alert.\(insight.id)", content: content, trigger: nil)
             try? await UNUserNotificationCenter.current().add(request)
-            UserDefaults.standard.set(dayKey, forKey: key)
         }
     }
 

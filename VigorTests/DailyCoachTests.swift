@@ -28,9 +28,9 @@ struct DailyCoachTests {
         #expect(sessions.first { $0.kind == .threshold }?.detail.contains("195") == true) // 95 % de 206 W, arrondi
     }
 
-    @Test func weekTemplatePlacesPPLAndLongRide() {
-        #expect(DailyCoach.template(for: buildWeek(), weekday: 2, ftp: 206).contains { $0.kind == .push })
-        #expect(DailyCoach.template(for: buildWeek(), weekday: 6, ftp: 206).contains { $0.kind == .legs })
+    @Test func weekTemplatePlacesStrengthAndLongRide() {
+        #expect(DailyCoach.template(for: buildWeek(), weekday: 2, ftp: 206).contains { $0.kind == .gym })
+        #expect(DailyCoach.template(for: buildWeek(), weekday: 6, ftp: 206).contains { $0.kind == .gym })
         #expect(DailyCoach.template(for: buildWeek(), weekday: 7, ftp: 206).contains { $0.kind == .longRide })
     }
 
@@ -56,17 +56,18 @@ struct DailyCoachTests {
     @Test func lowCarbsYesterdayAddsFuelingPriority() {
         var coachInput = input(readiness: readiness(.ready, 80), sleep: 8)
         coachInput.yesterdayNutrition = NutritionDay(date: tuesday, kcal: 2000, protein: 140, carbs: 220, fat: 70)
+        coachInput.yesterdayTrainingHours = 1.5
         let brief = DailyCoach.brief(coachInput)
         #expect(brief.factors.contains { $0.name == "Glucides bas hier" })
         #expect(brief.fueling.first?.contains("Glucides bas hier") == true)
     }
 
-    @Test func hamstringInjuryAdaptsLegsDay() {
+    @Test func hamstringInjuryAdaptsStrength() {
         var coachInput = input(readiness: readiness(.ready, 80), sleep: 8)
         coachInput.today = DateComponents(calendar: .current, year: 2026, month: 10, day: 16, hour: 8).date! // vendredi
         coachInput.injuries = [InjuryStatus(name: "Ischio", muscles: [.hamstrings], affectsRunning: true, affectsCycling: false, severity: 1)]
         let brief = DailyCoach.brief(coachInput)
-        #expect(brief.adapted.first { $0.kind == .legs }?.detail.contains("ischio") == true)
+        #expect(brief.adapted.first { $0.kind == .gym }?.detail.lowercased().contains("ischio") == true)
     }
 }
 

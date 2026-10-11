@@ -102,6 +102,11 @@ struct TrainingHabits: Equatable {
     }
 
     var isLearned: Bool { counts.values.contains { $0 >= Self.minimumSessions } }
+
+    func isLearned(_ category: SessionCategory) -> Bool {
+        let key: SessionCategory = category == .race ? .long : category
+        return (counts[key] ?? 0) >= Self.minimumSessions
+    }
 }
 
 // MARK: - Résultat
@@ -152,9 +157,14 @@ struct WeekPlan: Equatable {
     let items: [Item]
     /// Séances faites en plus du plan.
     let extras: [DoneSession]
+
+    /// Préfixe des choix « ne compte pas pour le plan » enregistrés comme placements.
+    static let exclusionPrefix = "exclude:"
     let unavailableDays: Set<Date>
     let today: Date
     let habitsLearned: Bool
+    /// Séances faites que tu as exclues du plan (« ne compte pas pour cette séance »).
+    var excluded: Set<String> = []
 
     func items(on day: Date) -> [Item] { items.filter { $0.day == day } }
     func extras(on day: Date, calendar: Calendar = .current) -> [DoneSession] {
@@ -197,6 +207,8 @@ enum WeekPlanner {
     struct Assessment: Equatable {
         var penalty: Double = 0
         var blocked = false
+        /// Enchaînement à éviter (deux séances dures d'affilée, jambes la veille) : interdit pour une séance replacée.
+        var hardConflict = false
         var reasons: [String] = []
     }
 
@@ -206,6 +218,7 @@ enum WeekPlanner {
                      habits: TrainingHabits,
                      pinned: [String: Date],
                      removed: Set<String>,
+                     excluded: Set<String> = [],
                      unavailable: [UnavailabilityPeriod],
                      availableMinutes: (Int) -> Int?,
                      now: Date,
@@ -223,14 +236,15 @@ enum WeekPlanner {
 
         // 1. Les séances du plan type de la semaine.
         var items: [WeekPlan.Item] = []
-        var counters: [SessionCategory: Int] = [:]
+        // Identifiant = type de séance + rang (« threshold-0 », « gym-1 ») : un choix reste attaché à la même séance.
+        var counters: [SessionKind: Int] = [:]
         for day in days {
             let sessions = DailyCoach.template(for: week, weekday: calendar.component(.weekday, from: day), ftp: ftp)
             for session in sessions where session.kind != .rest {
                 let category = SessionCategory(session.kind)
-                let index = counters[category, default: 0]
-                counters[category] = index + 1
-                let id = "\(category.rawValue)-\(index)"
+                let index = counters[session.kind, default: 0]
+                counters[session.kind] = index + 1
+                let id = "\(session.kind.rawValue)-\(index)"
                 var item = WeekPlan.Item(id: id, session: session, category: category, defaultDay: day, day: day)
                 if removed.contains(id) {
                     item.isRemoved = true
@@ -245,10 +259,14 @@ enum WeekPlanner {
             }
         }
 
-        // 2. Ce qui a été fait cette semaine, reconnu par type.
+        // 2. Ce qui a été fait cette semaine, reconnu par type (sauf ce que tu as exclu à la main).
         let weekDone = done.filter { $0.date >= weekStart && $0.date < weekEnd }.sorted { $0.date < $1.date }
         var extras: [DoneSession] = []
         for session in weekDone {
+            if excluded.contains(session.id) {
+                extras.append(session)
+                continue
+            }
             let day = calendar.startOfDay(for: session.date)
             var best: (index: Int, cost: Double, substitute: Bool)?
             for index in items.indices where !items[index].isDone {
@@ -272,7 +290,7 @@ enum WeekPlanner {
             if let session = item.doneSession {
                 occupants.append(Occupant(id: item.id, day: day, category: category(of: session, matched: item.category), isLegs: session.isLegs))
             } else if item.isPending, (item.isPinned && day >= todayStart) || item.category == .race {
-                occupants.append(Occupant(id: item.id, day: day, category: item.category, isLegs: item.session.kind == .legs))
+                occupants.append(Occupant(id: item.id, day: day, category: item.category, isLegs: false))
             }
         }
         for session in extras {
@@ -291,6 +309,10 @@ enum WeekPlanner {
             return true
         }.sorted { lhs, rhs in
             let a = items[lhs], b = items[rhs]
+            // Les séances encore à l'heure d'abord : une séance en retard se glisse dans ce qui reste.
+            let lateA = (a.isPinned ? (a.day ?? a.defaultDay) : a.defaultDay) < todayStart
+            let lateB = (b.isPinned ? (b.day ?? b.defaultDay) : b.defaultDay) < todayStart
+            if lateA != lateB { return !lateA }
             if a.category.priority != b.category.priority { return a.category.priority < b.category.priority }
             return a.defaultDay < b.defaultDay
         }
@@ -304,11 +326,15 @@ enum WeekPlanner {
                                         availableMinutes: availableMinutes(calendar.component(.weekday, from: day)),
                                         calendar: calendar)
                 if assessment.blocked { continue }
+                // Une séance replacée ne doit jamais créer un enchaînement dur.
+                if reference < todayStart, assessment.hardConflict { continue }
                 // Trop tard ce soir pour une séance qui n'était pas prévue aujourd'hui.
                 if day == todayStart, hour >= 20, reference != todayStart { continue }
                 var score = -assessment.penalty
-                if day == reference { score += 3 }
-                score += 2 * habits.affinity(item.category, weekday: calendar.component(.weekday, from: day))
+                // Habitudes apprises : elles comptent plus que le jour du plan type (mais un jour choisi reste prioritaire).
+                let learned = habits.isLearned(item.category)
+                if day == reference { score += (learned && !item.isPinned) ? 1 : 3 }
+                score += (learned ? 3 : 2) * habits.affinity(item.category, weekday: calendar.component(.weekday, from: day))
                 let distance = abs(Double(calendar.dateComponents([.day], from: reference, to: day).day ?? 0))
                 score -= 0.3 * distance
                 if best == nil || score > best!.score { best = (day, score) }
@@ -316,7 +342,9 @@ enum WeekPlanner {
             if let best {
                 items[index].day = best.day
                 items[index].wasRescheduled = reference < todayStart
-                occupants.append(Occupant(id: item.id, day: best.day, category: item.category, isLegs: item.session.kind == .legs))
+                // Un jour choisi déjà passé ne compte plus comme choix.
+                if reference < todayStart { items[index].isPinned = false }
+                occupants.append(Occupant(id: item.id, day: best.day, category: item.category, isLegs: false))
             } else {
                 items[index].day = nil
                 items[index].state = .dropped
@@ -333,7 +361,7 @@ enum WeekPlanner {
             }
         }
         return WeekPlan(week: week, days: days, items: ordered, extras: extras, unavailableDays: unavailableDays,
-                        today: todayStart, habitsLearned: habits.isLearned)
+                        today: todayStart, habitsLearned: habits.isLearned, excluded: excluded)
     }
 
     /// Coût de la correspondance entre une séance faite et une séance du plan ; nil = incompatible.
@@ -344,8 +372,6 @@ enum WeekPlanner {
         var cost = distance + (item.isRemoved ? 50 : 0)
         if session.isStrength {
             guard item.category == .strength else { return nil }
-            // Une séance jambes remplit de préférence la séance Legs.
-            if session.isLegs != (item.session.kind == .legs) { cost += 3 }
             return (cost, false)
         }
         switch item.category {
@@ -354,6 +380,8 @@ enum WeekPlanner {
         case .race:
             return distance == 0 ? (cost, false) : nil
         case .endurance:
+            // Trop courte pour valoir la séance prévue : comptée « en plus ».
+            guard Double(session.minutes) >= 0.5 * Double(item.session.minutes) else { return nil }
             // Une sortie intense ou longue remplit d'abord sa propre séance.
             if session.isIntense || session.minutes >= 120 { cost += 10 }
             return (cost, false)
@@ -409,19 +437,17 @@ enum WeekPlanner {
         }
         if category.isHard, neighbours.contains(where: { $0.category.isHard }) {
             result.penalty += 4
+            result.hardConflict = true
             result.reasons.append("Deux séances dures d'affilée")
         }
         if category.isHard, others.contains(where: { $0.isLegs && $0.day == previous }) {
             result.penalty += 2
+            result.hardConflict = true
             result.reasons.append("Jambes encore fatiguées par la muscu de la veille")
         }
         if category.isHard, sameDay.contains(where: { $0.isLegs }) {
             result.penalty += 3
             result.reasons.append("Muscu des jambes le même jour")
-        }
-        if kind == .legs, others.contains(where: { $0.category.isHard && ($0.day == next || $0.day == day) }) {
-            result.penalty += 2
-            result.reasons.append("Séance dure le même jour ou le lendemain")
         }
         if let availableMinutes, minutes > 0, availableMinutes < minutes {
             result.penalty += availableMinutes * 2 < minutes ? 4 : 2
@@ -438,7 +464,7 @@ enum WeekPlanner {
             guard let otherDay = other.day, other.isDone || other.isPending else { continue }
             let category = other.doneSession.map { self.category(of: $0, matched: other.category) } ?? other.category
             occupants.append(Occupant(id: other.id, day: otherDay, category: category,
-                                      isLegs: other.doneSession?.isLegs ?? (other.session.kind == .legs)))
+                                      isLegs: other.doneSession?.isLegs ?? false))
         }
         for session in plan.extras {
             occupants.append(Occupant(id: session.id, day: calendar.startOfDay(for: session.date),

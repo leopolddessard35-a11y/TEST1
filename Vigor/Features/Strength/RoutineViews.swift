@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
 
-/// Haut de l'onglet Muscu : démarrer, tes programmes et séances types, la banque d'exercices, l'historique.
+/// Haut de l'onglet Sport : démarrer, tes programmes et séances types, la banque d'exercices, l'historique.
 struct StrengthPlansSection: View {
     @Query(sort: [SortDescriptor(\WorkoutRoutine.program), SortDescriptor(\WorkoutRoutine.order)]) private var routines: [WorkoutRoutine]
     @Query(sort: \StrengthWorkout.start, order: .reverse) private var workouts: [StrengthWorkout]
@@ -9,9 +9,10 @@ struct StrengthPlansSection: View {
     @State private var startingEmpty = false
     @State private var editing: WorkoutRoutine?
     @State private var creating = false
+    /// Brouillon de séance en cours (relu à l'apparition et à la fermeture d'une séance).
+    @State private var hasDraft = false
 
     var body: some View {
-        let hasDraft = WorkoutDraft.load()?.exercises.isEmpty == false
         let programs: [String] = routines.reduce(into: [String]()) { list, routine in
             if !list.contains(routine.program) { list.append(routine.program) }
         }
@@ -77,6 +78,10 @@ struct StrengthPlansSection: View {
         .sheet(item: $startingRoutine) { routine in WorkoutLoggerView(routine: routine) }
         .sheet(item: $editing) { routine in RoutineEditorView(routine: routine) }
         .sheet(isPresented: $creating) { RoutineEditorView(routine: nil, defaultProgram: programs.last ?? "") }
+        .onAppear { hasDraft = WorkoutDraft.load()?.exercises.isEmpty == false }
+        .onChange(of: startingEmpty || startingRoutine != nil) {
+            hasDraft = WorkoutDraft.load()?.exercises.isEmpty == false
+        }
     }
 
     private func lastDone(_ routine: WorkoutRoutine) -> Date? {
@@ -150,7 +155,7 @@ struct RoutineEditorView: View {
         NavigationStack {
             List {
                 Section {
-                    TextField("Nom (ex. Push A)", text: $name)
+                    TextField("Nom (ex. Haut du corps)", text: $name)
                     TextField("Programme (facultatif)", text: $program)
                     TextField("Notes", text: $notes, axis: .vertical)
                 }
@@ -173,7 +178,7 @@ struct RoutineEditorView: View {
                                 } label: { pill("\(item.repText) reps") }
                                 Menu {
                                     ForEach(Self.restPresets, id: \.self) { seconds in
-                                        Button(String(format: "Repos %d:%02d", seconds / 60, seconds % 60)) { item.restSeconds = seconds }
+                                        Button(String(format: "Repos %d:%02d", locale: Locale.current, seconds / 60, seconds % 60)) { item.restSeconds = seconds }
                                     }
                                 } label: { pill("Repos \(item.restText)") }
                             }
@@ -280,7 +285,7 @@ struct StrengthHistoryView: View {
         }
         return List {
             if workouts.isEmpty {
-                Text("Aucune séance pour l'instant. Lance une séance depuis l'onglet Muscu.").foregroundStyle(.secondary)
+                Text("Aucune séance pour l'instant. Lance une séance depuis l'onglet Sport.").foregroundStyle(.secondary)
             }
             ForEach(months, id: \.self) { month in
                 Section(month.formatted(.dateTime.month(.wide).year())) {
@@ -317,7 +322,7 @@ private struct HistoryRow: View {
             .frame(width: 40)
             VStack(alignment: .leading, spacing: 2) {
                 Text(workout.title).font(.subheadline.weight(.semibold))
-                Text("\(exercises) exercices · \(working.count) séries · \(String(format: "%.1f t", tonnage / 1000)) · \((workout.durationSeconds / 3600).hoursText)")
+                Text("\(exercises) exercices · \(working.count) séries · \(String(format: "%.1f t", locale: Locale.current, tonnage / 1000)) · \((workout.durationSeconds / 3600).hoursText)")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }

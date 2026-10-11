@@ -54,7 +54,8 @@ struct ContentView: View {
                 try? context.save()
             }
             ExerciseLibrary.registerCustom((try? context.fetch(FetchDescriptor<CustomExercise>())) ?? [])
-            _ = await NotificationScheduler.requestAuthorization()
+            // Pas de demande de notifications au premier lancement : elle vient quand tu actives un rappel
+            // (Réglages) ou valides ta première série (`NotificationScheduler.requestAuthorizationIfNeeded`).
             app.scheduleBackgroundRefresh()
         }
         // Au lancement, l'une après l'autre : sommeil du jour (si pas encore fait), réparation unique

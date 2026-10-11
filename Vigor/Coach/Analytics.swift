@@ -173,7 +173,7 @@ enum LoadAnalytics {
             guard before >= minimum else { return }
             let change = (now / before - 1) * 100
             if change > 10 {
-                alerts.append(String(format: "%@ : %+.0f %% (%.1f → %.1f %@)", name, change, before, now, unit))
+                alerts.append(String(format: "%@ : %+.0f %% (%.1f → %.1f %@)", locale: Locale.current, name, change, before, now, unit))
             }
         }
         check("Vélo", last.bikeHours, previous.bikeHours, "h", minimum: 1)
@@ -378,7 +378,7 @@ enum SymptomAnalysis {
                     let onset = medianOnset(items)
                     var line = "\(shoe) : \(items.count) épisode\(items.count > 1 ? "s" : "")"
                     if let runs = runsByShoe[shoe], runs > 0 { line += " sur \(runs) sortie\(runs > 1 ? "s" : "")" }
-                    if let onset { line += String(format: ", apparition médiane à %.0f min", onset) }
+                    if let onset { line += String(format: ", apparition médiane à %.0f min", locale: Locale.current, onset) }
                     findings.append(line)
                 }
             }
@@ -387,24 +387,24 @@ enum SymptomAnalysis {
             if byTerrain.count >= 2 {
                 for (terrain, items) in byTerrain.sorted(by: { $0.value.count > $1.value.count }) {
                     let onset = medianOnset(items)
-                    findings.append("\(terrain) : \(items.count) épisode(s)" + (onset.map { String(format: ", médiane %.0f min", $0) } ?? ""))
+                    findings.append("\(terrain) : \(items.count) épisode(s)" + (onset.map { String(format: ", médiane %.0f min", locale: Locale.current, $0) } ?? ""))
                 }
             }
             // Fatigue : le symptôme arrive-t-il plus tôt quand tu es fatigué ?
             if let a = medianOnset(sorted.filter { $0.fatigue >= 4 }), let b = medianOnset(sorted.filter { $0.fatigue <= 2 }), abs(a - b) >= 5 {
-                findings.append(String(format: "Fatigué : apparition vers %.0f min · frais : vers %.0f min", a, b))
+                findings.append(String(format: "Fatigué : apparition vers %.0f min · frais : vers %.0f min", locale: Locale.current, a, b))
             }
             // Sommeil de la veille.
             if let a = medianOnset(sorted.filter { ($0.previousSleep ?? 99) < 7 }),
                let b = medianOnset(sorted.filter { ($0.previousSleep ?? 0) >= 7 }), abs(a - b) >= 5 {
-                findings.append(String(format: "Après une nuit < 7 h : vers %.0f min · après une bonne nuit : vers %.0f min", a, b))
+                findings.append(String(format: "Après une nuit < 7 h : vers %.0f min · après une bonne nuit : vers %.0f min", locale: Locale.current, a, b))
             }
             // Charge de la veille.
             let loads = sorted.compactMap(\.previousLoad)
             if loads.count >= 4, let middle = Robust.median(loads),
                let heavy = medianOnset(sorted.filter { ($0.previousLoad ?? 0) > middle }),
                let light = medianOnset(sorted.filter { ($0.previousLoad ?? .infinity) <= middle }), abs(heavy - light) >= 5 {
-                findings.append(String(format: "Veille chargée : médiane %.0f min · veille légère : %.0f min", heavy, light))
+                findings.append(String(format: "Veille chargée : médiane %.0f min · veille légère : %.0f min", locale: Locale.current, heavy, light))
             }
             // Évolution de l'intensité.
             if sorted.count >= 4 {
@@ -412,9 +412,9 @@ enum SymptomAnalysis {
                 let before = Stats.mean(sorted.prefix(half).map { Double($0.intensity) }) ?? 0
                 let after = Stats.mean(sorted.suffix(sorted.count - half).map { Double($0.intensity) }) ?? 0
                 if after - before >= 1 {
-                    findings.append(String(format: "Intensité en hausse : %.1f → %.1f / 10. Consulte si ça continue.", before, after))
+                    findings.append(String(format: "Intensité en hausse : %.1f → %.1f / 10. Consulte si ça continue.", locale: Locale.current, before, after))
                 } else if before - after >= 1 {
-                    findings.append(String(format: "Intensité en baisse : %.1f → %.1f / 10.", before, after))
+                    findings.append(String(format: "Intensité en baisse : %.1f → %.1f / 10.", locale: Locale.current, before, after))
                 }
             }
 
@@ -454,7 +454,7 @@ enum PlanTracking {
             result.append(Milestone(
                 date: end,
                 title: "Fin de phase \(week.phase.label)",
-                detail: String(format: "Condition ≈ %.0f · sortie longue de %@ tenue en zone 2", week.projectedCTL, longest.hoursText)))
+                detail: String(format: "Condition ≈ %.0f · sortie longue de %@ tenue en zone 2", locale: Locale.current, week.projectedCTL, longest.hoursText)))
         }
         return result
     }

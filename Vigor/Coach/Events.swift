@@ -22,37 +22,36 @@ extension WeeklyReport {
     }
 
     static func review(report: WeeklyReport, plannedHours: Double?, plannedStrength: Int, doneStrength: Int,
-                       acuteChronic: Double?, missedSessions: Int) -> Review {
+                       acuteChronic: Double?) -> Review {
         let current = report.current, previous = report.previous
 
         // Point fort : la meilleure évolution parmi récup, sommeil, régularité de l'entraînement.
-        var strong = "Régularité : tu as tenu ton entraînement cette semaine."
+        var strong = current.trainingHours < 0.5
+            ? "Semaine calme : le repos fait aussi partie de l'entraînement."
+            : "Régularité : \(current.trainingHours.oneDecimal) h d'entraînement sur 7 jours."
         if let now = current.recovery, let before = previous.recovery, now - before >= 3 {
-            strong = String(format: "Récupération en hausse (%.0f → %.0f).", before, now)
+            strong = String(format: "Récupération en hausse (%.0f → %.0f).", locale: Locale.current, before, now)
         } else if let performance = current.sleepPerformance, performance >= 0.9 {
-            strong = String(format: "Sommeil : %.0f %% de ton besoin couvert.", performance * 100)
+            strong = String(format: "Sommeil : %.0f %% de ton besoin couvert.", locale: Locale.current, performance * 100)
         } else if let planned = plannedHours, planned > 0, current.trainingHours >= planned * 0.9 {
-            strong = String(format: "Volume prévu tenu : %.1f h sur %.1f h.", current.trainingHours, planned)
+            strong = "Volume prévu tenu : \(current.trainingHours.oneDecimal) h sur \(planned.oneDecimal) h."
         }
 
         // Point de vigilance : le signal le plus préoccupant.
         var vigilance = "Rien de préoccupant dans les données de la semaine."
         var adjustment = "Semaine suivante : progression normale du plan (+5 à 10 % de volume au maximum)."
         if let ratio = acuteChronic, ratio > 1.5 {
-            vigilance = String(format: "Charge en forte hausse (ratio 7 j / 28 j : %.2f).", ratio)
+            vigilance = String(format: "Charge en forte hausse (ratio 7 j / 28 j : %.2f).", locale: Locale.current, ratio)
             adjustment = "Semaine suivante : volume −15 %, une seule séance intense."
         } else if let performance = current.sleepPerformance, performance < 0.85 {
-            vigilance = String(format: "Sommeil à %.0f %% du besoin.", performance * 100)
+            vigilance = String(format: "Sommeil à %.0f %% du besoin.", locale: Locale.current, performance * 100)
             adjustment = "Semaine suivante : coucher avancé de 30 min, intensité placée après les meilleures nuits."
-        } else if missedSessions >= 2 {
-            vigilance = "\(missedSessions) séances n'ont pas trouvé de place cette semaine."
-            adjustment = "Semaine suivante : place d'abord les séances clés (sortie longue, intensité) sur tes jours les plus libres, l'endurance comble le reste."
         } else if let now = current.recovery, let before = previous.recovery, before - now >= 5 {
-            vigilance = String(format: "Récupération en baisse (%.0f → %.0f).", before, now)
+            vigilance = String(format: "Récupération en baisse (%.0f → %.0f).", locale: Locale.current, before, now)
             adjustment = "Semaine suivante : garder le volume, réduire l'intensité de 20 %."
         } else if let planned = plannedHours, planned > 0, current.trainingHours < planned * 0.7 {
-            vigilance = String(format: "Volume réalisé %.1f h pour %.1f h prévues.", current.trainingHours, planned)
-            adjustment = "Semaine suivante : vérifie tes disponibilités dans Réglages pour un plan tenable."
+            vigilance = "Volume réalisé \(current.trainingHours.oneDecimal) h pour \(planned.oneDecimal) h prévues."
+            adjustment = "Semaine suivante : vérifie tes minutes disponibles par jour dans Réglages, ou place tes séances dans « Ma semaine »."
         }
         return Review(plannedHours: plannedHours, doneHours: current.trainingHours, plannedStrength: plannedStrength,
                       doneStrength: doneStrength, strongPoint: strong, vigilance: vigilance, adjustment: adjustment)
