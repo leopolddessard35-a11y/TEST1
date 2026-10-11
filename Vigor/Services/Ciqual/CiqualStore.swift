@@ -216,6 +216,8 @@ final class CiqualStore {
 
     private(set) var foods: [CiqualFood] = []
     private(set) var installedAt: Date?
+    /// Version affichée : « CIQUAL 2025 (intégrée) » ou la version importée.
+    private(set) var versionLabel = ""
     private(set) var isWorking = false
     private(set) var progress = ""
     private(set) var lastError: String?
@@ -240,12 +242,29 @@ final class CiqualStore {
         return folder.appendingPathComponent("ciqual.json")
     }
 
+    /// Table importée par l'utilisateur si elle existe, sinon la table CIQUAL 2025 intégrée à l'app.
     private func loadFromDisk() {
-        guard let data = try? Data(contentsOf: fileURL),
+        if let data = try? Data(contentsOf: fileURL),
+           let decoded = try? JSONDecoder().decode([CiqualFood].self, from: data), !decoded.isEmpty {
+            setFoods(decoded)
+            installedAt = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.modificationDate]) as? Date
+            versionLabel = "Table importée"
+            return
+        }
+        loadBundled()
+    }
+
+    private func loadBundled() {
+        guard let url = Bundle.main.url(forResource: "ciqual_2025", withExtension: "json"),
+              let data = try? Data(contentsOf: url),
               let decoded = try? JSONDecoder().decode([CiqualFood].self, from: data) else { return }
         setFoods(decoded)
-        installedAt = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.modificationDate]) as? Date
+        installedAt = nil
+        versionLabel = "CIQUAL 2025 (ANSES), intégrée à l'app"
     }
+
+    /// Une table importée remplace la table intégrée ; la supprimer revient à la table intégrée.
+    var hasImportedTable: Bool { FileManager.default.fileExists(atPath: fileURL.path) }
 
     /// Recherche hors ligne : chaque mot tapé doit commencer un mot du nom (accents et casse ignorés) ;
     /// les noms qui commencent par le premier mot et les plus courts passent devant.
@@ -283,7 +302,7 @@ final class CiqualStore {
         }
     }
 
-    /// Installe à partir de fichiers choisis dans Fichiers : l'archive .zip, ou les fichiers .xml extraits.
+    /// Installe à partir de fichiers choisis dans Fichiers : le classeur .xlsx, l'archive .zip, ou les fichiers .xml extraits.
     func importFiles(_ urls: [URL]) async {
         isWorking = true
         lastError = nil
@@ -297,10 +316,10 @@ final class CiqualStore {
         }
     }
 
+    /// Supprime la table importée et revient à la table intégrée.
     func remove() {
         try? FileManager.default.removeItem(at: fileURL)
-        setFoods([])
-        installedAt = nil
+        loadBundled()
     }
 
     nonisolated private static func read(_ urls: [URL]) -> [(String, Data)] {
@@ -313,7 +332,7 @@ final class CiqualStore {
         return payloads
     }
 
-    /// `load` fournit les fichiers (.zip ou .xml) ; lecture, décompression, analyse et écriture se font hors du fil principal.
+    /// `load` fournit les fichiers (.xlsx, .zip ou .xml) ; lecture, décompression, analyse et écriture se font hors du fil principal.
     private func install(load: @escaping @Sendable () throws -> [(String, Data)]) async throws {
         progress = "Analyse de la table (environ 3 000 aliments)…"
         let target = fileURL
@@ -321,6 +340,9 @@ final class CiqualStore {
             let payloads = try load()
             var files: [String: Data] = [:]
             for (name, data) in payloads {
+                let lower = name.lowercased()
+                // Ancien Excel (.xls, binaire) et archive 7-Zip : formats non lisibles sur iPhone.
+                if lower.hasSuffix(".xls") || lower.hasSuffix(".7z") { throw CiqualXLSX.FormatError.unsupported(name) }
                 let bytes = [UInt8](data)
                 if bytes.count > 4, bytes[0] == 0x50, bytes[1] == 0x4B {
                     for entry in try ZipReader.entries(in: bytes) where entry.name.lowercased().hasSuffix(".xml") {
@@ -330,7 +352,7 @@ final class CiqualStore {
                     files[name] = data
                 }
             }
-            let parsed = try CiqualParser.parse(files: files)
+            let parsed = try (CiqualXLSX.isWorkbook(files) ? CiqualXLSX.parse(files: files) : CiqualParser.parse(files: files))
             guard !parsed.isEmpty else { throw CiqualParser.ParseError.missingFiles }
             let data = try JSONEncoder().encode(parsed)
             try data.write(to: target, options: .atomic)
@@ -338,6 +360,7 @@ final class CiqualStore {
         }.value
         setFoods(foods)
         installedAt = .now
+        versionLabel = "Table importée"
     }
 
     private func setFoods(_ list: [CiqualFood]) {

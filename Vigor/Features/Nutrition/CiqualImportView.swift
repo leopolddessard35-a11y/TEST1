@@ -1,12 +1,11 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Installation de la table CIQUAL (ANSES) : téléchargement direct ou import du fichier officiel.
+/// Table CIQUAL (ANSES) : la version 2025 est intégrée à l'app ; une version plus récente peut être importée.
 struct CiqualImportView: View {
     @Environment(\.dismiss) private var dismiss
     var isSheet = false
     @State private var store = CiqualStore.shared
-    @State private var address = CiqualStore.defaultURLs.first ?? ""
     @State private var importing = false
     @State private var confirmRemove = false
 
@@ -18,10 +17,13 @@ struct CiqualImportView: View {
                         .font(.title2)
                         .foregroundStyle(store.isInstalled ? Theme.good : Theme.accent)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(store.isInstalled ? "\(store.foods.count) aliments génériques installés" : "Table CIQUAL non installée")
+                        Text(store.isInstalled ? "\(store.foods.count) aliments génériques" : "Table CIQUAL non installée")
                             .font(.headline)
                         if let date = store.installedAt {
-                            Text("Installée le \(date.formatted(date: .abbreviated, time: .omitted)) · fonctionne hors ligne")
+                            Text("\(store.versionLabel) le \(date.formatted(date: .abbreviated, time: .omitted)) · fonctionne hors ligne")
+                                .font(.caption).foregroundStyle(.secondary)
+                        } else if store.isInstalled {
+                            Text("\(store.versionLabel) · fonctionne hors ligne")
                                 .font(.caption).foregroundStyle(.secondary)
                         } else {
                             Text("Riz cuit, blanc de poulet, lentilles, banane… les aliments sans code-barres, au gramme près.")
@@ -43,50 +45,34 @@ struct CiqualImportView: View {
 
             Section {
                 Button {
-                    Task { await store.download(from: address) }
-                } label: {
-                    Label(store.isInstalled ? "Mettre à jour depuis l'ANSES" : "Télécharger depuis l'ANSES", systemImage: "arrow.down.circle.fill")
-                }
-                .disabled(store.isWorking)
-                DisclosureGroup("Avancé") {
-                    TextField("Adresse de l'archive XML", text: $address, axis: .vertical)
-                        .font(.caption.monospaced())
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                }
-            } header: {
-                Text("1. Téléchargement direct")
-            } footer: {
-                Text("Si l'ANSES a changé l'adresse du fichier, utilise l'import ci-dessous.")
-            }
-
-            Section {
-                Button {
                     importing = true
                 } label: {
-                    Label("Importer le fichier (.zip ou .xml)", systemImage: "folder.fill")
+                    Label("Importer une version plus récente", systemImage: "folder.fill")
                 }
                 .disabled(store.isWorking)
             } header: {
-                Text("2. Ou import manuel")
+                Text("Mise à jour")
             } footer: {
                 Text("""
-                Dans Safari : ciqual.anses.fr → « Téléchargement » → table complète au format XML. Enregistre l'archive dans Fichiers, puis importe-la ici (l'archive .zip telle quelle, ou les fichiers alim, compo et const extraits).
+                Rien à faire pour l'instant : la table CIQUAL 2025 est déjà dans l'app. Quand l'ANSES publiera une nouvelle version (ciqual.anses.fr → Téléchargement), enregistre le fichier Excel .xlsx dans Fichiers et importe-le ici. L'archive XML .zip marche aussi ; les formats .xls (ancien Excel) et .7z ne sont pas lisibles sur iPhone.
                 """)
             }
 
-            if store.isInstalled {
+            if store.hasImportedTable {
                 Section {
-                    Button("Supprimer la table", role: .destructive) { confirmRemove = true }
-                        .confirmationDialog("Supprimer la table CIQUAL ?", isPresented: $confirmRemove, titleVisibility: .visible) {
-                            Button("Supprimer", role: .destructive) { store.remove() }
+                    Button("Revenir à la table intégrée", role: .destructive) { confirmRemove = true }
+                        .confirmationDialog("Revenir à la table intégrée ?", isPresented: $confirmRemove, titleVisibility: .visible) {
+                            Button("Revenir à CIQUAL 2025", role: .destructive) { store.remove() }
                             Button("Annuler", role: .cancel) {}
                         } message: {
-                            Text("Les aliments déjà ajoutés à ton journal sont conservés. Tu pourras réinstaller la table à tout moment.")
+                            Text("La table importée est supprimée. Les aliments déjà ajoutés à ton journal sont conservés.")
                         }
-                } footer: {
-                    Text("Table de composition nutritionnelle des aliments CIQUAL, ANSES. Licence ouverte Etalab. Valeurs pour 100 g ; « traces » compte pour 0 et « < x » pour la moitié du seuil.")
                 }
+            }
+
+            Section {
+            } footer: {
+                Text("Table de composition nutritionnelle des aliments CIQUAL, ANSES. Licence ouverte Etalab. Valeurs pour 100 g ; « traces » compte pour 0 et « < x » pour la moitié du seuil.")
             }
         }
         .scrollContentBackground(.hidden)
@@ -98,7 +84,7 @@ struct CiqualImportView: View {
                 ToolbarItem(placement: .confirmationAction) { Button("OK") { dismiss() } }
             }
         }
-        .fileImporter(isPresented: $importing, allowedContentTypes: [.zip, .xml, .data], allowsMultipleSelection: true) { result in
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.spreadsheet, .zip, .xml, .data], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result {
                 Task { await store.importFiles(urls) }
             }
