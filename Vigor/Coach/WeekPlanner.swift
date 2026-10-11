@@ -165,6 +165,8 @@ struct WeekPlan: Equatable {
     let habitsLearned: Bool
     /// Séances faites que tu as exclues du plan (« ne compte pas pour cette séance »).
     var excluded: Set<String> = []
+    /// Séances juste avant ou après la semaine (dimanche précédent, lundi suivant) : règles d'enchaînement.
+    var outside: [WeekPlanner.Occupant] = []
 
     func items(on day: Date) -> [Item] { items.filter { $0.day == day } }
     func extras(on day: Date, calendar: Calendar = .current) -> [DoneSession] {
@@ -219,6 +221,7 @@ enum WeekPlanner {
                      pinned: [String: Date],
                      removed: Set<String>,
                      excluded: Set<String> = [],
+                     boundary: [Occupant] = [],
                      unavailable: [UnavailabilityPeriod],
                      availableMinutes: (Int) -> Int?,
                      now: Date,
@@ -284,7 +287,15 @@ enum WeekPlanner {
         }
 
         // 3. Jours occupés : séances faites, en plus, et séances placées à la main encore à venir.
-        var occupants: [Occupant] = []
+        // Le dimanche d'avant compte aussi : pas de séance dure le lundi après une sortie longue.
+        var outside: [Occupant] = boundary
+        if let dayBefore = calendar.date(byAdding: .day, value: -1, to: weekStart) {
+            for session in done where calendar.isDate(session.date, inSameDayAs: dayBefore) && !excluded.contains(session.id) {
+                outside.append(Occupant(id: session.id, day: dayBefore,
+                                        category: category(of: session, matched: nil), isLegs: session.isLegs))
+            }
+        }
+        var occupants: [Occupant] = outside
         for item in items {
             guard let day = item.day else { continue }
             if let session = item.doneSession {
@@ -362,7 +373,7 @@ enum WeekPlanner {
             }
         }
         return WeekPlan(week: week, days: days, items: ordered, extras: extras, unavailableDays: unavailableDays,
-                        today: todayStart, habitsLearned: habits.isLearned, excluded: excluded)
+                        today: todayStart, habitsLearned: habits.isLearned, excluded: excluded, outside: outside)
     }
 
     /// Coût de la correspondance entre une séance faite et une séance du plan ; nil = incompatible.
@@ -460,7 +471,7 @@ enum WeekPlanner {
     /// Avertissements si tu places une séance à ce jour (affichés dans le menu « Déplacer »).
     static func warnings(for item: WeekPlan.Item, on day: Date, in plan: WeekPlan,
                          availableMinutes: Int?, calendar: Calendar = .current) -> [String] {
-        var occupants: [Occupant] = []
+        var occupants: [Occupant] = plan.outside
         for other in plan.items where other.id != item.id {
             guard let otherDay = other.day, other.isDone || other.isPending else { continue }
             let category = other.doneSession.map { self.category(of: $0, matched: other.category) } ?? other.category

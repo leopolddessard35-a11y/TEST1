@@ -323,7 +323,7 @@ enum WeekFreezer {
     @discardableResult
     static func update(plan: SeasonPlan, context: ModelContext) -> Bool {
         guard let week = plan.currentWeek else { return false }
-        var changed = false
+        var changed = migrateLegacyPlacements(plan: plan, context: context)
         let key = FrozenWeek.dayKey(week.start)
         let descriptor = FetchDescriptor<FrozenWeek>(predicate: #Predicate { $0.key == key })
         if ((try? context.fetchCount(descriptor)) ?? 0) == 0 {
@@ -338,5 +338,57 @@ enum WeekFreezer {
         }
         if changed { try? context.save() }
         return changed
+    }
+
+    /// Choix de jours enregistrés avant la mise à jour (clé horodatée, séance repérée par famille « intense-0 ») :
+    /// convertis vers le nouveau format (clé par date, séance repérée par type « threshold-0 ») pour ne pas les perdre.
+    static func migrateLegacyPlacements(plan: SeasonPlan, context: ModelContext, calendar: Calendar = .current) -> Bool {
+        let all = (try? context.fetch(FetchDescriptor<SessionPlacement>())) ?? []
+        let legacy = all.filter { placement in
+            placement.key.split(separator: "|").first.map { $0.allSatisfy(\.isNumber) } ?? false
+        }
+        guard !legacy.isEmpty else { return false }
+        var existingKeys = Set(all.map(\.key))
+        for placement in legacy {
+            let weekStart = calendar.startOfDay(for: placement.weekStart)
+            var slot = placement.slot
+            if !slot.hasPrefix(WeekPlan.exclusionPrefix),
+               let week = plan.weeks.first(where: { calendar.isDate($0.start, inSameDayAs: weekStart) }) {
+                slot = legacySlotMap(for: week, calendar: calendar)[slot] ?? slot
+            }
+            let key = SessionPlacement.key(weekStart: weekStart, slot: slot, calendar: calendar)
+            if existingKeys.contains(key) {
+                // Un choix existe déjà au nouveau format : il l'emporte.
+                context.delete(placement)
+            } else {
+                existingKeys.remove(placement.key)
+                placement.slot = slot
+                placement.key = key
+                existingKeys.insert(key)
+            }
+        }
+        try? context.save()
+        return true
+    }
+
+    /// Ancien identifiant (famille + rang) → nouveau (type de séance + rang), dans l'ordre des jours de la semaine.
+    private static func legacySlotMap(for week: PlannedWeek, calendar: Calendar) -> [String: String] {
+        var map: [String: String] = [:]
+        var byCategory: [SessionCategory: Int] = [:]
+        var byKind: [SessionKind: Int] = [:]
+        let start = calendar.startOfDay(for: week.start)
+        for offset in 0..<7 {
+            guard let day = calendar.date(byAdding: .day, value: offset, to: start) else { continue }
+            for session in DailyCoach.template(for: week, weekday: calendar.component(.weekday, from: day), ftp: nil)
+            where session.kind != .rest {
+                let category = SessionCategory(session.kind)
+                let oldIndex = byCategory[category, default: 0]
+                byCategory[category] = oldIndex + 1
+                let newIndex = byKind[session.kind, default: 0]
+                byKind[session.kind] = newIndex + 1
+                map["\(category.rawValue)-\(oldIndex)"] = "\(session.kind.rawValue)-\(newIndex)"
+            }
+        }
+        return map
     }
 }

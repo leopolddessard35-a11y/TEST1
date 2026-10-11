@@ -104,9 +104,10 @@ Bonnes nouvelles : aucune erreur de compilation certaine dans l'app, aucun risqu
 
 **Lot C** : virgule décimale partout, jargon réduit (Charge au lieu de TSS, Coach du jour), textes culpabilisants et personnels retirés, accessibilité de la séance (zones de 44 pt, libellés VoiceOver, actions), anneaux lus d'un bloc, notifications demandées au bon moment.
 
+**Ajouté ensuite** : règles d'enchaînement entre deux semaines (pas de séance dure le lundi après une sortie longue le dimanche) ; les jours choisis avant la mise à jour sont convertis au nouveau format.
+
 **Reste ouvert (non bloquant)**
 - Schéma de base de données versionné.
-- Règles d'enchaînement entre deux semaines.
 - Temps disponible additionné sur la journée.
 - Réparation des anciennes valeurs VO2max / poids Garmin déjà stockées dans les champs Apple.
 - Une table CIQUAL importée reste prioritaire sur une version plus récente intégrée à l'app.

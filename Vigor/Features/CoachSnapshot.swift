@@ -538,7 +538,7 @@ struct CoachSnapshot {
                                             symbol: "dumbbell.fill", minutes: Int(workout.durationSeconds / 60),
                                             isStrength: true, isIntense: false, isLegs: lowerSets >= 3))
         }
-        func organize(_ week: PlannedWeek, at moment: Date) -> WeekPlan {
+        func organize(_ week: PlannedWeek, at moment: Date, boundary: [WeekPlanner.Occupant] = []) -> WeekPlan {
             let weekStart = calendar.startOfDay(for: week.start)
             var pinned: [String: Date] = [:]
             var removed = Set<String>()
@@ -554,11 +554,22 @@ struct CoachSnapshot {
             }
             let habits = TrainingHabits.learn(from: doneSessions, before: weekStart, calendar: calendar)
             return WeekPlanner.make(week: week, ftp: thresholds.ftp, done: doneSessions, habits: habits,
-                                    pinned: pinned, removed: removed, excluded: excluded, unavailable: periods,
+                                    pinned: pinned, removed: removed, excluded: excluded, boundary: boundary, unavailable: periods,
                                     availableMinutes: { profile.availableMinutes(weekday: $0) }, now: moment, calendar: calendar)
         }
         let weekPlan: WeekPlan? = plan.currentWeek.map { organize($0, at: now) }
-        let nextWeekPlan: WeekPlan? = plan.weeks.dropFirst().first.map { organize($0, at: now) }
+        // Semaine suivante : le dimanche de cette semaine (fait ou prévu) compte pour son lundi.
+        func lastDayOccupants(_ week: WeekPlan?) -> [WeekPlanner.Occupant] {
+            guard let week, let sunday = week.days.last else { return [] }
+            var result: [WeekPlanner.Occupant] = []
+            for item in week.items(on: sunday) where item.isDone || item.isPending {
+                let category = item.doneSession.map { WeekPlanner.category(of: $0, matched: item.category) } ?? item.category
+                result.append(WeekPlanner.Occupant(id: item.id, day: sunday, category: category,
+                                                   isLegs: item.doneSession?.isLegs ?? false))
+            }
+            return result
+        }
+        let nextWeekPlan: WeekPlan? = plan.weeks.dropFirst().first.map { organize($0, at: now, boundary: lastDayOccupants(weekPlan)) }
         let milestones: [Milestone] = PlanTracking.milestones(plan: plan)
         // Coach du jour : croisement santé × entraînement × nutrition.
         var nights: [(daysAgo: Int, hours: Double)] = []
@@ -720,7 +731,10 @@ struct CoachSnapshot {
         let tomorrow: Date = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? todayStart
         // Calculé « comme demain matin » : ce qui n'est pas fait aujourd'hui est déjà replacé.
         let tomorrowWeek: PlannedWeek? = (weekPlan?.contains(tomorrow) ?? false) ? plan.currentWeek : plan.weeks.dropFirst().first
-        let tomorrowWeekPlan: WeekPlan? = tomorrowWeek.map { organize($0, at: tomorrow) }
+        let tomorrowIsNextWeek = !(weekPlan?.contains(tomorrow) ?? false)
+        let tomorrowWeekPlan: WeekPlan? = tomorrowWeek.map {
+            organize($0, at: tomorrow, boundary: tomorrowIsNextWeek ? lastDayOccupants(weekPlan) : [])
+        }
         let tomorrowPlan: [SessionPrescription] = tomorrowWeekPlan.map { plan in
             plan.items(on: tomorrow).filter(\.isPending).map(\.session)
         } ?? []
