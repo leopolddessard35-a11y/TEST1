@@ -163,6 +163,13 @@ private struct ProfileForm: View {
                 AgendaSection(profile: profile)
             }
             if page == .data {
+                Section("Nutrition") {
+                    NavigationLink {
+                        CiqualImportView()
+                    } label: {
+                        Label("Aliments génériques (CIQUAL)", systemImage: "leaf.fill")
+                    }
+                }
                 ShoesSection()
                 ExportSection()
             }

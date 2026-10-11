@@ -24,6 +24,8 @@ struct AddFoodView: View {
     @State private var creatingCustom = false
     @State private var lastScanned: String?
     @State private var added: [String] = []
+    @State private var installingCiqual = false
+    @State private var ciqual = CiqualStore.shared
 
     init(meal: Meal = Meal.suggested(), day: Date = .now, onSaved: @escaping () -> Void = {}) {
         self._meal = State(initialValue: meal)
@@ -65,6 +67,9 @@ struct AddFoodView: View {
                     added.append(product.name)
                     onSaved()
                 }
+            }
+            .sheet(isPresented: $installingCiqual) {
+                NavigationStack { CiqualImportView(isSheet: true) }
             }
             .sheet(isPresented: $creatingCustom) {
                 CustomFoodForm { product in
@@ -111,16 +116,31 @@ struct AddFoodView: View {
                     ForEach(CommonFoods.all.prefix(12)) { product in productRow(product) }
                 }
             } else {
-                let reference = CommonFoods.search(query)
+                let generic = ciqual.search(query)
+                let reference = generic.isEmpty ? CommonFoods.search(query) : []
                 let matchingRecents = recents.filter { $0.name.localizedCaseInsensitiveContains(query) }
                 if !matchingRecents.isEmpty {
                     Section("Déjà mangés") {
                         ForEach(matchingRecents.prefix(8)) { item in quickRow(item) }
                     }
                 }
+                if !generic.isEmpty {
+                    Section("Aliments génériques · CIQUAL") {
+                        ForEach(generic) { food in productRow(FoodProduct(ciqual: food)) }
+                    }
+                }
                 if !reference.isEmpty {
                     Section("Aliments de référence") {
                         ForEach(reference) { product in productRow(product) }
+                    }
+                }
+                if !ciqual.isInstalled {
+                    Section {
+                        Button { installingCiqual = true } label: {
+                            Label("Ajouter 3 000 aliments génériques (table CIQUAL)", systemImage: "leaf.fill")
+                        }
+                    } footer: {
+                        Text("Riz, viandes, légumes, plats… sans code-barres, au gramme près, hors ligne.")
                     }
                 }
                 if !results.isEmpty {
