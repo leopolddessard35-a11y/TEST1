@@ -67,7 +67,7 @@ enum QuickActions {
             record = DailyWellness(day: day)
             context.insert(record)
         }
-        record.waterMl = (record.waterMl ?? 0) + ml
+        record.waterMl = max(0, (record.waterMl ?? 0) + ml)
         try? context.save()
     }
 }

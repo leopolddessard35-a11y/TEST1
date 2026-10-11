@@ -15,13 +15,12 @@ struct TodayChecklistCard: View {
                 mealRow
                 Divider().padding(.leading, 44)
                 waterRow
+                // La séance du jour vit dans la carte coaching ; ici, seulement la coche une fois faite.
                 if let today = snapshot.weekStatus.first(where: { Calendar.current.isDateInToday($0.date) }),
-                   today.status != .rest, !today.planned.isEmpty {
+                   today.status == .done || today.status == .partial {
                     Divider().padding(.leading, 44)
-                    ChecklistRow(symbol: today.planned.first?.kind.symbol ?? "figure.mixed.cardio",
-                                 title: today.status == .done ? "Séance faite" : "Séance du jour",
-                                 subtitle: today.planned.map(\.kind.label).joined(separator: " + "),
-                                 done: today.status == .done)
+                    ChecklistRow(symbol: "checkmark", title: today.status == .done ? "Séance faite" : "Séance en partie faite",
+                                 subtitle: today.done.joined(separator: " + "), done: true)
                 }
                 Divider().padding(.leading, 44)
                 NavigationLink {
@@ -78,6 +77,9 @@ struct TodayChecklistCard: View {
             addButton("500 ml") {
                 QuickActions.addWater(500, context: context)
                 app.dataVersion += 1
+                app.offerUndo("500 ml d'eau ajoutés") { context in
+                    QuickActions.addWater(-500, context: context)
+                }
             }
         }
     }
@@ -88,7 +90,8 @@ struct TodayChecklistCard: View {
         }
         .buttonStyle(.bordered)
         .tint(Theme.accent)
-        .controlSize(.small)
+        .controlSize(.regular)
+        .frame(minHeight: 44)
     }
 }
 
@@ -191,7 +194,7 @@ struct SetupChecklistCard: View {
             Step(title: "FTP (même approximative)", done: (profile?.ftp ?? 0) > 0),
             Step(title: "Apple Santé synchronisée", done: sync.lastSyncDate != nil || app.lastSync > .distantPast),
             Step(title: "Garmin via Intervals.icu", done: !app.intervalsAPIKey.isEmpty),
-            Step(title: "Programme de muscu (Entraînement → Musculation)", done: !routines.isEmpty)
+            Step(title: "Programme de muscu (Sport → Musculation)", done: !routines.isEmpty)
         ]
     }
 }

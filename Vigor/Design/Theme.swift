@@ -23,7 +23,8 @@ enum Theme {
     /// OK / récupéré / dans la norme.
     static let good = Color(light: 0x656D4A, dark: 0xA4AC86)
     /// À surveiller.
-    static let caution = Color(light: 0x936639, dark: 0xB6AD90)
+    /// (En sombre, un ocre clair bien distinct de la sauge « OK ».)
+    static let caution = Color(light: 0x936639, dark: 0xE0A85C)
     /// Alerte (seule teinte hors palette, nécessaire pour distinguer une alerte d'un simple « à surveiller »).
     static let alert = Color(light: 0x9C4221, dark: 0xD0805A)
     /// Couleur de marque : boutons, onglet actif, pastilles d'icône.
@@ -38,14 +39,15 @@ enum Theme {
 
     // Familles de mesures (anneaux, graphiques).
     static let recovery = good
-    static let strain = Color(light: 0x936639, dark: 0xC29A6B)
+    /// Effort : teinte neutre (noyer profond), pour ne pas ressembler à un « à surveiller ».
+    static let strain = Color(light: 0x582F0E, dark: 0xD8CDB0)
     static let sleep = Color(light: 0x414833, dark: 0xC2C5AA)
     static let nutrition = Color(light: 0xA68A64, dark: 0xB6AD90)
     static let warning = alert
 
     /// Dégradés des anneaux (clair → profond).
     static let recoveryGradient = [Color(light: 0xA4AC86, dark: 0x656D4A), good]
-    static let strainGradient = [Color(light: 0xB6AD90, dark: 0x7F4F24), strain]
+    static let strainGradient = [Color(light: 0xA68A64, dark: 0x936639), strain]
     static let sleepGradient = [Color(light: 0xA4AC86, dark: 0x656D4A), sleep]
     static let nutritionGradient = [Color(light: 0xC2C5AA, dark: 0x936639), nutrition]
 

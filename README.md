@@ -81,7 +81,7 @@ FC de repos, SpO2, respiration, VO2max, poids, et le calendrier des séances pr�
 
 - **Aujourd'hui** : ta forme (3 anneaux), le coaching en 2 phrases avec la séance du jour (▶ lance la muscu), « À faire aujourd'hui » (manger, boire, séance, coucher, revue du dimanche) et, tant que ce n'est pas fini, « Configurer Vigor ».
 - **Santé** : moniteur (6 mesures vs ta normale), sommeil, blessures et symptômes, analyses (récupération, jour par jour, tendances, analyse du coach).
-- **Entraînement** : la semaine, la musculation (programmes, fraîcheur, progression), le vélo, la saison Traka, la charge et le hors-sport.
+- **Sport** (onglet) : la semaine (le mois en grand au tap), la musculation (programmes, fraîcheur, progression), le vélo, la saison Traka, la charge et le hors-sport.
 - **Nutrition** et **+** (saisies récentes en tête).
 - **Réglages** en 4 groupes : Profil et objectif, Connexions, Notifications, Données.
 - Palette « terre et forêt » (noyer, blé, mousse, olive). La couleur indique le statut : mousse = OK, blé = à surveiller, brique = alerte.
@@ -145,7 +145,7 @@ Pas besoin de choisir une *Team* pour le simulateur. Aperçu encore plus rapide 
 
 ## Importer tes séances Hevy
 Hevy → Profil → ⚙️ Réglages → *Exporter et importer des données* → **Exporter les séances** → enregistre le CSV dans *Fichiers*.
-Puis Vigor → Entraînement → **Importer l'export Hevy**. Tu peux réimporter l'export complet chaque semaine : rien n'est dupliqué.
+Puis Vigor → Sport → Progression → **Récupérer mon historique Hevy**. Tu peux réimporter l'export complet chaque semaine : rien n'est dupliqué.
 
 ## Feuille de route
 - [x] **Étape 1** — Socle : design Liquid Glass, Apple Santé, import Hevy, charge d'entraînement, récupération, progression muscu, plan Traka adaptatif

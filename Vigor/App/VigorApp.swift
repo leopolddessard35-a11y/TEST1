@@ -37,6 +37,12 @@ struct AppearanceRoot: View {
     }
 }
 
+struct UndoItem: Identifiable {
+    let id = UUID()
+    let message: String
+    let undo: @MainActor (ModelContext) -> Void
+}
+
 /// Base de données unique, partagée entre l'app et les Raccourcis Siri.
 enum SharedStore {
     static let container: ModelContainer = {
@@ -59,6 +65,8 @@ final class AppModel {
     let health = HealthKitService()
     var isSyncing = false
     var statusMessage: String?
+    /// Dernière saisie rapide annulable (bandeau « Annuler » quelques secondes).
+    var undoItem: UndoItem?
     /// Incrémenté après chaque import : force le recalcul du coach.
     var dataVersion = 0
     @ObservationIgnored let snapshotCache = SnapshotCache()
@@ -157,6 +165,19 @@ final class AppModel {
         guard let snapshot = makeSnapshot(context: context) else { return }
         await NotificationScheduler.sendMorningBrief(snapshot)
         await NotificationScheduler.refresh(with: snapshot)
+    }
+
+    /// Propose d'annuler la dernière saisie pendant quelques secondes.
+    func offerUndo(_ message: String, undo: @escaping @MainActor (ModelContext) -> Void) {
+        undoItem = UndoItem(message: message, undo: undo)
+    }
+
+    func performUndo(context: ModelContext) {
+        guard let item = undoItem else { return }
+        undoItem = nil
+        item.undo(context)
+        try? context.save()
+        dataVersion += 1
     }
 
     /// Une seule fois après la mise à jour : relit un an de nuits avec le bon découpage (coucher la veille au soir).

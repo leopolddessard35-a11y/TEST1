@@ -33,13 +33,6 @@ struct TodayView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        Task { await app.syncAll(context: context, profile: profiles.first) }
-                    } label: {
-                        if app.isSyncing { ProgressView() } else { Image(systemName: "arrow.triangle.2.circlepath") }
-                    }
-                }
             }
             .refreshable {
                 try? await sync.syncSleepData(force: true)
@@ -67,7 +60,8 @@ private struct RingsCoachingCard: View {
                 } label: {
                     SideRing(title: "Effort", fraction: snapshot.effortToday / 21,
                              text: snapshot.effortToday < 0.05 ? "0" : snapshot.effortToday.oneDecimal,
-                             suffix: "/21", colors: Theme.strainGradient)
+                             suffix: String(format: "cible %.0f–%.0f", snapshot.effortTarget.lowerBound, snapshot.effortTarget.upperBound),
+                             colors: Theme.strainGradient)
                 }
                 NavigationLink {
                     ReadinessDetailView(readiness: snapshot.readiness, history: Array(snapshot.readinessHistory.suffix(30)),
@@ -181,7 +175,7 @@ private struct HeroRing: View {
                     }
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
-                    Text(readiness?.level.label ?? "En calibrage")
+                    Text(readiness?.level.label ?? "Après ta 1re nuit")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(color)
                         .lineLimit(1)
@@ -260,7 +254,8 @@ struct HealthMonitorGrid: View {
         } label: {
             HealthMonitorTile(title: kind.shortTitle, symbol: kind.symbol, value: reading.latest.map { kind.format($0) } ?? "–",
                               unit: unit, reading: reading, tint: kind.color,
-                              trend: series.sorted { $0.date < $1.date }.suffix(14).map(\.value))
+                              trend: series.sorted { $0.date < $1.date }.suffix(14).map(\.value),
+                              higherIsBetter: kind.higherIsBetter)
         }
     }
 }

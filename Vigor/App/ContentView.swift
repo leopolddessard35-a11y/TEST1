@@ -19,11 +19,24 @@ struct ContentView: View {
         TabView(selection: $selection) {
             Tab("Aujourd'hui", systemImage: "sun.max.fill", value: AppTab.today) { TodayView() }
             Tab("Santé", systemImage: "heart.fill", value: AppTab.health) { RecoveryView() }
-            Tab("Entraînement", systemImage: "figure.outdoor.cycle", value: AppTab.activity) { TrainingView() }
+            Tab("Sport", systemImage: "figure.outdoor.cycle", value: AppTab.activity) { TrainingView() }
             Tab("Nutrition", systemImage: "fork.knife", value: AppTab.nutrition) { NutritionView() }
             Tab("Ajouter", systemImage: "plus", value: AppTab.add, role: .search) { QuickAddView() }
         }
         .tint(Theme.accent)
+        .overlay(alignment: .bottom) {
+            if let item = app.undoItem {
+                UndoToast(message: item.message) { app.performUndo(context: context) }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 96)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .task(id: item.id) {
+                        try? await Task.sleep(for: .seconds(5))
+                        if app.undoItem?.id == item.id { withAnimation { app.undoItem = nil } }
+                    }
+            }
+        }
+        .animation(.snappy, value: app.undoItem?.id)
         .onChange(of: selection) { old, new in
             // Le « + » ouvre la feuille d'ajout rapide sans quitter l'écran en cours.
             if new == .add {

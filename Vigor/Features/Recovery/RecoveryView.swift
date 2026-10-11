@@ -82,12 +82,18 @@ private struct SleepSummaryCard: View {
                     HStack(alignment: .firstTextBaseline) {
                         VStack(alignment: .leading, spacing: 2) {
                             CapsLabel(last.map { Calendar.current.isDateInToday($0.day) ? "Cette nuit" : $0.day.formatted(.dateTime.weekday(.wide).day()) } ?? "Dernière nuit")
-                            Text(last?.sleepHours?.hoursText ?? "–")
-                                .font(.system(.title, design: .rounded).weight(.heavy)).monospacedDigit()
+                            if let hours = last?.sleepHours {
+                                Text(hours.hoursText)
+                                    .font(.system(.title, design: .rounded).weight(.heavy)).monospacedDigit()
+                            } else {
+                                Text("Pas encore de nuit : ouvre Garmin Connect puis tire vers le bas pour synchroniser.")
+                                    .font(.subheadline).foregroundStyle(.secondary)
+                            }
                         }
                         Spacer()
                         if let performance = snapshot.lastSleepPerformance {
                             StatusPill(text: "\(Int((performance * 100).rounded())) % du besoin",
+                                       symbol: performance >= 0.85 ? "checkmark.circle.fill" : "exclamationmark.circle.fill",
                                        color: performance >= 0.85 ? Theme.good : (performance >= 0.7 ? Theme.caution : Theme.alert))
                         }
                         DetailChevron()

@@ -159,6 +159,9 @@ struct QuickAddView: View {
                         Button("+\(Int(ml)) ml") {
                             QuickActions.addWater(ml, context: context)
                             app.dataVersion += 1
+                            app.offerUndo("\(Int(ml)) ml d'eau ajoutés") { context in
+                                QuickActions.addWater(-ml, context: context)
+                            }
                             withAnimation { waterAdded = (waterAdded ?? 0) + ml }
                         }
                         .buttonStyle(.glass)

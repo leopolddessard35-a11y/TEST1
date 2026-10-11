@@ -51,6 +51,33 @@ enum TrainingCalendar {
                       weekStatus: [DayStatus],
                       calendar: Calendar = .current) -> [CalendarDay?] {
         guard let interval = calendar.dateInterval(of: .month, for: reference) else { return [] }
+        let firstWeekday = calendar.component(.weekday, from: interval.start)
+        let leading = (firstWeekday - calendar.firstWeekday + 7) % 7
+        let built = days(in: interval, activities: activities, workouts: workouts, unavailabilities: unavailabilities,
+                         planned: planned, weekStatus: weekStatus, calendar: calendar)
+        return Array(repeating: nil, count: leading) + built.map { Optional($0) }
+    }
+
+    /// Les 7 jours de la semaine en cours (même à cheval sur deux mois).
+    static func week(containing reference: Date,
+                     activities: [CardioActivity],
+                     workouts: [StrengthWorkout],
+                     unavailabilities: [Unavailability],
+                     planned: [PlannedWorkout],
+                     weekStatus: [DayStatus],
+                     calendar: Calendar = .current) -> [CalendarDay] {
+        guard let interval = calendar.dateInterval(of: .weekOfYear, for: reference) else { return [] }
+        return days(in: interval, activities: activities, workouts: workouts, unavailabilities: unavailabilities,
+                    planned: planned, weekStatus: weekStatus, calendar: calendar)
+    }
+
+    static func days(in interval: DateInterval,
+                     activities: [CardioActivity],
+                     workouts: [StrengthWorkout],
+                     unavailabilities: [Unavailability],
+                     planned: [PlannedWorkout],
+                     weekStatus: [DayStatus],
+                     calendar: Calendar = .current) -> [CalendarDay] {
         let today = calendar.startOfDay(for: .now)
         let sessionsByDay = self.sessionsByDay(activities: activities, workouts: workouts, calendar: calendar)
         var statusByDay: [Date: DayStatus] = [:]
@@ -58,11 +85,7 @@ enum TrainingCalendar {
         var plannedByDay: [Date: [String]] = [:]
         for item in planned { plannedByDay[calendar.startOfDay(for: item.date), default: []].append(item.name) }
 
-        var days: [CalendarDay?] = []
-        let firstWeekday = calendar.component(.weekday, from: interval.start)
-        let leading = (firstWeekday - calendar.firstWeekday + 7) % 7
-        days.append(contentsOf: Array(repeating: nil, count: leading))
-
+        var days: [CalendarDay] = []
         var day = interval.start
         while day < interval.end {
             let sessions = sessionsByDay[day] ?? []
@@ -150,6 +173,8 @@ struct TrainingCalendarCard: View {
     @Query(sort: \PlannedWorkout.date) private var planned: [PlannedWorkout]
     @State private var month = Date.now
     @State private var selected: CalendarDay?
+    /// Replié = la semaine (pour que la musculation reste visible) ; déplié = le mois en grand.
+    @State private var expanded = false
 
     private var calendar: Calendar { .current }
 
@@ -173,22 +198,25 @@ struct TrainingCalendarCard: View {
                     Divider().frame(height: 44)
                     stat(value: "\(sessionCount)", unit: (Double(minutes) / 60).hoursText, title: "Ce mois", symbol: nil)
                 }
-                Text("Une semaine compte dans la série à partir de \(TrainingCalendar.weeklyTarget) séances.")
-                    .font(.caption2).foregroundStyle(.secondary)
+                if expanded {
+                    Text("Une semaine compte dans la série à partir de \(TrainingCalendar.weeklyTarget) séances.")
+                        .font(.caption2).foregroundStyle(.secondary)
 
-                Divider()
+                    Divider()
 
-                HStack {
-                    Image(systemName: "calendar").foregroundStyle(Theme.accent)
-                    Text(month.formatted(.dateTime.month(.wide).year()).capitalized)
-                        .font(.title3.weight(.bold))
-                    Spacer()
-                    Button { shift(-1) } label: { Image(systemName: "chevron.left").frame(width: 36, height: 36) }
-                    Button { shift(1) } label: { Image(systemName: "chevron.right").frame(width: 36, height: 36) }
-                        .disabled(isCurrentMonth && planned.allSatisfy { $0.date < .now })
+                    HStack {
+                        Image(systemName: "calendar").foregroundStyle(Theme.accent)
+                        Text(month.formatted(.dateTime.month(.wide).year()).capitalized)
+                            .font(.title3.weight(.bold))
+                        Spacer()
+                        Button { shift(-1) } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }
+                            .accessibilityLabel("Mois précédent")
+                        Button { shift(1) } label: { Image(systemName: "chevron.right").frame(width: 44, height: 44) }
+                            .accessibilityLabel("Mois suivant")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.accent)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.accent)
 
                 // Jours de la semaine dans une pilule, puis la grille.
                 HStack(spacing: 0) {
@@ -199,22 +227,46 @@ struct TrainingCalendarCard: View {
                 .padding(.vertical, 8)
                 .background(Theme.well.opacity(0.7), in: .capsule)
 
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7), spacing: 10) {
-                    ForEach(Array(days.enumerated()), id: \.offset) { _, day in
-                        if let day {
+                if expanded {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7), spacing: 10) {
+                        ForEach(Array(days.enumerated()), id: \.offset) { _, day in
+                            if let day {
+                                Button { selected = day } label: { CalendarDayCell(day: day) }
+                                    .buttonStyle(.plain)
+                            } else {
+                                Color.clear.frame(height: 44)
+                            }
+                        }
+                    }
+                    .simultaneousGesture(DragGesture(minimumDistance: 30).onEnded { value in
+                        if value.translation.width < -60 { shift(1) }
+                        if value.translation.width > 60 { shift(-1) }
+                    })
+                    legend
+                } else {
+                    let week = TrainingCalendar.week(containing: .now, activities: activities, workouts: workouts,
+                                                     unavailabilities: unavailabilities, planned: planned,
+                                                     weekStatus: snapshot.weekStatus)
+                    HStack(spacing: 4) {
+                        ForEach(week) { day in
                             Button { selected = day } label: { CalendarDayCell(day: day) }
                                 .buttonStyle(.plain)
-                        } else {
-                            Color.clear.frame(height: 44)
                         }
                     }
                 }
-                .simultaneousGesture(DragGesture(minimumDistance: 30).onEnded { value in
-                    if value.translation.width < -60 { shift(1) }
-                    if value.translation.width > 60 { shift(-1) }
-                })
 
-                legend
+                Button {
+                    withAnimation(.snappy) {
+                        expanded.toggle()
+                        if !expanded { month = .now }
+                    }
+                } label: {
+                    Label(expanded ? "Réduire à la semaine" : "Voir le mois", systemImage: expanded ? "chevron.up" : "calendar")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Theme.accent)
 
                 if isCurrentMonth, let week = snapshot.plan.currentWeek {
                     NavigationLink { WeekDetailView(week: week) } label: {
@@ -276,6 +328,8 @@ struct TrainingCalendarCard: View {
 /// Une case du calendrier : rond plein (fait), contour (manqué), pointillé (prévu), gris (repos).
 struct CalendarDayCell: View {
     let day: CalendarDay
+    /// Suit la taille de texte choisie dans Réglages iOS.
+    @ScaledMetric(relativeTo: .subheadline) private var size: CGFloat = 38
 
     var body: some View {
         VStack(spacing: 3) {
@@ -283,7 +337,7 @@ struct CalendarDayCell: View {
                 background
                 content
             }
-            .frame(width: 38, height: 38)
+            .frame(width: size, height: size)
             .overlay {
                 if day.isToday {
                     Circle().stroke(Color.primary, lineWidth: 2).padding(-3)
@@ -325,7 +379,7 @@ struct CalendarDayCell: View {
         case .hard:
             ZStack(alignment: .topTrailing) {
                 Text(number).font(.subheadline.weight(.bold)).foregroundStyle(.white)
-                    .frame(width: 38, height: 38)
+                    .frame(width: size, height: size)
                 Image(systemName: "flame.fill").font(.system(size: 10)).foregroundStyle(Theme.caution)
                     .padding(3)
                     .background(Theme.card, in: .circle)

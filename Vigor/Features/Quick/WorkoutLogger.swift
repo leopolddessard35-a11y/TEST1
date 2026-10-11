@@ -63,6 +63,19 @@ struct WorkoutDraft: Codable, Equatable {
     }
 }
 
+/// Champ de saisie actif (pour les boutons −/+ au-dessus du clavier).
+enum LogField: Hashable {
+    case weight(UUID)
+    case reps(UUID)
+}
+
+/// Suppression annulable pendant quelques secondes.
+private struct LoggerUndo: Identifiable {
+    let id = UUID()
+    let message: String
+    let previous: WorkoutDraft
+}
+
 /// Saisie d'une séance de musculation en direct, à la manière de Hevy.
 struct WorkoutLoggerView: View {
     @Environment(\.modelContext) private var context
@@ -79,6 +92,8 @@ struct WorkoutLoggerView: View {
     @State private var finishing = false
     @State private var confirmLeave = false
     @State private var restEnd: Date?
+    @State private var undo: LoggerUndo?
+    @FocusState private var focus: LogField?
 
     var body: some View {
         let history = Self.history(of: workouts)
@@ -94,7 +109,9 @@ struct WorkoutLoggerView: View {
                         ExerciseLogCard(exercise: $exercise,
                                         previous: sessions.last,
                                         advice: StrengthProgression.advise(exercise: exercise.name, sessions: sessions),
+                                        focus: $focus,
                                         onSetDone: { setID in startRest(after: setID, in: exercise.id) },
+                                        onBeforeDelete: { message in offerUndo(message) },
                                         onDelete: { remove(exercise.id) })
                     }
                     Button { picking = true } label: {
@@ -109,15 +126,44 @@ struct WorkoutLoggerView: View {
             .scrollDismissesKeyboard(.interactively)
             .background(AppBackground())
             .safeAreaInset(edge: .bottom) {
-                if let restEnd {
-                    RestBanner(end: restEnd,
-                               onAdjust: { delta in setRest(until: restEnd.addingTimeInterval(delta)) },
-                               onSkip: { setRest(until: nil) })
+                VStack(spacing: 8) {
+                    if let undo {
+                        UndoToast(message: undo.message) {
+                            draft = undo.previous
+                            self.undo = nil
+                        }
+                        .padding(.horizontal, 16)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .task(id: undo.id) {
+                            try? await Task.sleep(for: .seconds(5))
+                            if self.undo?.id == undo.id { withAnimation { self.undo = nil } }
+                        }
+                    }
+                    if let restEnd {
+                        RestBanner(end: restEnd,
+                                   onAdjust: { delta in setRest(until: restEnd.addingTimeInterval(delta)) },
+                                   onSkip: { setRest(until: nil) })
+                    }
                 }
+                .animation(.snappy, value: undo?.id)
             }
             .navigationTitle("Séance de muscu")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                // En salle : ajuster sans retaper (±2,5 kg, ±1 rep), puis passer au champ suivant.
+                ToolbarItemGroup(placement: .keyboard) {
+                    if case .weight(let id) = focus {
+                        Button("−2,5") { adjust(id, weight: -2.5) }
+                        Button("+2,5") { adjust(id, weight: 2.5) }
+                    }
+                    if case .reps(let id) = focus {
+                        Button("−1") { adjust(id, reps: -1) }
+                        Button("+1") { adjust(id, reps: 1) }
+                    }
+                    Spacer()
+                    Button("Suivant") { focusNext() }
+                    Button("OK") { focus = nil }.fontWeight(.semibold)
+                }
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Fermer") {
                         if draft.exercises.isEmpty {
@@ -152,6 +198,8 @@ struct WorkoutLoggerView: View {
                     .presentationDetents([.medium, .large])
             }
             .onAppear {
+                // L'écran reste allumé pendant la séance (repos, téléphone posé sur le banc).
+                UIApplication.shared.isIdleTimerDisabled = true
                 guard !loaded else { return }
                 loaded = true
                 if let saved = WorkoutDraft.load(), !saved.exercises.isEmpty {
@@ -166,6 +214,7 @@ struct WorkoutLoggerView: View {
                     draft = WorkoutDraft(title: Self.suggestedTitle(workouts), start: .now, exercises: [])
                 }
             }
+            .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
             .onChange(of: draft) { draft.persist() }
             .task(id: restEnd) {
                 // Compte à rebours sonore quand l'app est ouverte : tics sur les 3 dernières secondes, puis son + vibration.
@@ -278,7 +327,46 @@ struct WorkoutLoggerView: View {
                                                           note: (note ?? "").isEmpty ? nil : note))
     }
 
+    private func offerUndo(_ message: String) {
+        undo = LoggerUndo(message: message, previous: draft)
+    }
+
+    private func adjust(_ setID: UUID, weight delta: Double = 0, reps repsDelta: Int = 0) {
+        for exerciseIndex in draft.exercises.indices {
+            guard let setIndex = draft.exercises[exerciseIndex].sets.firstIndex(where: { $0.id == setID }) else { continue }
+            if delta != 0 {
+                let current = draft.exercises[exerciseIndex].sets[setIndex].weight ?? 0
+                draft.exercises[exerciseIndex].sets[setIndex].weight = max(0, current + delta)
+            }
+            if repsDelta != 0 {
+                let current = draft.exercises[exerciseIndex].sets[setIndex].reps ?? 0
+                draft.exercises[exerciseIndex].sets[setIndex].reps = max(0, current + repsDelta)
+            }
+            Feedback.tick()
+            return
+        }
+    }
+
+    /// kg → reps de la même série → kg de la série suivante.
+    private func focusNext() {
+        guard let focus else { return }
+        let allSets: [WorkoutDraft.SetDraft] = draft.exercises.flatMap(\.sets)
+        switch focus {
+        case .weight(let id):
+            self.focus = .reps(id)
+        case .reps(let id):
+            if let index = allSets.firstIndex(where: { $0.id == id }), index + 1 < allSets.count {
+                self.focus = .weight(allSets[index + 1].id)
+            } else {
+                self.focus = nil
+            }
+        }
+    }
+
     private func remove(_ id: UUID) {
+        if let name = draft.exercises.first(where: { $0.id == id })?.name {
+            offerUndo("\(name) supprimé")
+        }
         draft.exercises.removeAll { $0.id == id }
     }
 
@@ -401,7 +489,9 @@ private struct ExerciseLogCard: View {
     @Binding var exercise: WorkoutDraft.ExerciseDraft
     let previous: ExerciseSession?
     let advice: ProgressionAdvice?
+    var focus: FocusState<LogField?>.Binding
     let onSetDone: (UUID) -> Void
+    let onBeforeDelete: (String) -> Void
     let onDelete: () -> Void
 
     private static let restPresets: [Int] = [45, 60, 75, 90, 120, 150, 180, 240]
@@ -447,16 +537,18 @@ private struct ExerciseLogCard: View {
                     Text("Précédent").frame(maxWidth: .infinity, alignment: .leading)
                     Text("kg").frame(width: 64)
                     Text("Reps").frame(width: 52)
-                    Image(systemName: "checkmark").frame(width: 30)
+                    Image(systemName: "checkmark").frame(width: 36)
                 }
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
 
                 ForEach($exercise.sets) { $set in
                     let number = (exercise.sets.firstIndex { $0.id == set.id } ?? 0) + 1
-                    SetLogRow(number: number, set: $set, previous: previousText(number - 1), onDone: { onSetDone(set.id) })
+                    SetLogRow(number: number, set: $set, previous: previousText(number - 1), focus: focus,
+                              onDone: { onSetDone(set.id) })
                         .contextMenu {
                             Button("Supprimer la série", systemImage: "trash", role: .destructive) {
+                                onBeforeDelete("Série \(number) supprimée")
                                 exercise.sets.removeAll { $0.id == set.id }
                             }
                         }
@@ -493,6 +585,7 @@ private struct SetLogRow: View {
     let number: Int
     @Binding var set: WorkoutDraft.SetDraft
     let previous: String
+    var focus: FocusState<LogField?>.Binding
     let onDone: () -> Void
 
     var body: some View {
@@ -501,7 +594,7 @@ private struct SetLogRow: View {
                 Text(set.warmup ? "É" : "\(number)")
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(set.warmup ? Theme.nutrition : Color.primary)
-                    .frame(width: 34, height: 30)
+                    .frame(width: 34, height: 44)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(set.warmup ? "Série d'échauffement" : "Série \(number)")
@@ -510,14 +603,16 @@ private struct SetLogRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading).lineLimit(1)
 
             TextField("kg", value: $set.weight, format: .number)
+                .focused(focus, equals: .weight(set.id))
                 .keyboardType(.decimalPad)
                 .multilineTextAlignment(.center)
-                .frame(width: 64, height: 32)
+                .frame(width: 64, height: 40)
                 .background(Color.secondary.opacity(0.12), in: .rect(cornerRadius: 8))
             TextField("reps", value: $set.reps, format: .number)
+                .focused(focus, equals: .reps(set.id))
                 .keyboardType(.numberPad)
                 .multilineTextAlignment(.center)
-                .frame(width: 52, height: 32)
+                .frame(width: 52, height: 40)
                 .background(Color.secondary.opacity(0.12), in: .rect(cornerRadius: 8))
 
             Button {
@@ -530,7 +625,8 @@ private struct SetLogRow: View {
                 Image(systemName: set.done ? "checkmark.circle.fill" : "circle")
                     .font(.title2)
                     .foregroundStyle(set.done ? Theme.recovery : Color.secondary)
-                    .frame(width: 30)
+                    .frame(width: 36, height: 44)
+                    .contentShape(.rect)
             }
             .buttonStyle(.plain)
         }

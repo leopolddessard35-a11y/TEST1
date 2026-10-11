@@ -60,7 +60,7 @@ struct TrainingView: View {
                 }
             }
             .background(AppBackground())
-            .navigationTitle("Entraînement")
+            .navigationTitle("Sport")
         }
     }
 

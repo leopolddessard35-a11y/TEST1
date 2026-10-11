@@ -180,7 +180,7 @@ struct MetricDetailView: View {
                             }
                             Text(latest.date.formatted(date: .complete, time: .omitted)).font(.caption).foregroundStyle(.secondary)
                             HStack(spacing: 8) {
-                                StatusPill(text: reading.status.label, symbol: reading.status.symbol, color: reading.color)
+                                StatusPill(text: reading.label(higherIsBetter: kind.higherIsBetter), symbol: reading.status.symbol, color: reading.color)
                                 Text(reading.sentence(higherIsBetter: kind.higherIsBetter)).font(.subheadline)
                                     .fixedSize(horizontal: false, vertical: true)
                             }

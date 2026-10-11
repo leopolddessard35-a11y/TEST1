@@ -63,7 +63,7 @@ struct HealthReading {
             case .normal: "Normal"
             case .higher: "Supérieur"
             case .lower: "Inférieur"
-            case .unknown: "En calibrage"
+            case .unknown: "Normale en cours"
             }
         }
 
@@ -89,6 +89,25 @@ struct HealthReading {
     var center: Double? = nil
     var spread: Double? = nil
     var z: Double? = nil
+    /// Mesures déjà disponibles pour établir ta normale (il en faut `requiredBaseline`).
+    var baselineCount: Int = 0
+    static let requiredBaseline = 5
+
+    /// Libellé qui dit si l'écart est bon ou non (« Haut, bon signe » plutôt que « Supérieur »).
+    func label(higherIsBetter: Bool?) -> String {
+        switch status {
+        case .normal: return "Normal"
+        case .unknown:
+            if latest == nil { return "Pas encore de mesure" }
+            let missing = max(1, Self.requiredBaseline - baselineCount)
+            return "Normale dans \(missing) mesure\(missing > 1 ? "s" : "")"
+        case .higher, .lower:
+            let word = status == .higher ? "Haut" : "Bas"
+            guard let higherIsBetter else { return status == .higher ? "Plus haut" : "Plus bas" }
+            let good = (status == .higher) == higherIsBetter
+            return good ? "\(word), bon signe" : "\(word), à surveiller"
+        }
+    }
 
     /// Règle unique, partagée par l'accueil et les pages de détail :
     /// |z| < 1 = normal ; 1–2 = légèrement au-dessus / en dessous ; > 2 = nettement.
@@ -99,8 +118,9 @@ struct HealthReading {
         }
         let cutoff = Calendar.current.date(byAdding: .day, value: -60, to: last.date) ?? last.date
         let baseline: [Double] = series.dropLast().filter { $0.date >= cutoff }.map(\.value)
-        guard baseline.count >= 5, let center = Robust.median(baseline) else {
-            return HealthReading(latest: last.value, status: .unknown, position: 0.5, band: 0.35...0.65, concerning: false)
+        guard baseline.count >= requiredBaseline, let center = Robust.median(baseline) else {
+            return HealthReading(latest: last.value, status: .unknown, position: 0.5, band: 0.35...0.65, concerning: false,
+                                 baselineCount: baseline.count)
         }
         // Écart robuste, avec un plancher de 2 % pour les mesures très stables (respiration, poids, FC).
         let spread = max(Robust.mad(baseline) ?? 0, abs(center) * 0.02, 0.0001)
@@ -114,7 +134,7 @@ struct HealthReading {
         }
         return HealthReading(latest: last.value, status: status, position: position,
                              band: (1.0 / 3)...(2.0 / 3), concerning: concerning,
-                             center: center, spread: spread, z: z)
+                             center: center, spread: spread, z: z, baselineCount: baseline.count)
     }
 
     /// Phrase de lecture, identique partout.
@@ -177,28 +197,28 @@ struct HealthMonitorTile: View {
     let reading: HealthReading
     var tint: Color = Theme.sleep
     var trend: [Double] = []
+    var higherIsBetter: Bool?
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 6) {
-                    IconBadge(symbol: symbol, tint: Theme.accent, size: 22)
-                    Text(title).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
-                }
-                HStack(alignment: .firstTextBaseline, spacing: 3) {
-                    Text(value).font(.system(.title2, design: .rounded).weight(.heavy)).monospacedDigit()
-                        .lineLimit(1).minimumScaleFactor(0.6)
-                    if !unit.isEmpty { Text(unit).font(.caption.weight(.medium)).foregroundStyle(.secondary) }
-                }
-                if trend.count >= 2 {
-                    Sparkline(values: trend, color: tint).frame(height: 22)
-                }
-                StatusPill(text: reading.status.label, symbol: reading.status.symbol, color: reading.color)
+        // Un chiffre, une pastille de statut, UNE visualisation (la courbe des 14 derniers jours).
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                IconBadge(symbol: symbol, tint: Theme.accent, size: 22)
+                Text(title).font(.subheadline.weight(.semibold)).lineLimit(1)
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
-            VerticalGauge(position: reading.position, band: reading.band, color: reading.color)
-                .frame(height: 84)
-                .padding(.top, 4)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(value).font(.system(.title2, design: .rounded).weight(.heavy)).monospacedDigit()
+                    .lineLimit(1)
+                if !unit.isEmpty { Text(unit).font(.caption.weight(.medium)).foregroundStyle(.secondary) }
+            }
+            if trend.count >= 2 {
+                Sparkline(values: trend, color: tint).frame(height: 24)
+            } else {
+                Text(reading.latest == nil ? "Synchronise ta montre" : "La courbe apparaît après 2 mesures")
+                    .font(.caption2).foregroundStyle(.secondary).frame(height: 24, alignment: .leading)
+            }
+            StatusPill(text: reading.label(higherIsBetter: higherIsBetter), symbol: reading.status.symbol, color: reading.color)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -355,5 +375,28 @@ struct LinkRow: View {
         .padding(.vertical, 8)
         .frame(minHeight: 44)
         .contentShape(.rect)
+    }
+}
+
+// MARK: - Annuler
+
+/// Bandeau « Annuler » après une saisie rapide (eau, série supprimée…).
+struct UndoToast: View {
+    let message: String
+    let onUndo: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.good)
+            Text(message).font(.subheadline.weight(.medium)).lineLimit(2)
+            Spacer(minLength: 8)
+            Button("Annuler", action: onUndo)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(Theme.accent)
+                .frame(minHeight: 44)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
+        .card(cornerRadius: 22)
     }
 }
