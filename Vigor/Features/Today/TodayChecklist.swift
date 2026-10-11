@@ -94,12 +94,15 @@ struct ChecklistRow<Trailing: View>: View {
         self.trailing = trailing()
     }
 
+    @ScaledMetric(relativeTo: .subheadline) private var iconSize: CGFloat = 14
+    @ScaledMetric(relativeTo: .subheadline) private var circleSize: CGFloat = 32
+
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: done ? "checkmark" : symbol)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: iconSize, weight: .semibold))
                 .foregroundStyle(done ? Color.white : Theme.accent)
-                .frame(width: 32, height: 32)
+                .frame(width: circleSize, height: circleSize)
                 .background(done ? AnyShapeStyle(Theme.good) : AnyShapeStyle(Theme.well), in: .circle)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
@@ -120,65 +123,95 @@ extension ChecklistRow where Trailing == EmptyView {
     }
 }
 
-/// Démarrage guidé : ce qu'il reste à configurer pour que Vigor soit fiable. Disparaît une fois complet.
+/// Démarrage guidé : ce qu'il reste à configurer pour que Vigor soit fiable. Disparaît une fois l'essentiel fait.
 struct SetupChecklistCard: View {
     @Environment(AppModel.self) private var app
     @Environment(SyncService.self) private var sync
     @Query private var profiles: [AthleteProfile]
     @Query private var routines: [WorkoutRoutine]
+    /// Une seule nuit suffit à prouver qu'Apple Santé est branchée.
+    @Query(SetupChecklistCard.sleepRecordDescriptor) private var sleepRecords: [DailyWellness]
     @AppStorage("setup.dismissed") private var dismissed = false
+    /// Lue dans le trousseau à l'apparition (et après chaque synchro), pas à chaque rendu.
+    @State private var hasIntervalsKey = false
     let onOpenSettings: () -> Void
+
+    static var sleepRecordDescriptor: FetchDescriptor<DailyWellness> {
+        var descriptor = FetchDescriptor<DailyWellness>(predicate: #Predicate { $0.sleepHours != nil })
+        descriptor.fetchLimit = 1
+        return descriptor
+    }
 
     private struct Step: Identifiable {
         var id: String { title }
         let title: String
         let done: Bool
+        /// Facultatif : affiché, mais ne bloque pas la fin de la configuration.
+        var optional = false
+        /// Se règle dans Réglages (profil) : c'est ce que le bouton « Compléter » ouvre.
+        var inSettings = false
     }
 
     var body: some View {
         let steps = makeSteps()
-        let remaining = steps.filter { !$0.done }.count
-        if remaining > 0 && !dismissed {
-            GlassCard {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        CapsLabel("Configurer Vigor")
-                        Spacer()
-                        Text("\(steps.count - remaining) / \(steps.count)").font(.caption.weight(.semibold).monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
-                    ForEach(steps) { step in
-                        HStack(spacing: 10) {
-                            Image(systemName: step.done ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(step.done ? Theme.good : Color.secondary)
-                            Text(step.title).font(.subheadline)
-                                .foregroundStyle(step.done ? Color.secondary : Color.primary)
+        let required = steps.filter { !$0.optional }
+        let remaining = required.filter { !$0.done }.count
+        let settingsPending = steps.contains { $0.inSettings && !$0.done }
+        Group {
+            if remaining > 0 && !dismissed {
+                GlassCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            CapsLabel("Configurer Vigor")
+                            Spacer()
+                            Text("\(required.count - remaining) / \(required.count)").font(.caption.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(.secondary)
                         }
+                        ForEach(steps) { step in
+                            HStack(spacing: 10) {
+                                Image(systemName: step.done ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(step.done ? Theme.good : Color.secondary)
+                                Text(step.title).font(.subheadline)
+                                    .foregroundStyle(step.done ? Color.secondary : Color.primary)
+                                if step.optional {
+                                    Text("(facultatif)").font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            .accessibilityElement(children: .combine)
+                            .accessibilityValue(step.done ? "fait" : "à faire")
+                        }
+                        HStack {
+                            if settingsPending {
+                                Button("Compléter", action: onOpenSettings)
+                                    .buttonStyle(.glassProminent)
+                                    .tint(Theme.accent)
+                            }
+                            Spacer()
+                            Button("Masquer") { dismissed = true }
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .frame(minWidth: 44, minHeight: 44)
+                                .contentShape(.rect)
+                        }
+                        .padding(.top, 4)
                     }
-                    HStack {
-                        Button("Compléter", action: onOpenSettings)
-                            .buttonStyle(.glassProminent)
-                            .tint(Theme.accent)
-                        Spacer()
-                        Button("Masquer") { dismissed = true }
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.top, 4)
                 }
             }
         }
+        .task(id: app.dataVersion) { hasIntervalsKey = !app.intervalsAPIKey.isEmpty }
     }
 
     private func makeSteps() -> [Step] {
         let profile = profiles.first
+        let hasRace = !(profile?.raceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+            && (profile?.raceDate ?? .distantPast) > .now
         return [
-            Step(title: "Objectif et date de course", done: !(profile?.raceName.isEmpty ?? true)),
-            Step(title: "Taille et poids", done: (profile?.heightCm ?? 0) > 0 && (profile?.weightKg ?? 0) > 0),
-            Step(title: "FTP (même approximative)", done: (profile?.ftp ?? 0) > 0),
-            Step(title: "Apple Santé synchronisée", done: sync.lastSyncDate != nil || app.lastSync > .distantPast),
-            Step(title: "Garmin via Intervals.icu", done: !app.intervalsAPIKey.isEmpty),
-            Step(title: "Programme de muscu (Sport → Musculation)", done: !routines.isEmpty)
+            Step(title: "Objectif et date de course", done: hasRace, inSettings: true),
+            Step(title: "Taille et poids", done: (profile?.heightCm ?? 0) > 0 && (profile?.weightKg ?? 0) > 0, inSettings: true),
+            Step(title: "FTP (même approximative)", done: (profile?.ftp ?? 0) > 0, inSettings: true),
+            Step(title: "Apple Santé synchronisée", done: sync.lastSyncDate != nil || !sleepRecords.isEmpty),
+            Step(title: "Garmin via Intervals.icu", done: hasIntervalsKey, optional: true, inSettings: true),
+            Step(title: "Programme de muscu (Sport → Musculation)", done: !routines.isEmpty, optional: true)
         ]
     }
 }

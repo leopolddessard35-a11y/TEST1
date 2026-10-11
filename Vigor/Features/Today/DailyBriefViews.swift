@@ -10,38 +10,6 @@ extension Verdict {
     }
 }
 
-/// Carte d'accueil : ce que tu fais aujourd'hui, adapté à ta nuit, ta récup et ton alimentation.
-struct DailyBriefCard: View {
-    let brief: DailyBrief
-
-    var body: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Label(brief.verdict.label, systemImage: brief.verdict.symbol)
-                        .font(.headline)
-                        .foregroundStyle(brief.verdict.color)
-                    Spacer()
-                }
-                EnergyGauge(value: brief.capacity, color: brief.verdict.color, label: "Énergie du jour")
-                    .frame(maxWidth: 200)
-                    .frame(maxWidth: .infinity)
-                Text(brief.headline).font(.subheadline).lineLimit(3)
-
-                ForEach(brief.adapted) { session in
-                    SessionRow(session: session, changed: !brief.planned.contains(session), compact: true)
-                }
-
-                HStack {
-                    Spacer()
-                    Text("Voir pourquoi").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                    DetailChevron()
-                }
-            }
-        }
-    }
-}
-
 struct SessionRow: View {
     let session: SessionPrescription
     var changed = false

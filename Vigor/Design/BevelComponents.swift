@@ -26,46 +26,12 @@ struct GradientRing: View {
     }
 }
 
-/// Un anneau, sa valeur au centre et son nom dessous.
-struct RingStat: View {
-    let title: String
-    let fraction: Double
-    let text: String
-    var suffix: String = ""
-    let colors: [Color]
-
-    var body: some View {
-        VStack(spacing: 8) {
-            ZStack {
-                GradientRing(fraction: fraction, colors: colors, lineWidth: 9)
-                HStack(alignment: .firstTextBaseline, spacing: 1) {
-                    Text(text).font(.system(.title3, design: .rounded).weight(.bold)).monospacedDigit()
-                        .lineLimit(1).minimumScaleFactor(0.6)
-                    if !suffix.isEmpty { Text(suffix).font(.caption2.weight(.semibold)).foregroundStyle(.secondary) }
-                }
-            }
-            .frame(width: 84, height: 84)
-            Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-    }
-}
-
 // MARK: - Moniteur de santé
 
-/// Où se situe la valeur du jour par rapport à TA normale (médiane ± écart robuste des 30 derniers jours).
+/// Où se situe la valeur du jour par rapport à TA normale (médiane ± écart robuste des 60 derniers jours).
 struct HealthReading {
     enum Status {
         case normal, higher, lower, unknown
-
-        var label: String {
-            switch self {
-            case .normal: "Normal"
-            case .higher: "Supérieur"
-            case .lower: "Inférieur"
-            case .unknown: "Normale en cours"
-            }
-        }
 
         var symbol: String {
             switch self {
@@ -91,16 +57,27 @@ struct HealthReading {
     var z: Double? = nil
     /// Mesures déjà disponibles pour établir ta normale (il en faut `requiredBaseline`).
     var baselineCount: Int = 0
+    /// Date de la dernière mesure.
+    var measuredOn: Date? = nil
+    /// Dernière mesure trop ancienne (plus de `staleDays` jours) : on ne la compare pas à la normale.
+    var isStale = false
     static let requiredBaseline = 5
+    static let staleDays = 3
+
+    /// Symbole de la pastille (sablier neutre si la mesure est ancienne).
+    var symbol: String { isStale ? "clock.badge.questionmark" : status.symbol }
 
     /// Libellé qui dit si l'écart est bon ou non (« Haut, bon signe » plutôt que « Supérieur »).
     func label(higherIsBetter: Bool?) -> String {
+        if isStale, let measuredOn {
+            return "Mesure du \(measuredOn.formatted(.dateTime.day().month(.abbreviated)))"
+        }
         switch status {
         case .normal: return "Normal"
         case .unknown:
             if latest == nil { return "Pas encore de mesure" }
             let missing = max(1, Self.requiredBaseline - baselineCount)
-            return "Normale dans \(missing) mesure\(missing > 1 ? "s" : "")"
+            return "Encore \(missing) mesure\(missing > 1 ? "s" : "") pour ta normale"
         case .higher, .lower:
             let word = status == .higher ? "Haut" : "Bas"
             guard let higherIsBetter else { return status == .higher ? "Plus haut" : "Plus bas" }
@@ -111,34 +88,41 @@ struct HealthReading {
 
     /// Règle unique, partagée par l'accueil et les pages de détail :
     /// |z| < 1 = normal ; 1–2 = légèrement au-dessus / en dessous ; > 2 = nettement.
-    static func evaluate(_ unsorted: [DayValue], higherIsBetter: Bool?) -> HealthReading {
+    /// Une dernière mesure de plus de 3 jours n'est pas jugée : elle s'affiche « Mesure du 6 oct. », en neutre.
+    static func evaluate(_ unsorted: [DayValue], higherIsBetter: Bool?, today: Date = .now,
+                         calendar: Calendar = .current) -> HealthReading {
         let series: [DayValue] = unsorted.sorted { $0.date < $1.date }
         guard let last = series.last else {
             return HealthReading(latest: nil, status: .unknown, position: 0.5, band: 0.35...0.65, concerning: false)
         }
+        let ageDays = calendar.dateComponents([.day], from: calendar.startOfDay(for: last.date),
+                                              to: calendar.startOfDay(for: today)).day ?? 0
+        let stale = ageDays > staleDays
         let cutoff = Calendar.current.date(byAdding: .day, value: -60, to: last.date) ?? last.date
         let baseline: [Double] = series.dropLast().filter { $0.date >= cutoff }.map(\.value)
         guard baseline.count >= requiredBaseline, let center = Robust.median(baseline) else {
             return HealthReading(latest: last.value, status: .unknown, position: 0.5, band: 0.35...0.65, concerning: false,
-                                 baselineCount: baseline.count)
+                                 baselineCount: baseline.count, measuredOn: last.date, isStale: stale)
         }
         // Écart robuste, avec un plancher de 2 % pour les mesures très stables (respiration, poids, FC).
         let spread = max(Robust.mad(baseline) ?? 0, abs(center) * 0.02, 0.0001)
         let low = center - 3 * spread, high = center + 3 * spread
         let position = min(1, max(0, (last.value - low) / (high - low)))
         let z = (last.value - center) / spread
-        let status: Status = z >= 1 ? .higher : (z <= -1 ? .lower : .normal)
+        let status: Status = stale ? .unknown : (z >= 1 ? .higher : (z <= -1 ? .lower : .normal))
         var concerning = false
-        if let higherIsBetter, abs(z) > 2 {
+        if let higherIsBetter, abs(z) > 2, !stale {
             concerning = higherIsBetter ? z < 0 : z > 0
         }
         return HealthReading(latest: last.value, status: status, position: position,
                              band: (1.0 / 3)...(2.0 / 3), concerning: concerning,
-                             center: center, spread: spread, z: z, baselineCount: baseline.count)
+                             center: center, spread: spread, z: stale ? nil : z, baselineCount: baseline.count,
+                             measuredOn: last.date, isStale: stale)
     }
 
     /// Phrase de lecture, identique partout.
     func sentence(higherIsBetter: Bool?) -> String {
+        if isStale { return "Pas de mesure récente : synchronise ta montre pour comparer à ta normale." }
         guard let z else { return "Encore quelques jours de mesure pour connaître ta normale." }
         if abs(z) < 1 { return "Dans ta normale." }
         let direction = z > 0 ? "au-dessus" : "en dessous"
@@ -155,36 +139,6 @@ struct HealthReading {
         case .unknown: .secondary
         case .higher, .lower: concerning ? Theme.alert : Theme.caution
         }
-    }
-}
-
-/// Petite jauge verticale : la zone normale est marquée, la pastille montre la valeur du jour.
-struct VerticalGauge: View {
-    let position: Double
-    let band: ClosedRange<Double>
-    let color: Color
-    @State private var shown: Double = 0.5
-
-    var body: some View {
-        GeometryReader { proxy in
-            let height = proxy.size.height
-            ZStack(alignment: .bottom) {
-                Capsule().fill(Color.secondary.opacity(0.15))
-                Capsule()
-                    .fill(Theme.recovery.opacity(0.35))
-                    .frame(height: height * (band.upperBound - band.lowerBound))
-                    .offset(y: -height * band.lowerBound)
-                Circle()
-                    .fill(color)
-                    .overlay(Circle().stroke(Theme.card, lineWidth: 2))
-                    .frame(width: 12, height: 12)
-                    .offset(y: -(height - 12) * shown)
-            }
-            .frame(maxWidth: .infinity)
-        }
-        .frame(width: 12)
-        .onAppear { withAnimation(.spring(response: 0.9, dampingFraction: 0.8).delay(0.15)) { shown = position } }
-        .onChange(of: position) { withAnimation(.spring) { shown = position } }
     }
 }
 
@@ -218,7 +172,7 @@ struct HealthMonitorTile: View {
                 Text(reading.latest == nil ? "Synchronise ta montre" : "La courbe apparaît après 2 mesures")
                     .font(.caption2).foregroundStyle(.secondary).frame(height: 20, alignment: .leading)
             }
-            StatusPill(text: reading.label(higherIsBetter: higherIsBetter), symbol: reading.status.symbol, color: reading.color)
+            StatusPill(text: reading.label(higherIsBetter: higherIsBetter), symbol: reading.symbol, color: reading.color)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }
@@ -274,46 +228,6 @@ struct MacroDots: View {
     }
 }
 
-// MARK: - Bande de calendrier
-
-/// Les 7 jours de la semaine avec une icône par jour (fait, manqué, repos, à venir).
-struct WeekStrip: View {
-    let days: [DayStatus]
-
-    var body: some View {
-        HStack(spacing: 4) {
-            ForEach(days) { day in
-                let isToday = Calendar.current.isDateInToday(day.date)
-                VStack(spacing: 6) {
-                    Text(day.date.formatted(.dateTime.weekday(.abbreviated)))
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(isToday ? Color.primary : Color.secondary)
-                    Text(day.date.formatted(.dateTime.day()))
-                        .font(.subheadline.weight(.bold).monospacedDigit())
-                        .frame(width: 32, height: 32)
-                        .background(isToday ? Theme.strain.opacity(0.18) : Color.clear, in: .circle)
-                    Image(systemName: Self.symbol(day))
-                        .font(.caption)
-                        .foregroundStyle(WeekStatusCard.color(day.status))
-                        .frame(height: 14)
-                }
-                .frame(maxWidth: .infinity)
-            }
-        }
-    }
-
-    static func symbol(_ day: DayStatus) -> String {
-        switch day.status {
-        case .rest: return "moon.zzz.fill"
-        case .missed: return "xmark"
-        case .upcoming, .today:
-            return day.planned.first?.kind.symbol ?? "circle.dotted"
-        case .done, .partial:
-            return day.planned.first?.kind.symbol ?? "checkmark"
-        }
-    }
-}
-
 // MARK: - Barre d'énergie
 
 /// Barre horizontale à dégradé (énergie, charge…), avec la valeur en pourcentage.
@@ -347,13 +261,15 @@ struct LinkRow: View {
     var subtitle: String = ""
     var badge: String?
     var badgeColor: Color = Theme.accent
+    @ScaledMetric(relativeTo: .subheadline) private var iconSize: CGFloat = 14
+    @ScaledMetric(relativeTo: .subheadline) private var circleSize: CGFloat = 32
 
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: symbol)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: iconSize, weight: .semibold))
                 .foregroundStyle(Theme.accent)
-                .frame(width: 32, height: 32)
+                .frame(width: circleSize, height: circleSize)
                 .background(Theme.well, in: .circle)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)

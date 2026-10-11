@@ -4,9 +4,10 @@ import Foundation
 enum CoachSummary {
     struct Result: Equatable {
         let text: String
-        /// Libellé de la pastille (tient compte d'un jour de repos prévu).
+        /// Libellé de la pastille (« Jour de repos » si aucune séance n'est prévue).
         let pill: String
         let pillSymbol: String
+        /// Aucune séance prévue aujourd'hui : la pastille affiche « Jour de repos ».
         let isRestDay: Bool
     }
 
@@ -58,7 +59,9 @@ enum CoachSummary {
             }
         } else {
             let main = sessions.first { $0.kind != .rest } ?? sessions[0]
-            let name = main.kind.label.lowercased()
+            // « Push (pecs, épaules, triceps) » → « Push » : pas de parenthèses imbriquées dans la phrase.
+            let label = main.kind.label
+            let name = label.range(of: " (").map { String(label[..<$0.lowerBound]) } ?? label
             switch brief.verdict {
             case .push: action = "Feu vert pour pousser sur ta séance (\(name))."
             case .go: action = "Ta séance du jour (\(name)) est validée telle quelle."
@@ -70,7 +73,7 @@ enum CoachSummary {
 
         let pill: String
         let symbol: String
-        if isRestDay && (brief.verdict == .push || brief.verdict == .go) {
+        if isRestDay {
             pill = "Jour de repos"
             symbol = "bed.double.fill"
         } else {

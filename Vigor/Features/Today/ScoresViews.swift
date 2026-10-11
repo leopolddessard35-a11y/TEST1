@@ -1,43 +1,6 @@
 import SwiftUI
 import Charts
 
-// MARK: - Trois cadrans : récupération, effort, sommeil
-
-struct ScoreTrio: View {
-    let snapshot: CoachSnapshot
-
-    var body: some View {
-        HStack(spacing: 10) {
-            NavigationLink {
-                ReadinessDetailView(readiness: snapshot.readiness, history: Array(snapshot.readinessHistory.suffix(30)),
-                                    hrvSource: snapshot.hrvSource)
-            } label: {
-                Dial(title: "Récup", value: Double(snapshot.readiness?.score ?? 0), maximum: 100,
-                     text: snapshot.readiness.map { "\($0.score)" } ?? "–", suffix: "%",
-                     color: snapshot.readiness.map { Theme.color(for: $0.level) } ?? .secondary)
-            }
-            NavigationLink {
-                EffortDetailView(today: snapshot.effortToday, target: snapshot.effortTarget, history: snapshot.effortHistory,
-                                 verdict: snapshot.brief.verdict)
-            } label: {
-                Dial(title: "Effort", value: snapshot.effortToday, maximum: 21,
-                     text: snapshot.effortToday.oneDecimal, suffix: "",
-                     color: Theme.strain, target: snapshot.effortTarget)
-            }
-            NavigationLink {
-                SleepNeedDetailView(need: snapshot.sleepNeed, performance: snapshot.lastSleepPerformance,
-                                    lastNight: snapshot.wellness.last.flatMap { Calendar.current.isDateInToday($0.day) ? $0.sleepHours : nil },
-                                    regularity: snapshot.bedtimeRegularity)
-            } label: {
-                Dial(title: "Sommeil", value: (snapshot.lastSleepPerformance ?? 0) * 100, maximum: 100,
-                     text: snapshot.lastSleepPerformance.map { "\(Int(($0 * 100).rounded()))" } ?? "–", suffix: "%",
-                     color: Theme.sleep)
-            }
-        }
-        .buttonStyle(.plain)
-    }
-}
-
 /// Cadran circulaire animé, avec la zone cible en option (effort).
 struct Dial: View {
     let title: String
@@ -47,6 +10,8 @@ struct Dial: View {
     let suffix: String
     let color: Color
     var target: ClosedRange<Double>?
+    /// Fond de carte propre. À désactiver quand le cadran est déjà posé dans une carte (pas de carte dans la carte).
+    var bordered: Bool = true
     @State private var shown: Double = 0
 
     var body: some View {
@@ -73,8 +38,10 @@ struct Dial: View {
             Text(title).font(.caption.weight(.semibold))
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .card(cornerRadius: 22)
+        .padding(.vertical, bordered ? 12 : 0)
+        .background {
+            if bordered { Color.clear.card(cornerRadius: 22) }
+        }
         .onAppear { withAnimation(.spring(response: 1.1, dampingFraction: 0.8).delay(0.1)) { shown = value } }
         .onChange(of: value) { withAnimation(.spring(response: 0.8, dampingFraction: 0.8)) { shown = value } }
     }
@@ -95,8 +62,8 @@ struct EffortDetailView: View {
                 GlassCard {
                     VStack(spacing: 12) {
                         Dial(title: EffortScore.label(today), value: today, maximum: 21, text: today.oneDecimal, suffix: "/21",
-                             color: Theme.strain, target: target)
-                        Text(String(format: "Cible du jour : %.0f – %.0f", target.lowerBound, target.upperBound)).font(.headline)
+                             color: Theme.strain, target: target, bordered: false)
+                        Text("Cible du jour : \(target.lowerBound.noDecimal) – \(target.upperBound.noDecimal)").font(.headline)
                         Text(status(remaining: remaining)).font(.subheadline).multilineTextAlignment(.center)
                     }
                     .frame(maxWidth: .infinity)
@@ -113,7 +80,7 @@ struct EffortDetailView: View {
                         .dateAxis(days: 30)
                         .frame(height: 160)
                         if let mean = Stats.mean(history.suffix(7).map(\.value)) {
-                            Text(String(format: "Moyenne 7 jours : %.1f / 21", mean)).font(.caption).foregroundStyle(.secondary)
+                            Text("Moyenne 7 jours : \(mean.oneDecimal) / 21").font(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -132,10 +99,15 @@ struct EffortDetailView: View {
     }
 
     private func status(remaining: Double) -> String {
+        // Jour de repos : la « cible » est un plafond, pas un objectif à atteindre.
+        if verdict == .rest {
+            return today > target.upperBound
+                ? "Journée de repos : tu as déjà dépassé le plafond, lève le pied pour le reste de la journée."
+                : "Journée de repos : reste sous la cible."
+        }
         if today > target.upperBound { return "Tu as dépassé ta cible : place-toi en récupération pour le reste de la journée." }
         if today >= target.lowerBound { return "Cible atteinte : bonne journée d'entraînement." }
-        if verdict == .rest { return "Journée de repos : reste sous la cible." }
-        return String(format: "Encore ≈ %.0f points de charge pour atteindre ta cible (≈ %@ en endurance).", remaining, (remaining / 50).hoursText)
+        return "Encore ≈ \(remaining.noDecimal) points de charge pour atteindre ta cible (≈ \((remaining / 50).hoursText) en endurance)."
     }
 }
 
@@ -198,7 +170,7 @@ struct SleepNeedDetailView: View {
             }
             Spacer()
             let absolute: Bool = title == "Total" || title == "Besoin de base"
-            let text: String = absolute ? hours.hoursText : (hours > 0 ? "+" + hours.hoursText : "—")
+            let text: String = absolute ? hours.hoursText : (hours > 0 ? "+" + hours.hoursText : "–")
             Text(text).font(.subheadline.monospacedDigit().weight(title == "Total" ? .bold : .regular))
         }
     }
@@ -214,12 +186,13 @@ struct WeeklyReportCard: View {
             VStack(alignment: .leading, spacing: 12) {
                 SectionTitle(title: "Bilan des 7 derniers jours", symbol: "doc.text.magnifyingglass")
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                    compare("Récupération", report.current.recovery, report.previous.recovery, "%.0f")
-                    compare("Effort moyen", report.current.effort, report.previous.effort, "%.1f")
-                    compare("Sommeil", report.current.sleepHours, report.previous.sleepHours, "%.1f h")
-                    compare("Perf. sommeil", report.current.sleepPerformance.map { $0 * 100 }, report.previous.sleepPerformance.map { $0 * 100 }, "%.0f %%")
-                    compare("Entraînement", report.current.trainingHours, report.previous.trainingHours, "%.1f h")
-                    compare("Calories / jour", report.current.kcal, report.previous.kcal, "%.0f")
+                    compare("Récupération", report.current.recovery, report.previous.recovery, decimals: 0, higherIsBetter: true)
+                    compare("Effort moyen", report.current.effort, report.previous.effort, decimals: 1)
+                    compare("Sommeil", report.current.sleepHours, report.previous.sleepHours, decimals: 1, unit: " h", higherIsBetter: true)
+                    compare("Perf. sommeil", report.current.sleepPerformance.map { $0 * 100 }, report.previous.sleepPerformance.map { $0 * 100 },
+                            decimals: 0, unit: " %", higherIsBetter: true)
+                    compare("Entraînement", report.current.trainingHours, report.previous.trainingHours, decimals: 1, unit: " h")
+                    compare("Calories / jour", report.current.kcal, report.previous.kcal, decimals: 0)
                 }
                 ForEach(report.highlights, id: \.self) { line in
                     Label(line, systemImage: "sparkle").font(.footnote)
@@ -228,14 +201,23 @@ struct WeeklyReportCard: View {
         }
     }
 
-    private func compare(_ title: String, _ now: Double?, _ before: Double?, _ format: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+    /// `higherIsBetter` : nil = ni bon ni mauvais en soi (effort, calories, volume) → couleur neutre.
+    private func compare(_ title: String, _ now: Double?, _ before: Double?, decimals: Int, unit: String = "",
+                         higherIsBetter: Bool? = nil) -> some View {
+        let format: (Double) -> String = { value in
+            value.decimals(decimals) + unit
+        }
+        return VStack(alignment: .leading, spacing: 2) {
             Text(title).font(.caption).foregroundStyle(.secondary)
-            Text(now.map { String(format: format, $0) } ?? "–").font(.title3.weight(.semibold).monospacedDigit())
+            Text(now.map(format) ?? "–").font(.title3.weight(.semibold).monospacedDigit())
             if let now, let before, before != 0 {
                 let delta = now - before
-                Text(String(format: "%@ vs sem. préc.", String(format: format, before)))
-                    .font(.caption2).foregroundStyle(delta >= 0 ? Theme.recovery : Theme.nutrition)
+                let color: Color = {
+                    guard let higherIsBetter, delta != 0 else { return .secondary }
+                    return (delta > 0) == higherIsBetter ? Theme.recovery : Theme.nutrition
+                }()
+                Text("\(format(before)) vs sem. préc.")
+                    .font(.caption2).foregroundStyle(color)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -255,7 +237,7 @@ struct WeeklyReviewCard: View {
             VStack(alignment: .leading, spacing: 10) {
                 SectionTitle(title: "Revue de la semaine", symbol: "calendar.badge.checkmark")
                 HStack {
-                    StatTile(title: "Prévu / réalisé",
+                    StatTile(title: "Réalisé / prévu",
                              value: "\(review.doneHours.oneDecimal) / \(review.plannedHours.map { $0.oneDecimal } ?? "–") h")
                     StatTile(title: "Muscu", value: "\(review.doneStrength) / \(review.plannedStrength)")
                     StatTile(title: "Charge", value: report.current.load.noDecimal, caption: "TSS sur 7 j")

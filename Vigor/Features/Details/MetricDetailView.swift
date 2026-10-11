@@ -2,7 +2,7 @@ import SwiftUI
 import Charts
 
 enum MetricKind: String, Identifiable, CaseIterable {
-    case sleep, hrv, restingHR, steps, weight, vo2max, respiration
+    case sleep, hrv, restingHR, weight, vo2max, respiration
 
     var id: String { rawValue }
 
@@ -11,7 +11,6 @@ enum MetricKind: String, Identifiable, CaseIterable {
         case .sleep: "Sommeil"
         case .hrv: "VFC"
         case .restingHR: "FC au repos"
-        case .steps: "Pas"
         case .weight: "Poids"
         case .vo2max: "VO2max"
         case .respiration: "Respiration"
@@ -23,7 +22,6 @@ enum MetricKind: String, Identifiable, CaseIterable {
         case .sleep: "h"
         case .hrv: "ms"
         case .restingHR: "bpm"
-        case .steps: ""
         case .weight: "kg"
         case .vo2max: "ml/kg/min"
         case .respiration: "resp/min"
@@ -35,7 +33,6 @@ enum MetricKind: String, Identifiable, CaseIterable {
         case .sleep: "bed.double.fill"
         case .hrv: "waveform.path.ecg"
         case .restingHR: "heart.fill"
-        case .steps: "figure.walk"
         case .weight: "scalemass.fill"
         case .vo2max: "figure.run.circle"
         case .respiration: "lungs.fill"
@@ -47,7 +44,7 @@ enum MetricKind: String, Identifiable, CaseIterable {
         case .sleep: Theme.sleep
         case .hrv: Theme.recovery
         case .restingHR: Theme.accent
-        case .steps, .weight: Theme.nutrition
+        case .weight: Theme.nutrition
         case .vo2max: Theme.strain
         case .respiration: Theme.sleep
         }
@@ -56,7 +53,7 @@ enum MetricKind: String, Identifiable, CaseIterable {
     /// Plus haut = mieux ? (nil = ça dépend de l'objectif)
     var higherIsBetter: Bool? {
         switch self {
-        case .sleep, .hrv, .steps, .vo2max: true
+        case .sleep, .hrv, .vo2max: true
         case .restingHR, .respiration: false
         case .weight: nil
         }
@@ -77,7 +74,6 @@ enum MetricKind: String, Identifiable, CaseIterable {
             case .sleep: value = record.sleepHours
             case .hrv: value = record.hrvRMSSD ?? record.hrvMs
             case .restingHR: value = record.restingHeartRate
-            case .steps: value = record.steps
             case .weight: value = record.weightKg
             case .vo2max: value = record.vo2Max
             case .respiration: value = record.respiration
@@ -94,12 +90,10 @@ enum MetricKind: String, Identifiable, CaseIterable {
             "La variabilité de la fréquence cardiaque mesure les micro-variations entre deux battements. Plus elle est haute par rapport à TA normale, plus ton système nerveux parasympathique (récupération) est actif."
         case .restingHR:
             "Fréquence cardiaque la plus basse pendant la nuit. Une hausse de 3 à 5 bpm au-dessus de ta moyenne signale souvent fatigue, déshydratation, alcool, chaleur ou maladie qui commence."
-        case .steps:
-            "Activité quotidienne hors entraînement (NEAT). Elle compte dans ta dépense énergétique et donc dans tes besoins caloriques."
         case .weight:
-            "Le poids varie de ±1 kg d'un jour à l'autre (eau, glycogène, transit). Vigor lisse la courbe (moyenne exponentielle) pour voir la vraie tendance."
+            "Le poids varie de ±1 kg d'un jour à l'autre (eau, glycogène, transit). Vigor lisse la courbe (moyenne mobile 7 jours) pour voir la vraie tendance."
         case .respiration:
-            "Nombre de respirations par minute pendant le sommeil. Elle varie très peu d'une nuit à l'autre chez toi : une hausse d'1 respiration/min ou plus est un des signaux les plus précoces d'une infection."
+            "La fréquence respiratoire, c'est le nombre de respirations par minute pendant le sommeil. Elle varie très peu d'une nuit à l'autre : une hausse d'1 respiration/min ou plus est un des signaux les plus précoces d'une infection."
         case .vo2max:
             "Consommation maximale d'oxygène estimée par Garmin à partir de la relation puissance / FC. C'est le plafond de ton moteur aérobie."
         }
@@ -109,10 +103,9 @@ enum MetricKind: String, Identifiable, CaseIterable {
         switch self {
         case .sleep: "Via le score de sommeil, 25 % du score de récupération. Une dette de plus de 5 h sur 7 jours déclenche une alerte du coach."
         case .hrv: "50 % du score de récupération : la nuit dernière (70 %) et la tendance 7 jours (30 %), en log, comparées à tes 60 derniers jours. La tendance sur 7 jours, croisée avec la FC de repos, sert à détecter le surmenage."
-        case .restingHR: "25 % du score de récupération : dernière valeur comparée à ta moyenne et ta variabilité sur 30 jours."
-        case .steps: "Intégrés à la dépense énergétique (via l'énergie active) pour calculer tes calories cibles."
+        case .restingHR: "25 % du score de récupération : dernière valeur comparée à ta normale sur 60 jours (médiane et écart robuste)."
         case .weight: "La tendance sert à piloter la prise de masse (+0,25 à 0,5 %/semaine) et à mesurer ta dépense énergétique réelle."
-        case .respiration: "Comparée à ta moyenne des 30 derniers jours. Au-delà de +1 resp/min (surtout avec une FC de repos en hausse), le coach supprime l'intensité et t'alerte."
+        case .respiration: "Comparée à ta normale des 60 derniers jours (médiane et écart robuste). Au-delà de +1 resp/min (surtout avec une FC de repos en hausse), le coach supprime l'intensité et t'alerte."
         case .vo2max: "Indicateur de progression de fond : elle doit monter pendant les phases Foncier et Développement."
         }
     }
@@ -122,7 +115,6 @@ enum MetricKind: String, Identifiable, CaseIterable {
         case .sleep: "Horaires réguliers, chambre fraîche (18–19 °C), pas d'écran 30 min avant, caféine avant 14 h, dîner 2–3 h avant le coucher."
         case .hrv: "Sommeil, régularité, endurance facile (zone 2), limiter l'alcool (même 1–2 verres font chuter la VFC la nuit suivante), gestion du stress."
         case .restingHR: "Elle baisse avec l'endurance de fond. Si elle monte plusieurs jours : allège, hydrate-toi, surveille les signes de maladie."
-        case .steps: "Marcher 20–30 min par jour aide la récupération active sans fatiguer."
         case .weight: "Pèse-toi le matin, à jeun, après être allé aux toilettes, au moins 3 fois par semaine."
         case .respiration: "Tu n'as pas à l'améliorer : c'est un témoin. Si elle monte, repos, hydratation, et surveille fièvre et gorge."
         case .vo2max: "Séances VO2max (ex. 5 × 4 min à 110–120 % FTP) en phase Développement + volume d'endurance."
@@ -134,7 +126,6 @@ enum MetricKind: String, Identifiable, CaseIterable {
         case .sleep: [Science.hirshkowitz2015, Science.mah2011, Science.milewski2014, Science.phillips2017]
         case .hrv: [Science.plews2013, Science.buchheit2014, Science.kiviniemi2007]
         case .restingHR: [Science.buchheit2014]
-        case .steps: [Science.mifflin1990]
         case .weight: [Science.iraki2019, Science.hall2008]
         case .vo2max: [Science.seiler2010]
         case .respiration: [Science.buchheit2014]
@@ -180,7 +171,7 @@ struct MetricDetailView: View {
                             }
                             Text(latest.date.formatted(date: .complete, time: .omitted)).font(.caption).foregroundStyle(.secondary)
                             HStack(spacing: 8) {
-                                StatusPill(text: reading.label(higherIsBetter: kind.higherIsBetter), symbol: reading.status.symbol, color: reading.color)
+                                StatusPill(text: reading.label(higherIsBetter: kind.higherIsBetter), symbol: reading.symbol, color: reading.color)
                                 Text(reading.sentence(higherIsBetter: kind.higherIsBetter)).font(.subheadline)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
@@ -195,7 +186,7 @@ struct MetricDetailView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         RangePicker(days: $days)
                         Chart {
-                            if let mean, sd > 0, let first = visible.first?.date, let last = visible.last?.date, kind != .steps {
+                            if let mean, sd > 0, let first = visible.first?.date, let last = visible.last?.date {
                                 RectangleMark(xStart: .value("Début", first), xEnd: .value("Fin", last),
                                               yStart: .value("Bas", mean - sd), yEnd: .value("Haut", mean + sd))
                                     .foregroundStyle(kind.color.opacity(0.12))
@@ -212,34 +203,25 @@ struct MetricDetailView: View {
                                         EventBadge(symbol: event.symbol)
                                     }
                             }
-                            if kind == .steps {
-                                ForEach(visible, id: \.date) { point in
-                                    BarMark(x: .value("Jour", point.date, unit: .day), y: .value(kind.title, point.value))
-                                        .foregroundStyle(kind.color.gradient)
-                                }
-                            } else {
-                                // Une série par segment continu : un jour sans donnée laisse un trou visible.
-                                ForEach(segments.indices, id: \.self) { index in
-                                    ForEach(segments[index], id: \.date) { point in
-                                        LineMark(x: .value("Jour", point.date), y: .value(kind.title, point.value),
-                                                 series: .value("Segment", index))
+                            // Une série par segment continu : un jour sans donnée laisse un trou visible.
+                            ForEach(segments.indices, id: \.self) { index in
+                                ForEach(segments[index], id: \.date) { point in
+                                    LineMark(x: .value("Jour", point.date), y: .value(kind.title, point.value),
+                                             series: .value("Segment", index))
+                                        .foregroundStyle(kind.color)
+                                    if days <= 30 {
+                                        PointMark(x: .value("Jour", point.date), y: .value(kind.title, point.value))
                                             .foregroundStyle(kind.color)
-                                        if days <= 30 {
-                                            PointMark(x: .value("Jour", point.date), y: .value(kind.title, point.value))
-                                                .foregroundStyle(kind.color)
-                                                .symbolSize(18)
-                                        }
+                                            .symbolSize(18)
                                     }
                                 }
                             }
                         }
-                        .chartYScale(domain: .automatic(includesZero: kind == .steps))
+                        .chartYScale(domain: .automatic(includesZero: false))
                         .dateAxis(days: days)
                         .frame(height: 220)
-                        if kind != .steps {
-                            Text("Bande colorée : ta zone normale (médiane ± écart robuste sur 60 jours). Trous = jours sans donnée\(missing > 0 ? " (\(missing) sur la période)" : ""). Zones grisées : événements (maladie, voyage, travaux, chaussures).")
-                                .font(.caption2).foregroundStyle(.secondary)
-                        }
+                        Text("Bande colorée : ta zone normale (médiane ± écart robuste sur 60 jours). Trous = jours sans donnée\(missing > 0 ? " (\(missing) sur la période)" : ""). Zones grisées : événements (maladie, voyage, travaux, chaussures).")
+                            .font(.caption2).foregroundStyle(.secondary)
                     }
                 }
 
@@ -247,7 +229,7 @@ struct MetricDetailView: View {
                     StatTile(title: "Moyenne 7 j", value: week.map { kind.format($0) } ?? "–")
                     StatTile(title: "Moyenne 30 j", value: month.map { kind.format($0) } ?? "–")
                     StatTile(title: "Zone normale", value: mean.map { "\(kind.format($0 - sd))–\(kind.format($0 + sd))" } ?? "–", caption: "médiane ± écart, 60 j")
-                    StatTile(title: "Tendance", value: slope.map { String(format: "%+.1f", kind == .sleep ? $0 * 60 : $0) } ?? "–",
+                    StatTile(title: "Tendance", value: slope.map { (kind == .sleep ? $0 * 60 : $0).decimals(1, signed: true) } ?? "–",
                              caption: kind == .sleep ? "min / semaine" : "\(kind.unit) / semaine")
                     ForEach(extraTiles.indices, id: \.self) { index in
                         StatTile(title: extraTiles[index].title, value: extraTiles[index].value, caption: extraTiles[index].caption)
@@ -271,12 +253,14 @@ struct MetricDetailView: View {
 /// Pastille d'événement (maladie, voyage…) : petite, sur fond de carte, lisible sur la courbe.
 struct EventBadge: View {
     let symbol: String
+    @ScaledMetric(relativeTo: .caption2) private var badgeSize: CGFloat = 18
 
     var body: some View {
         Image(systemName: symbol)
-            .font(.system(size: 9, weight: .semibold))
+            .font(.caption2.weight(.semibold))
+            .imageScale(.small)
             .foregroundStyle(.secondary)
-            .frame(width: 18, height: 18)
+            .frame(width: badgeSize, height: badgeSize)
             .background(Theme.card, in: .circle)
             .overlay(Circle().stroke(Color.secondary.opacity(0.25), lineWidth: 0.5))
             .padding(.top, 2)

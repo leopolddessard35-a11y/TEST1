@@ -15,7 +15,10 @@ struct ExperimentsCard: View {
                 HStack {
                     SectionTitle(title: "Expériences N = 1", symbol: "flask.fill")
                     Spacer()
-                    Button { adding = true } label: { Image(systemName: "plus") }.buttonStyle(.glass)
+                    Button { adding = true } label: { Image(systemName: "plus") }
+                        .buttonStyle(.glass)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .accessibilityLabel("Nouvelle expérience")
                 }
                 if experiments.isEmpty {
                     Text("Teste un changement (dîner plus tôt, coucher fixe, autre chaussure, pas d'écran le soir…) pendant 2 à 3 semaines : l'app compare la métrique choisie avant et pendant.")
@@ -33,7 +36,12 @@ struct ExperimentsCard: View {
                                     Button("Terminer aujourd'hui") { experiment.end = .now; save() }
                                 }
                                 Button("Supprimer", role: .destructive) { context.delete(experiment); save() }
-                            } label: { Image(systemName: "ellipsis.circle").foregroundStyle(.secondary) }
+                            } label: {
+                                Image(systemName: "ellipsis.circle").foregroundStyle(.secondary)
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(.rect)
+                            }
+                            .accessibilityLabel("Options de l'expérience \(experiment.name)")
                         }
                         Text("\(ExperimentsCard.metricLabel(experiment.metricRaw)) · depuis le \(experiment.start.formatted(date: .abbreviated, time: .omitted))")
                             .font(.caption).foregroundStyle(.secondary)
@@ -41,7 +49,7 @@ struct ExperimentsCard: View {
                             StatTile(title: "Avant", value: result.before.map { $0.oneDecimal } ?? "–", caption: "\(result.nBefore) j")
                             StatTile(title: "Pendant", value: result.during.map { $0.oneDecimal } ?? "–", caption: "\(result.nDuring) j")
                             StatTile(title: "Écart", value: result.changePercent.map { String(format: "%+.0f %%", $0) } ?? "–",
-                                     caption: result.effectSize.map { String(format: "d = %.2f", $0) } ?? "")
+                                     caption: result.effectSize.map { "d = \($0.decimals(2))" } ?? "")
                         }
                         Text(result.verdict).font(.footnote)
                     }
@@ -88,6 +96,8 @@ struct ExperimentForm: View {
     @State private var start = Date.now
     @State private var metricRaw = "readiness"
 
+    private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -106,12 +116,13 @@ struct ExperimentForm: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Annuler") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Démarrer") {
-                        context.insert(Experiment(name: name, start: start, metricRaw: metricRaw))
+                        // Début au matin du jour choisi : la comparaison avant / pendant se fait par jours entiers.
+                        context.insert(Experiment(name: trimmedName, start: Calendar.current.startOfDay(for: start), metricRaw: metricRaw))
                         try? context.save()
                         app.dataVersion += 1
                         dismiss()
                     }
-                    .disabled(name.isEmpty)
+                    .disabled(trimmedName.isEmpty)
                 }
             }
         }

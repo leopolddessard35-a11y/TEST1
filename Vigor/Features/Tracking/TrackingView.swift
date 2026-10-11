@@ -2,41 +2,7 @@ import SwiftUI
 import SwiftData
 import Charts
 
-/// Onglet Suivi : tendances, croisements, journal de symptômes, charge hors sport.
-struct TrackingView: View {
-    enum Segment: String, CaseIterable {
-        case trends = "Tendances"
-        case journal = "Journal"
-        case life = "Hors sport"
-    }
-
-    @State private var segment: Segment = .trends
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 12) {
-                    Picker("Vue", selection: $segment) {
-                        ForEach(Segment.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-
-                    SnapshotReader { _, snapshot in
-                        switch segment {
-                        case .trends: TrendsSection(snapshot: snapshot)
-                        case .journal: JournalSection(patterns: snapshot.symptomPatterns)
-                        case .life: LifeSection(lifeLoad7: snapshot.lifeLoad7)
-                        }
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 24)
-            }
-            .background(AppBackground())
-            .navigationTitle("Suivi")
-        }
-    }
-}
+// Sections de suivi (tendances, journal de symptômes, charge hors sport), affichées depuis Santé et Entraînement.
 
 // MARK: - Tendances
 
@@ -50,7 +16,9 @@ struct TrendsSection: View {
                 WeeklyReportCard(report: report)
             }
             RangePicker(days: $days)
-            TrendChart(title: "Effort (0–21)", color: Theme.strain, points: snapshot.effortHistory, days: days)
+            // L'historique d'effort couvre 30 jours : pas de période plus longue (courbe tassée sinon).
+            TrendChart(title: days > 30 ? "Effort (0–21) · 30 derniers jours" : "Effort (0–21)", color: Theme.strain,
+                       points: snapshot.effortHistory, days: min(days, 30))
             TrendChart(title: "Respiration nocturne (resp/min)", color: Theme.sleep, points: snapshot.respirationSeries, days: days)
             TrendChart(title: "Sommeil (h)", color: Theme.sleep, points: MetricKind.sleep.series(from: snapshot.wellness), days: days)
             TrendChart(title: "VFC (ms)", color: Theme.recovery, points: snapshot.hrvSeries, days: days)
@@ -73,11 +41,11 @@ struct TrendsSection: View {
                             HStack {
                                 Text(correlation.title).font(.subheadline.weight(.semibold))
                                 Spacer()
-                                Text(String(format: "r = %+.2f", correlation.r)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                                Text("r = \(correlation.r.decimals(2, signed: true))").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                             }
                             AnimatedBar(fraction: abs(correlation.r), color: correlation.r >= 0 ? Theme.recovery : Theme.strain, height: 6)
                             Text("\(correlation.isHint ? "Indice" : "Résultat") · \(correlation.strength) (\(correlation.lagLabel)) · \(correlation.interpretation)").font(.caption)
-                            Text("n = \(correlation.n) jours" + (correlation.confidence.map { String(format: " · IC 95 %% : %+.2f à %+.2f", $0.lowerBound, $0.upperBound) } ?? ""))
+                            Text("n = \(correlation.n) jours" + (correlation.confidence.map { " · IC 95 % : \($0.lowerBound.decimals(2, signed: true)) à \($0.upperBound.decimals(2, signed: true))" } ?? ""))
                                 .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
                         }
                     }
@@ -175,6 +143,7 @@ struct JournalSection: View {
     let patterns: [SymptomPattern]
     @State private var adding = false
     @State private var pdf: URL?
+    @State private var pendingDeletion: Symptom?
 
     var body: some View {
         VStack(spacing: 12) {
@@ -186,7 +155,12 @@ struct JournalSection: View {
 
             if !symptoms.isEmpty {
                 Button {
-                    pdf = try? Exporter.symptomReport(symptoms: symptoms, patterns: patterns, shoes: shoes)
+                    do {
+                        pdf = try Exporter.symptomReport(symptoms: symptoms, patterns: patterns, shoes: shoes)
+                    } catch {
+                        pdf = nil
+                        app.statusMessage = "PDF impossible à créer : \(error.localizedDescription)"
+                    }
                 } label: {
                     Label("Préparer le PDF pour ton podologue / médecin", systemImage: "doc.richtext")
                 }
@@ -216,7 +190,7 @@ struct JournalSection: View {
                         }
                         HStack {
                             StatTile(title: "Épisodes", value: "\(pattern.count)", caption: "\(pattern.recentCount) sur 14 j")
-                            StatTile(title: "Intensité", value: String(format: "%.1f / 10", pattern.averageIntensity))
+                            StatTile(title: "Intensité", value: "\(pattern.averageIntensity.oneDecimal) / 10")
                             StatTile(title: "Apparition", value: pattern.averageOnset.map { String(format: "%.0f min", $0) } ?? "–")
                         }
                         let episodes = symptoms.filter { $0.key == pattern.key }
@@ -225,7 +199,7 @@ struct JournalSection: View {
                                 PointMark(x: .value("Date", symptom.date), y: .value("Intensité", Double(symptom.intensity)))
                                     .foregroundStyle(Theme.warning)
                                 if let onset = symptom.onsetMinutes {
-                                    BarMark(x: .value("Date", symptom.date, unit: .day), y: .value("Apparition (min)", Double(onset) / 10))
+                                    BarMark(x: .value("Date", symptom.date, unit: .day), y: .value("Apparition (min)", min(10, max(0, Double(onset) / 10))))
                                         .foregroundStyle(Theme.sleep.opacity(0.35))
                                 }
                             }
@@ -257,12 +231,13 @@ struct JournalSection: View {
                                 Spacer()
                                 Text("\(symptom.intensity)/10").font(.subheadline.monospacedDigit())
                                 Menu {
-                                    Button("Supprimer", systemImage: "trash", role: .destructive) {
-                                        context.delete(symptom)
-                                        try? context.save()
-                                        app.dataVersion += 1
-                                    }
-                                } label: { Image(systemName: "ellipsis.circle").foregroundStyle(.secondary) }
+                                    Button("Supprimer", systemImage: "trash", role: .destructive) { pendingDeletion = symptom }
+                                } label: {
+                                    Image(systemName: "ellipsis.circle").foregroundStyle(.secondary)
+                                        .frame(width: 44, height: 44)
+                                        .contentShape(.rect)
+                                }
+                                .accessibilityLabel("Options de l'entrée \(symptom.key)")
                             }
                         }
                     }
@@ -270,6 +245,19 @@ struct JournalSection: View {
             }
         }
         .sheet(isPresented: $adding) { SymptomForm() }
+        .confirmationDialog("Supprimer cette entrée ?", isPresented: Binding(
+            get: { pendingDeletion != nil },
+            set: { if !$0 { pendingDeletion = nil } }), titleVisibility: .visible, presenting: pendingDeletion) { symptom in
+            Button("Supprimer", role: .destructive) {
+                context.delete(symptom)
+                try? context.save()
+                app.dataVersion += 1
+                pendingDeletion = nil
+            }
+            Button("Annuler", role: .cancel) { pendingDeletion = nil }
+        } message: { symptom in
+            Text("« \(symptom.key) » du \(symptom.date.formatted(date: .abbreviated, time: .omitted)) sera définitivement supprimé.")
+        }
     }
 
     private func details(_ symptom: Symptom) -> String {
@@ -292,6 +280,7 @@ struct LifeSection: View {
     @Query(sort: \LifeActivity.date, order: .reverse) private var activities: [LifeActivity]
     let lifeLoad7: Double
     @State private var adding = false
+    @State private var pendingDeletion: LifeActivity?
 
     var body: some View {
         VStack(spacing: 12) {
@@ -322,16 +311,30 @@ struct LifeSection: View {
                         Spacer()
                         Text("\(activity.loadEquivalent.noDecimal) pts").font(.caption.monospacedDigit())
                         Menu {
-                            Button("Supprimer", systemImage: "trash", role: .destructive) {
-                                context.delete(activity)
-                                try? context.save()
-                                app.dataVersion += 1
-                            }
-                        } label: { Image(systemName: "ellipsis.circle").foregroundStyle(.secondary) }
+                            Button("Supprimer", systemImage: "trash", role: .destructive) { pendingDeletion = activity }
+                        } label: {
+                            Image(systemName: "ellipsis.circle").foregroundStyle(.secondary)
+                                .frame(width: 44, height: 44)
+                                .contentShape(.rect)
+                        }
+                        .accessibilityLabel("Options de l'activité \(activity.kind.label)")
                     }
                 }
             }
         }
         .sheet(isPresented: $adding) { LifeActivityForm() }
+        .confirmationDialog("Supprimer cette activité ?", isPresented: Binding(
+            get: { pendingDeletion != nil },
+            set: { if !$0 { pendingDeletion = nil } }), titleVisibility: .visible, presenting: pendingDeletion) { activity in
+            Button("Supprimer", role: .destructive) {
+                context.delete(activity)
+                try? context.save()
+                app.dataVersion += 1
+                pendingDeletion = nil
+            }
+            Button("Annuler", role: .cancel) { pendingDeletion = nil }
+        } message: { activity in
+            Text("« \(activity.kind.label) » du \(activity.date.formatted(date: .abbreviated, time: .omitted)) sera définitivement supprimée.")
+        }
     }
 }

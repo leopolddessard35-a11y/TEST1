@@ -8,8 +8,6 @@ struct ReadinessDetailView: View {
     let history: [DayValue]
     let hrvSource: String
 
-    private let weights = ["VFC": "50 %", "FC au repos": "25 %", "Sommeil": "25 %", "Fatigue d'entraînement": "malus"]
-
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
@@ -31,7 +29,9 @@ struct ReadinessDetailView: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     HStack {
                                         Text(component.name).font(.subheadline.weight(.semibold))
-                                        Text(weights[component.name] ?? "").font(.caption).foregroundStyle(.secondary)
+                                        // Poids réel dans le score du jour (renormalisé quand une mesure manque).
+                                        Text(component.weight > 0 ? "\(Int((component.weight * 100).rounded())) %" : "malus")
+                                            .font(.caption).foregroundStyle(.secondary)
                                         Spacer()
                                         Text("\(Int(component.score))/100").font(.subheadline.monospacedDigit())
                                     }
@@ -71,7 +71,7 @@ struct ReadinessDetailView: View {
                 • Sommeil, 25 % : le score de sommeil (durée vs besoin, efficacité, stades, régularité).
                 • Fatigue : si ta forme (TSB) passe sous −25, le score est pénalisé.
                 Une journée « dans ta normale » vaut environ 60. ≥ 67 : prêt à charger · 34–66 : modéré · < 34 : récupération basse.
-                Sans VFC (pas de Garmin via Intervals.icu), le score repose seulement sur la FC au repos et le sommeil : il est alors moins fiable et souvent plus optimiste.
+                Sans VFC (ni Garmin via Intervals.icu, ni Apple Watch), le score repose seulement sur la FC au repos et le sommeil : il est alors moins fiable et souvent plus optimiste.
                 """)
                 ReferencesCard(references: [Science.plews2013, Science.buchheit2014, Science.kiviniemi2007, Science.hirshkowitz2015])
             }
@@ -131,9 +131,9 @@ struct LoadDetailView: View {
                     StatTile(title: "Condition (CTL)", value: load.last?.ctl.noDecimal ?? "–", caption: "moyenne 42 j")
                     StatTile(title: "Fatigue (ATL)", value: load.last?.atl.noDecimal ?? "–", caption: "moyenne 7 j")
                     StatTile(title: "Forme (TSB)", value: load.last?.form.noDecimal ?? "–", caption: "−10 à −30 : progression")
-                    StatTile(title: "Progression 7 j", value: TrainingLoad.rampRate(load).map { String(format: "%+.1f", $0) } ?? "–", caption: "repère : ≤ +5")
-                    StatTile(title: "Ratio aigu/chronique", value: chronic > 0 ? String(format: "%.2f", acute / chronic) : "–", caption: "zone sûre : 0,8–1,3")
-                    StatTile(title: "Monotonie", value: monotony.map { String(format: "%.1f", $0) } ?? "–", caption: "repère : < 2")
+                    StatTile(title: "Progression 7 j", value: TrainingLoad.rampRate(load).map { $0.decimals(1, signed: true) } ?? "–", caption: "repère : ≤ +5")
+                    StatTile(title: "Ratio aigu/chronique", value: chronic > 0 ? (acute / chronic).decimals(2) : "–", caption: "zone sûre : 0,8–1,3")
+                    StatTile(title: "Monotonie", value: monotony.map { $0.oneDecimal } ?? "–", caption: "repère : < 2")
                 }
 
                 if !disciplines.isEmpty {
@@ -153,7 +153,7 @@ struct LoadDetailView: View {
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                     Text(item.acute.noDecimal).frame(width: 50)
                                     Text(item.chronic.noDecimal).frame(width: 50)
-                                    Text(item.ratio.map { String(format: "%.2f", $0) } ?? "–")
+                                    Text(item.ratio.map { $0.decimals(2) } ?? "–")
                                         .foregroundStyle(LoadDetailView.ratioColor(item.ratio))
                                         .frame(width: 56)
                                 }
@@ -182,7 +182,7 @@ struct LoadDetailView: View {
                                     Text(week.weekStart.formatted(.dateTime.day().month(.abbreviated))).frame(maxWidth: .infinity, alignment: .leading)
                                     Text(week.bikeHours.hoursText).frame(width: 54)
                                     Text(String(format: "%.0f km", week.runKm)).frame(width: 54)
-                                    Text(String(format: "%.1f t", week.tonnage / 1000)).frame(width: 54)
+                                    Text("\((week.tonnage / 1000).oneDecimal) t").frame(width: 54)
                                     Text(week.lifeHours.hoursText).frame(width: 64)
                                 }
                                 .font(.caption.monospacedDigit())

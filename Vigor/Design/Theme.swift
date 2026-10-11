@@ -29,8 +29,6 @@ enum Theme {
     static let alert = Color(light: 0x9C4221, dark: 0xD0805A)
     /// Couleur de marque : boutons, onglet actif, pastilles d'icône.
     static let accent = Color(light: 0x7F4F24, dark: 0xA68A64)
-    /// Texte fort chaud (titres de cartes importants).
-    static let ink = Color(light: 0x333D29, dark: 0xE8E6DA)
 
     // Surfaces.
     static let background = Color(light: 0xF3F1EA, dark: 0x1A1E15)
@@ -380,27 +378,6 @@ struct ScoreRing: View {
     }
 }
 
-struct MetricTile: View {
-    let title: String
-    let value: String
-    var unit: String = ""
-    let symbol: String
-    var tint: Color = .primary
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label(title, systemImage: symbol)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(tint)
-            HStack(alignment: .firstTextBaseline, spacing: 3) {
-                Text(value).font(.title2.weight(.semibold).monospacedDigit())
-                if !unit.isEmpty { Text(unit).font(.caption).foregroundStyle(.secondary) }
-            }
-        }
-        .tile()
-    }
-}
-
 struct EmptyStateCard: View {
     let title: String
     let message: String
@@ -417,8 +394,15 @@ struct EmptyStateCard: View {
 }
 
 extension Double {
-    var oneDecimal: String { String(format: "%.1f", self) }
-    var noDecimal: String { String(format: "%.0f", self) }
+    /// Affichage uniquement (séparateur décimal de la langue : « 72,5 » en français). Ne jamais relire comme un nombre.
+    var oneDecimal: String { formatted(.number.precision(.fractionLength(1)).grouping(.never)) }
+    var noDecimal: String { formatted(.number.precision(.fractionLength(0)).grouping(.never)) }
+
+    /// `digits` décimales, séparateur de la langue ; `signed` affiche toujours le signe (« +0,42 »).
+    func decimals(_ digits: Int, signed: Bool = false) -> String {
+        let style = FloatingPointFormatStyle<Double>.number.precision(.fractionLength(digits)).grouping(.never)
+        return signed ? formatted(style.sign(strategy: .always(includingZero: false))) : formatted(style)
+    }
 
     /// 1,75 h → « 1 h 45 »
     var hoursText: String {

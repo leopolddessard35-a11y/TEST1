@@ -138,7 +138,7 @@ enum OpenFoodFacts {
         ]
         let data = try await get(components.url!)
         let response = try JSONDecoder().decode(ModernSearchResponse.self, from: data)
-        return (response.hits ?? []).compactMap { normalize($0, fallbackBarcode: nil) }
+        return unique((response.hits ?? []).compactMap { normalize($0, fallbackBarcode: nil) })
     }
 
     private static func legacySearch(_ query: String) async throws -> [FoodProduct] {
@@ -153,7 +153,13 @@ enum OpenFoodFacts {
         ]
         let data = try await get(components.url!)
         let response = try JSONDecoder().decode(SearchResponse.self, from: data)
-        return (response.products ?? []).compactMap { normalize($0, fallbackBarcode: nil) }
+        return unique((response.products ?? []).compactMap { normalize($0, fallbackBarcode: nil) })
+    }
+
+    /// Un seul produit par identifiant (évite les doublons dans les listes).
+    private static func unique(_ products: [FoodProduct]) -> [FoodProduct] {
+        var seen = Set<String>()
+        return products.filter { seen.insert($0.key).inserted }
     }
 
     static func normalize(_ raw: RawProduct, fallbackBarcode: String?) -> FoodProduct? {
@@ -170,8 +176,8 @@ enum OpenFoodFacts {
         let barcode = (code?.isEmpty == false ? code : nil) ?? fallbackBarcode
         let brand = raw.brands?.text?.split(separator: ",").first.map { String($0).trimmingCharacters(in: .whitespaces) } ?? ""
         return FoodProduct(
-            // Sans code-barres, un identifiant unique évite les doublons d'id dans les listes.
-            key: barcode.map { "off|\($0)" } ?? "off|\(name)|\(UUID().uuidString)",
+            // Sans code-barres : nom + marque (stable, pour retrouver le même aliment dans tes récents).
+            key: barcode.map { "off|\($0)" } ?? "off|\(name.lowercased())|\(brand.lowercased())",
             barcode: barcode,
             name: name,
             brand: brand,

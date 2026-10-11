@@ -54,7 +54,8 @@ struct EnergyGauge: View {
         }
     }
 
-    private static func geometry(_ rect: CGRect) -> (center: CGPoint, radius: CGFloat) {
+    /// `nonisolated` : appelée depuis `Shape.path(in:)`, qui n'est pas isolée au MainActor.
+    nonisolated private static func geometry(_ rect: CGRect) -> (center: CGPoint, radius: CGFloat) {
         (CGPoint(x: rect.midX, y: rect.maxY - 8), min(rect.width / 2, rect.height) - 10)
     }
 

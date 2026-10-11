@@ -4,6 +4,7 @@ import Charts
 /// Le détail de la nuit dernière (façon Bevel) : score et ses composantes, hypnogramme, stades,
 /// dette de sommeil, physiologie nocturne, puis la nuit à venir. Visible seulement quand on le demande.
 struct SleepDetailView: View {
+    @Environment(AppModel.self) private var app
     let snapshot: CoachSnapshot
     @State private var segments: [SleepSegment] = []
     @State private var loaded = false
@@ -44,7 +45,7 @@ struct SleepDetailView: View {
         .task {
             guard !loaded, let night, let bed = night.bedtime, let wake = night.wakeTime else { return }
             loaded = true
-            segments = (try? await HealthKitService().sleepSegments(from: bed.addingTimeInterval(-3600),
+            segments = (try? await app.health.sleepSegments(from: bed.addingTimeInterval(-3600),
                                                                    to: wake.addingTimeInterval(1800))) ?? []
         }
     }
@@ -108,10 +109,11 @@ struct SleepDetailView: View {
         GlassCard {
             VStack(alignment: .leading, spacing: 10) {
                 CapsLabel("Déroulé de la nuit")
-                Chart(segments) { segment in
-                    RectangleMark(xStart: .value("Début", segment.start), xEnd: .value("Fin", segment.end),
-                                  y: .value("Stade", segment.stage.label), height: .ratio(0.8))
-                        .foregroundStyle(Self.color(segment.stage))
+                // Deux sources (montre + iPhone) peuvent commencer à la même seconde : identifiant par position.
+                Chart(Array(segments.enumerated()), id: \.offset) { item in
+                    RectangleMark(xStart: .value("Début", item.element.start), xEnd: .value("Fin", item.element.end),
+                                  y: .value("Stade", item.element.stage.label), height: .ratio(0.8))
+                        .foregroundStyle(Self.color(item.element.stage))
                         .cornerRadius(2)
                 }
                 .chartYScale(domain: [SleepSegment.Stage.awake, .rem, .core, .deep].map(\.label))
@@ -139,7 +141,7 @@ struct SleepDetailView: View {
                         stageRow(.awake, hours: awake, total: total + awake, reference: "moins de 10 % idéalement")
                     }
                 } else {
-                    Text("Ta montre n'a pas transmis les stades pour cette nuit. Dans Garmin Connect → Applications connectées → Santé, vérifie que « Sommeil » est activé, puis synchronise.")
+                    Text("Ta montre n'a pas transmis les stades pour cette nuit. Ouvre l'app de ta montre (Garmin Connect…) et vérifie que le partage du sommeil vers Apple Santé est activé, puis synchronise.")
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
             }
@@ -221,8 +223,8 @@ struct SleepDetailView: View {
         return LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
             StatTile(title: "FC pendant le sommeil", value: night?.sleepingHeartRate.map { "\($0.noDecimal) bpm" } ?? "–")
             StatTile(title: "VFC nocturne", value: hrv.map { "\($0.noDecimal) ms" } ?? "–")
-            StatTile(title: "Respiration", value: night?.respiration.map { "\($0.oneDecimal) /min" } ?? "–")
-            StatTile(title: "Score Garmin", value: night?.sleepScore.map { $0.noDecimal } ?? "–", caption: "pour comparer")
+            StatTile(title: "Respiration", value: night?.respiration.map { "\($0.oneDecimal) resp/min" } ?? "–")
+            StatTile(title: "Score de la montre", value: night?.sleepScore.map { $0.noDecimal } ?? "–", caption: "pour comparer")
         }
     }
 }
