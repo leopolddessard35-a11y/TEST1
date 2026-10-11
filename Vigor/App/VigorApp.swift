@@ -51,7 +51,7 @@ enum SharedStore {
                                       Unavailability.self, Injury.self, AthleteProfile.self, PlannedWorkout.self,
                                       FoodItem.self, FoodEntry.self, LifeActivity.self, Symptom.self, Shoe.self,
                                       Goal.self, PlanBaseline.self, Experiment.self,
-                                      WorkoutRoutine.self, CustomExercise.self)
+                                      WorkoutRoutine.self, CustomExercise.self, SessionPlacement.self)
         } catch {
             fatalError("Base de données impossible à ouvrir : \(error)")
         }
@@ -152,7 +152,8 @@ final class AppModel {
             lifeActivities: (try? context.fetch(FetchDescriptor<LifeActivity>())) ?? [],
             symptoms: (try? context.fetch(FetchDescriptor<Symptom>())) ?? [],
             shoes: (try? context.fetch(FetchDescriptor<Shoe>())) ?? [],
-            baselines: (try? context.fetch(FetchDescriptor<PlanBaseline>())) ?? [])
+            baselines: (try? context.fetch(FetchDescriptor<PlanBaseline>())) ?? [],
+            placements: (try? context.fetch(FetchDescriptor<SessionPlacement>())) ?? [])
     }
 
     func refreshNotifications(context: ModelContext) async {

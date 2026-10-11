@@ -15,6 +15,7 @@ struct SnapshotReader<Content: View>: View {
     @Query(sort: \Symptom.date) private var symptoms: [Symptom]
     @Query private var shoes: [Shoe]
     @Query(sort: \PlanBaseline.weekStart) private var baselines: [PlanBaseline]
+    @Query private var placements: [SessionPlacement]
     @Query private var profiles: [AthleteProfile]
 
     private let content: (AthleteProfile, CoachSnapshot) -> Content
@@ -29,7 +30,7 @@ struct SnapshotReader<Content: View>: View {
                 CoachSnapshot.build(profile: profile, wellness: wellness, activities: activities, strength: strength,
                                     unavailabilities: unavailabilities, injuries: injuries, foods: foods, planned: planned,
                                     lifeActivities: lifeActivities, symptoms: symptoms, shoes: shoes,
-                                    baselines: baselines)
+                                    baselines: baselines, placements: placements)
             }
             content(profile, snapshot)
         } else {
@@ -61,6 +62,10 @@ struct SnapshotReader<Content: View>: View {
         hasher.combine(foods.reduce(0) { $0 + $1.kcal })
         hasher.combine(foods.last?.date)
         hasher.combine(planned.count)
+        for placement in placements {
+            hasher.combine(placement.key)
+            hasher.combine(placement.day)
+        }
         hasher.combine(lifeActivities.count)
         hasher.combine(symptoms.count)
         hasher.combine(shoes.count)

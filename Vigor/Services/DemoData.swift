@@ -226,6 +226,7 @@ enum DemoData {
         try context.delete(model: Shoe.self)
         try context.delete(model: Goal.self)
         try context.delete(model: PlanBaseline.self)
+        try context.delete(model: SessionPlacement.self)
         try context.save()
     }
 }

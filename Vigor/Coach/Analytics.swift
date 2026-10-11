@@ -431,41 +431,7 @@ enum SymptomAnalysis {
     }
 }
 
-// MARK: - Prévu vs réalisé
-
-struct DayStatus: Identifiable, Equatable {
-    enum Status: String {
-        case done, partial, missed, rest, upcoming, today
-
-        var label: String {
-            switch self {
-            case .done: "Fait"
-            case .partial: "Partiel"
-            case .missed: "Manqué"
-            case .rest: "Repos"
-            case .upcoming: "À venir"
-            case .today: "Aujourd'hui"
-            }
-        }
-
-        var symbol: String {
-            switch self {
-            case .done: "checkmark.circle.fill"
-            case .partial: "circle.lefthalf.filled"
-            case .missed: "xmark.circle.fill"
-            case .rest: "moon.zzz.fill"
-            case .upcoming: "circle.dotted"
-            case .today: "smallcircle.filled.circle"
-            }
-        }
-    }
-
-    var id: Date { date }
-    let date: Date
-    let planned: [SessionPrescription]
-    let done: [String]
-    let status: Status
-}
+// MARK: - Jalons
 
 struct Milestone: Identifiable, Equatable {
     var id: String { title }
@@ -475,39 +441,6 @@ struct Milestone: Identifiable, Equatable {
 }
 
 enum PlanTracking {
-    static func weekStatus(week: PlannedWeek,
-                           bikeDays: Set<Date>,
-                           strengthDays: Set<Date>,
-                           doneLabels: [Date: [String]],
-                           today: Date,
-                           ftp: Double?,
-                           calendar: Calendar = .current) -> [DayStatus] {
-        let todayStart = calendar.startOfDay(for: today)
-        var days: [DayStatus] = []
-        for offset in 0..<7 {
-            guard let date = calendar.date(byAdding: .day, value: offset, to: calendar.startOfDay(for: week.start)) else { continue }
-            let planned = DailyCoach.template(for: week, weekday: calendar.component(.weekday, from: date), ftp: ftp)
-            let needsBike = planned.contains { $0.kind.isBike }
-            let needsStrength = planned.contains { $0.kind.isStrength }
-            let didBike = bikeDays.contains(date)
-            let didStrength = strengthDays.contains(date)
-            let status: DayStatus.Status
-            if date > todayStart {
-                status = .upcoming
-            } else if !needsBike && !needsStrength {
-                status = .rest
-            } else if (!needsBike || didBike) && (!needsStrength || didStrength) {
-                status = .done
-            } else if didBike || didStrength {
-                status = .partial
-            } else {
-                status = date == todayStart ? .today : .missed
-            }
-            days.append(DayStatus(date: date, planned: planned, done: doneLabels[date] ?? [], status: status))
-        }
-        return days
-    }
-
     /// Jalons intermédiaires : fin de chaque phase (condition visée + sortie longue).
     static func milestones(plan: SeasonPlan) -> [Milestone] {
         var result: [Milestone] = []

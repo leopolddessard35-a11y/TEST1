@@ -45,8 +45,8 @@ extension WeeklyReport {
             vigilance = String(format: "Sommeil à %.0f %% du besoin.", performance * 100)
             adjustment = "Semaine suivante : coucher avancé de 30 min, intensité placée après les meilleures nuits."
         } else if missedSessions >= 2 {
-            vigilance = "\(missedSessions) séances prévues non réalisées."
-            adjustment = "Semaine suivante : plan ramené à un volume plus réaliste, séances clés en priorité."
+            vigilance = "\(missedSessions) séances n'ont pas trouvé de place cette semaine."
+            adjustment = "Semaine suivante : place d'abord les séances clés (sortie longue, intensité) sur tes jours les plus libres, l'endurance comble le reste."
         } else if let now = current.recovery, let before = previous.recovery, before - now >= 5 {
             vigilance = String(format: "Récupération en baisse (%.0f → %.0f).", before, now)
             adjustment = "Semaine suivante : garder le volume, réduire l'intensité de 20 %."

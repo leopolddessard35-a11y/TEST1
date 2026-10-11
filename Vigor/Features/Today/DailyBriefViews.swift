@@ -105,13 +105,23 @@ struct DailyBriefDetailView: View {
 
                 GlassCard {
                     VStack(alignment: .leading, spacing: 10) {
-                        SectionTitle(title: "Prévu", symbol: "calendar")
-                        ForEach(brief.planned) { SessionRow(session: $0) }
-                        Divider()
-                        SectionTitle(title: "Ce que je te propose", symbol: "wand.and.stars")
-                        ForEach(brief.adapted) { session in
-                            SessionRow(session: session, changed: !brief.planned.contains(session))
+                        SectionTitle(title: "Prévu aujourd'hui", symbol: "calendar")
+                        if brief.planned.isEmpty {
+                            Text("Rien de placé aujourd'hui dans ta semaine.").font(.footnote).foregroundStyle(.secondary)
+                        } else {
+                            ForEach(brief.planned) { SessionRow(session: $0) }
+                            Divider()
+                            SectionTitle(title: "Ce que je te propose", symbol: "wand.and.stars")
+                            ForEach(brief.adapted) { session in
+                                SessionRow(session: session, changed: !brief.planned.contains(session))
+                            }
                         }
+                        NavigationLink { WeekPlannerView() } label: {
+                            Label("Organiser ma semaine", systemImage: "calendar.badge.clock")
+                                .font(.subheadline.weight(.semibold))
+                                .frame(minHeight: 44)
+                        }
+                        .foregroundStyle(Theme.accent)
                         if !brief.changes.isEmpty {
                             Divider()
                             ForEach(brief.changes, id: \.self) { Text("• \($0)").font(.footnote) }
@@ -129,7 +139,7 @@ struct DailyBriefDetailView: View {
                 }
 
                 ExplanationCard(title: "Comment je décide", symbol: "function", text: """
-                Je pars de ta séance prévue (plan de saison ou calendrier Intervals.icu), puis j'estime ta capacité du jour en additionnant l'effet de chaque facteur :
+                Je pars des séances placées aujourd'hui dans ta semaine (ou de ton calendrier Intervals.icu), puis j'estime ta capacité du jour en additionnant l'effet de chaque facteur :
                 • Santé : score de récupération (VFC, FC repos, sommeil), nuit dernière, dette de sommeil.
                 • Entraînement : fatigue accumulée (forme), pic de charge, séance Legs récente, blessures.
                 • Nutrition : calories, glucides et protéines de la veille, rapportés à ta dépense et à ton poids.

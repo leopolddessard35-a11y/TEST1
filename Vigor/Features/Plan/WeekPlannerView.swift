@@ -1,0 +1,275 @@
+import SwiftUI
+import SwiftData
+
+/// Organiser ma semaine : les séances viennent du plan de saison, les jours viennent de toi.
+/// Déplacer, retirer ou laisser Vigor choisir ; ce que tu fais est reconnu par type, quel que soit le jour.
+struct WeekPlannerView: View {
+    @Environment(\.modelContext) private var context
+    @Environment(AppModel.self) private var app
+    @State private var showNextWeek = false
+
+    var body: some View {
+        ScrollView {
+            SnapshotReader { profile, snapshot in
+                VStack(spacing: 12) {
+                    if snapshot.nextWeekPlan != nil {
+                        Picker("Semaine", selection: $showNextWeek) {
+                            Text("Cette semaine").tag(false)
+                            Text("Semaine prochaine").tag(true)
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    if let plan = showNextWeek ? snapshot.nextWeekPlan : snapshot.weekPlan {
+                        header(plan)
+                        daysCard(plan, profile: profile)
+                        let dropped = plan.items.filter { $0.state == .dropped }
+                        if !dropped.isEmpty { droppedCard(dropped, plan: plan, profile: profile) }
+                        ExplanationCard(title: "Comment ça marche", symbol: "wand.and.stars", text: """
+                        • Les séances de la semaine viennent du plan de saison ; les jours, c'est toi qui décides. Touche ••• pour déplacer une séance ou la retirer.
+                        • Ce que tu fais compte quel que soit le jour : un seuil prévu mardi et fait mercredi est validé. Une sortie facile un jour de seuil compte comme séance faite, mais en endurance.
+                        • Une séance que tu n'as pas placée est mise au meilleur jour : celui où tu la fais d'habitude (appris sur 8 semaines), sinon le jour du plan type. Vigor évite deux séances dures d'affilée, l'intensité au lendemain des jambes, les jours indisponibles ou trop courts.
+                        • Un jour passé sans séance ? La séance est replacée plus tard dans la semaine s'il reste de la place. Sinon elle est abandonnée : on ne rattrape jamais, et le plan de la saison s'ajuste à ce que tu as vraiment fait.
+                        """)
+                    } else {
+                        EmptyStateCard(title: "Pas de plan cette semaine",
+                                       message: "Renseigne ton objectif et sa date dans Réglages : Vigor en déduit les séances de chaque semaine, que tu places ensuite où tu veux.",
+                                       symbol: "calendar.badge.clock")
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 24)
+            }
+        }
+        .background(AppBackground())
+        .navigationTitle("Ma semaine")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// Résumé d'une ligne (lien depuis le calendrier).
+    static func summary(_ plan: WeekPlan) -> String {
+        let total = plan.items.filter { !$0.isRemoved }.count
+        var text = "\(plan.doneCount)/\(total) séances faites"
+        if let next = plan.items.first(where: { $0.isPending && ($0.day ?? .distantPast) >= plan.today }), let day = next.day {
+            let when = Calendar.current.isDate(day, inSameDayAs: plan.today) ? "aujourd'hui" : day.formatted(.dateTime.weekday(.wide))
+            text += " · ensuite : \(shortLabel(next.session.kind)) \(when)"
+        }
+        return text
+    }
+
+    /// « Push (pecs, épaules, triceps) » → « Push ».
+    static func shortLabel(_ kind: SessionKind) -> String {
+        let label = kind.label
+        return label.range(of: " (").map { String(label[..<$0.lowerBound]) } ?? label
+    }
+
+    // MARK: En-tête
+
+    private func header(_ plan: WeekPlan) -> some View {
+        let total = plan.items.filter { !$0.isRemoved }.count
+        return GlassCard {
+            VStack(alignment: .leading, spacing: 8) {
+                CapsLabel("Semaine du \(plan.week.start.formatted(.dateTime.day().month(.wide)))")
+                Text("\(plan.week.phase.label) · \(plan.week.kind.label.lowercased())")
+                    .font(.title3.weight(.bold))
+                HStack(spacing: 8) {
+                    StatusPill(text: "\(plan.doneCount)/\(total) faites", symbol: "checkmark.circle.fill", color: Theme.good)
+                    if plan.pendingCount > 0 {
+                        StatusPill(text: "\(plan.pendingCount) à venir", symbol: "calendar", color: Theme.accent)
+                    }
+                }
+                if plan.droppedCount > 0 {
+                    Text("\(plan.droppedCount) séance\(plan.droppedCount > 1 ? "s n'ont" : " n'a") plus de place d'ici dimanche : pas grave, on ne rattrape pas.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                if plan.habitsLearned {
+                    Label("Jours proposés d'après tes habitudes des 8 dernières semaines", systemImage: "sparkles")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    // MARK: Jours
+
+    private func daysCard(_ plan: WeekPlan, profile: AthleteProfile) -> some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(plan.days.enumerated()), id: \.offset) { index, day in
+                    if index > 0 { Divider().padding(.vertical, 8) }
+                    dayRow(day, plan: plan, profile: profile)
+                }
+            }
+        }
+    }
+
+    private func dayRow(_ day: Date, plan: WeekPlan, profile: AthleteProfile) -> some View {
+        let calendar = Calendar.current
+        let isToday = calendar.isDate(day, inSameDayAs: plan.today)
+        let isPast = day < plan.today
+        let items = plan.items(on: day)
+        let extras = plan.extras(on: day)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(day.formatted(.dateTime.weekday(.wide).day()).capitalized)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(isPast ? Color.secondary : Color.primary)
+                if isToday { StatusPill(text: "Aujourd'hui", symbol: "smallcircle.filled.circle", color: Theme.accent) }
+                Spacer()
+                if plan.unavailableDays.contains(day) {
+                    Label("Indisponible", systemImage: "calendar.badge.exclamationmark")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            if items.isEmpty && extras.isEmpty {
+                Text(isPast ? "Repos" : "Libre").font(.footnote).foregroundStyle(.tertiary)
+            }
+            ForEach(items) { item in
+                itemRow(item, plan: plan, profile: profile)
+            }
+            ForEach(extras) { session in
+                HStack(spacing: 10) {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.good)
+                        .frame(width: 28)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(session.title).font(.subheadline.weight(.semibold))
+                        Text("En plus du plan · \((Double(session.minutes) / 60).hoursText)").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+            }
+        }
+    }
+
+    private func itemRow(_ item: WeekPlan.Item, plan: WeekPlan, profile: AthleteProfile) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: item.isDone ? "checkmark.circle.fill" : item.session.kind.symbol)
+                .foregroundStyle(item.isDone ? Theme.good : Theme.accent)
+                .frame(width: 28, height: 28)
+                .background(item.isDone ? Color.clear : Theme.well, in: .circle)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.session.title).font(.subheadline.weight(.semibold))
+                if let done = item.doneSession {
+                    Text(item.isSubstitute ? "Fait en endurance : \(done.title)" : "Fait : \(done.title)")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else if !item.session.detail.isEmpty {
+                    Text(item.session.detail).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                }
+                if item.isPending && (item.isPinned || item.wasRescheduled) {
+                    HStack(spacing: 6) {
+                        if item.isPinned { tag("Jour choisi", symbol: "hand.point.up.left.fill") }
+                        if item.wasRescheduled { tag("Replacée", symbol: "arrow.uturn.forward") }
+                    }
+                }
+            }
+            Spacer(minLength: 4)
+            if !item.isDone && item.category != .race {
+                moveMenu(item, plan: plan, profile: profile)
+            }
+        }
+    }
+
+    private func tag(_ text: String, symbol: String) -> some View {
+        Label(text, systemImage: symbol)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Theme.well, in: .capsule)
+    }
+
+    // MARK: Séances sans place
+
+    private func droppedCard(_ items: [WeekPlan.Item], plan: WeekPlan, profile: AthleteProfile) -> some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 10) {
+                SectionTitle(title: "Pas casées cette semaine", symbol: "tray")
+                ForEach(items) { item in
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: item.session.kind.symbol).foregroundStyle(.secondary).frame(width: 28)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.session.title).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                            Text(item.isRemoved ? "Retirée par toi" : "Plus de jour possible d'ici dimanche")
+                                .font(.caption).foregroundStyle(.tertiary)
+                        }
+                        Spacer(minLength: 4)
+                        moveMenu(item, plan: plan, profile: profile)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    // MARK: Menu « Déplacer »
+
+    private func moveMenu(_ item: WeekPlan.Item, plan: WeekPlan, profile: AthleteProfile) -> some View {
+        Menu {
+            Section(item.state == .dropped ? "Placer à" : "Déplacer à") {
+                ForEach(plan.remainingDays.filter { $0 != item.day }, id: \.self) { day in
+                    let warnings = WeekPlanner.warnings(for: item, on: day, in: plan,
+                                                        availableMinutes: profile.availableMinutes(weekday: Calendar.current.component(.weekday, from: day)))
+                    Button {
+                        place(item, on: day, plan: plan)
+                    } label: {
+                        if let warning = warnings.first {
+                            Label("\(dayLabel(day, plan: plan)) · \(warning)", systemImage: "exclamationmark.triangle")
+                        } else {
+                            Label(dayLabel(day, plan: plan), systemImage: "calendar")
+                        }
+                    }
+                }
+            }
+            if item.isPending {
+                Button(role: .destructive) { place(item, on: nil, plan: plan) } label: {
+                    Label("Pas cette semaine", systemImage: "minus.circle")
+                }
+            }
+            if item.isPinned {
+                Button { reset(item, plan: plan) } label: {
+                    Label("Laisser Vigor choisir", systemImage: "wand.and.stars")
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.title3)
+                .foregroundStyle(Theme.accent)
+                .frame(width: 44, height: 44)
+                .contentShape(.rect)
+        }
+        .accessibilityLabel("Déplacer \(item.session.kind.label)")
+    }
+
+    private func dayLabel(_ day: Date, plan: WeekPlan) -> String {
+        Calendar.current.isDate(day, inSameDayAs: plan.today) ? "Aujourd'hui" : day.formatted(.dateTime.weekday(.wide).day()).capitalized
+    }
+
+    // MARK: Enregistrement
+
+    private func existing(_ item: WeekPlan.Item, plan: WeekPlan) -> SessionPlacement? {
+        let key = SessionPlacement.key(weekStart: Calendar.current.startOfDay(for: plan.week.start), slot: item.id)
+        let descriptor = FetchDescriptor<SessionPlacement>(predicate: #Predicate { $0.key == key })
+        return try? context.fetch(descriptor).first
+    }
+
+    /// `day == nil` : retirée de la semaine.
+    private func place(_ item: WeekPlan.Item, on day: Date?, plan: WeekPlan) {
+        if let placement = existing(item, plan: plan) {
+            placement.day = day
+        } else {
+            context.insert(SessionPlacement(weekStart: Calendar.current.startOfDay(for: plan.week.start), slot: item.id, day: day))
+        }
+        save()
+    }
+
+    private func reset(_ item: WeekPlan.Item, plan: WeekPlan) {
+        if let placement = existing(item, plan: plan) { context.delete(placement) }
+        save()
+    }
+
+    private func save() {
+        try? context.save()
+        app.dataVersion += 1
+        Feedback.tick()
+    }
+}

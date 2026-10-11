@@ -144,6 +144,15 @@ private struct RingsCoachingCard: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Theme.well.opacity(0.6), in: .rect(cornerRadius: 14, style: .continuous))
                     }
+                    if snapshot.weekPlan.map({ !$0.pendingToday.isEmpty }) ?? false {
+                        NavigationLink { WeekPlannerView() } label: {
+                            Label("Pas aujourd'hui ? Changer de jour", systemImage: "calendar.badge.clock")
+                                .font(.subheadline.weight(.semibold))
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Theme.accent)
+                    }
                 }
             }
         }

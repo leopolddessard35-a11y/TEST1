@@ -39,7 +39,10 @@ struct CoachSnapshot {
     let bedtimeRegularity: (sd: Double, average: String)?
     let correlations: [Correlation]
     let symptomPatterns: [SymptomPattern]
-    let weekStatus: [DayStatus]
+    /// La semaine organisée : séances du plan, jours choisis, ce qui est fait (nil sans plan de saison).
+    let weekPlan: WeekPlan?
+    /// La semaine suivante, pour s'organiser à l'avance.
+    let nextWeekPlan: WeekPlan?
     let milestones: [Milestone]
     /// Poids en moyenne mobile 7 jours.
     let weightMA7: [DayValue]
@@ -95,6 +98,7 @@ struct CoachSnapshot {
                       symptoms: [Symptom] = [],
                       shoes: [Shoe] = [],
                       baselines: [PlanBaseline] = [],
+                      placements: [SessionPlacement] = [],
                       now: Date = .now) -> CoachSnapshot {
         let calendar = Calendar.current
         let thresholds = profile.thresholds
@@ -469,24 +473,43 @@ struct CoachSnapshot {
             if let mean = Stats.mean(window) { weightMA7.append(DayValue(date: point.date, value: mean)) }
         }
 
-        // Prévu vs réalisé (semaine en cours) et jalons.
-        var bikeDays = Set<Date>()
-        var strengthDays = Set<Date>()
-        var doneLabels: [Date: [String]] = [:]
-        for activity in activities {
-            let day = calendar.startOfDay(for: activity.start)
-            bikeDays.insert(day)
-            doneLabels[day, default: []].append("\(activity.sport.label) \((activity.durationSeconds / 3600).hoursText)")
+        // Organisation de la semaine : séances du plan, jours choisis à la main, séances faites reconnues par type.
+        var doneSessions: [DoneSession] = []
+        for (index, activity) in activities.enumerated() {
+            let minutes = Int(activity.durationSeconds / 60)
+            if activity.sport == .strength {
+                doneSessions.append(DoneSession(id: "cardio-\(activity.externalID)", date: activity.start, title: activity.title,
+                                                symbol: "dumbbell.fill", minutes: minutes, isStrength: true, isIntense: false))
+                continue
+            }
+            let intense = (samples[index].intensityFactor ?? 0) >= 0.82 || (activity.rpe ?? 0) >= 7
+            doneSessions.append(DoneSession(id: "cardio-\(activity.externalID)", date: activity.start, title: activity.title,
+                                            symbol: activity.sport.symbol, minutes: minutes, isStrength: false, isIntense: intense))
         }
         for workout in strength {
-            let day = calendar.startOfDay(for: workout.start)
-            strengthDays.insert(day)
-            doneLabels[day, default: []].append(workout.title)
+            var lowerSets = 0
+            for session in workout.exerciseSessions
+            where MuscleMap.targets(for: session.exercise).primary.contains(where: { $0.region == .lowerBody }) {
+                lowerSets += session.workingSets.count
+            }
+            doneSessions.append(DoneSession(id: "muscu-\(workout.externalID)", date: workout.start, title: workout.title,
+                                            symbol: "dumbbell.fill", minutes: Int(workout.durationSeconds / 60),
+                                            isStrength: true, isIntense: false, isLegs: lowerSets >= 3))
         }
-        let weekStatus: [DayStatus] = plan.currentWeek.map {
-            PlanTracking.weekStatus(week: $0, bikeDays: bikeDays, strengthDays: strengthDays, doneLabels: doneLabels,
-                                    today: now, ftp: thresholds.ftp, calendar: calendar)
-        } ?? []
+        func organize(_ week: PlannedWeek) -> WeekPlan {
+            let weekStart = calendar.startOfDay(for: week.start)
+            var pinned: [String: Date] = [:]
+            var removed = Set<String>()
+            for placement in placements where calendar.isDate(placement.weekStart, inSameDayAs: weekStart) {
+                if let day = placement.day { pinned[placement.slot] = day } else { removed.insert(placement.slot) }
+            }
+            let habits = TrainingHabits.learn(from: doneSessions, before: weekStart, calendar: calendar)
+            return WeekPlanner.make(week: week, ftp: thresholds.ftp, done: doneSessions, habits: habits,
+                                    pinned: pinned, removed: removed, unavailable: periods,
+                                    availableMinutes: { profile.availableMinutes(weekday: $0) }, now: now, calendar: calendar)
+        }
+        let weekPlan: WeekPlan? = plan.currentWeek.map(organize)
+        let nextWeekPlan: WeekPlan? = plan.weeks.dropFirst().first.map(organize)
         let milestones: [Milestone] = PlanTracking.milestones(plan: plan)
         // Coach du jour : croisement santé × entraînement × nutrition.
         var nights: [(daysAgo: Int, hours: Double)] = []
@@ -564,6 +587,7 @@ struct CoachSnapshot {
             weightKg: currentWeight,
             week: plan.currentWeek,
             externalPlan: externalPlan,
+            scheduledToday: weekPlan.map { plan in plan.items(on: todayStart).filter(\.isPending).map(\.session) },
             ftp: thresholds.ftp,
             injuries: injuryStatuses,
             unavailableToday: unavailableToday,
@@ -636,13 +660,11 @@ struct CoachSnapshot {
         }
         let weeklyReport: WeeklyReport? = WeeklyReportBuilder.build(days: reportDays.sorted { $0.date < $1.date }, today: now, calendar: calendar)
 
+        // Demain : les séances placées par l'organisateur (cette semaine ou la suivante).
         let tomorrow: Date = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? todayStart
-        var tomorrowWeek: PlannedWeek? = plan.currentWeek
-        for week in plan.weeks where week.start <= tomorrow {
-            tomorrowWeek = week
-        }
-        let tomorrowPlan: [SessionPrescription] = tomorrowWeek.map {
-            DailyCoach.template(for: $0, weekday: calendar.component(.weekday, from: tomorrow), ftp: thresholds.ftp)
+        let tomorrowWeekPlan: WeekPlan? = (weekPlan?.contains(tomorrow) ?? false) ? weekPlan : nextWeekPlan
+        let tomorrowPlan: [SessionPrescription] = tomorrowWeekPlan.map { plan in
+            plan.items(on: tomorrow).filter(\.isPending).map(\.session)
         } ?? []
 
         // Score de confiance du jour : quelles sources sont présentes ?
@@ -739,7 +761,7 @@ struct CoachSnapshot {
             plannedLastWeek = baselines.first { calendar.isDate($0.weekStart, inSameDayAs: lastWeekStart) }?.targetHours
         }
         let doneStrength: Int = strength.filter { $0.start >= weekAgo }.count
-        let missed: Int = weekStatus.filter { $0.status == .missed }.count
+        let missed: Int = weekPlan?.droppedCount ?? 0
         let weeklyReview: WeeklyReport.Review? = weeklyReport.map {
             WeeklyReport.review(report: $0, plannedHours: plannedLastWeek, plannedStrength: profile.strengthSessionsPerWeek,
                                 doneStrength: doneStrength, acuteChronic: Robust.acuteChronicRatio(load.map(\.tss)),
@@ -778,7 +800,8 @@ struct CoachSnapshot {
             bedtimeRegularity: bedtimeRegularity,
             correlations: correlations,
             symptomPatterns: symptomPatterns,
-            weekStatus: weekStatus,
+            weekPlan: weekPlan,
+            nextWeekPlan: nextWeekPlan,
             milestones: milestones,
             weightMA7: weightMA7,
             hydrationTarget: hydrationTarget,

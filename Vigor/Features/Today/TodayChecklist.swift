@@ -14,11 +14,13 @@ struct TodayChecklistCard: View {
                 CapsLabel("À faire aujourd'hui").padding(.bottom, 6)
                 mealRow
                 // La séance du jour vit dans la carte coaching ; ici, seulement la coche une fois faite.
-                if let today = snapshot.weekStatus.first(where: { Calendar.current.isDateInToday($0.date) }),
-                   today.status == .done || today.status == .partial {
-                    Divider().padding(.leading, 44)
-                    ChecklistRow(symbol: "checkmark", title: today.status == .done ? "Séance faite" : "Séance en partie faite",
-                                 subtitle: today.done.joined(separator: " + "), done: true)
+                if let plan = snapshot.weekPlan {
+                    let doneToday = plan.items(on: plan.today).compactMap(\.doneSession) + plan.extras(on: plan.today)
+                    if !doneToday.isEmpty {
+                        Divider().padding(.leading, 44)
+                        ChecklistRow(symbol: "checkmark", title: doneToday.count > 1 ? "Séances faites" : "Séance faite",
+                                     subtitle: doneToday.map(\.title).joined(separator: " + "), done: true)
+                    }
                 }
                 Divider().padding(.leading, 44)
                 NavigationLink {

@@ -478,6 +478,28 @@ final class PlanBaseline {
     }
 }
 
+/// Jour choisi à la main pour une séance de la semaine, ou séance retirée de la semaine (`day == nil`).
+@Model
+final class SessionPlacement {
+    /// « début de semaine | séance » : une seule décision par séance et par semaine.
+    @Attribute(.unique) var key: String
+    var weekStart: Date
+    /// Identifiant de la séance dans la semaine (« intense-0 », « strength-1 »…).
+    var slot: String
+    var day: Date?
+
+    init(weekStart: Date, slot: String, day: Date?) {
+        self.key = Self.key(weekStart: weekStart, slot: slot)
+        self.weekStart = weekStart
+        self.slot = slot
+        self.day = day
+    }
+
+    static func key(weekStart: Date, slot: String) -> String {
+        "\(Int(weekStart.timeIntervalSince1970))|\(slot)"
+    }
+}
+
 /// Expérience N = 1 : tester un changement (dîner plus tôt, autre chaussure…) et comparer avant / pendant.
 @Model
 final class Experiment {

@@ -134,48 +134,33 @@ struct GoalForm: View {
     }
 }
 
-/// Semaine en cours : prévu vs réalisé, séances manquées visibles.
-struct WeekStatusCard: View {
-    let days: [DayStatus]
+/// Semaine en cours, jour par jour : fait, à venir, repos. Jamais de « manqué ».
+struct WeekPlanCard: View {
+    let plan: WeekPlan
 
     var body: some View {
-        let missed = days.filter { $0.status == .missed }.count
         GlassCard {
             VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    SectionTitle(title: "Prévu vs réalisé · cette semaine", symbol: "checklist")
-                    Spacer()
-                    if missed > 0 {
-                        Text("\(missed) manquée\(missed > 1 ? "s" : "")").font(.caption.weight(.semibold)).foregroundStyle(Theme.warning)
-                    }
-                }
+                SectionTitle(title: "Ma semaine", symbol: "calendar.badge.clock")
                 HStack(spacing: 6) {
-                    ForEach(days) { day in
+                    ForEach(plan.days, id: \.self) { day in
+                        let done = plan.items(on: day).contains { $0.isDone } || !plan.extras(on: day).isEmpty
+                        let pending = plan.items(on: day).contains { $0.isPending }
                         VStack(spacing: 4) {
-                            Text(day.date.formatted(.dateTime.weekday(.narrow))).font(.caption2.weight(.semibold))
-                            Image(systemName: day.status.symbol)
+                            Text(day.formatted(.dateTime.weekday(.narrow))).font(.caption2.weight(.semibold))
+                            Image(systemName: done ? "checkmark.circle.fill" : (pending ? "circle.dotted" : "moon.zzz.fill"))
                                 .font(.title3)
-                                .foregroundStyle(Self.color(day.status))
+                                .foregroundStyle(done ? Theme.recovery : (pending ? Color.secondary : Theme.sleep))
                         }
                         .frame(maxWidth: .infinity)
                     }
                 }
                 HStack {
+                    Text(WeekPlannerView.summary(plan)).font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    Text("Détail de la semaine").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     DetailChevron()
                 }
             }
-        }
-    }
-
-    static func color(_ status: DayStatus.Status) -> Color {
-        switch status {
-        case .done: Theme.recovery
-        case .partial: Theme.nutrition
-        case .missed: Theme.warning
-        case .rest: Theme.sleep
-        case .upcoming, .today: .secondary
         }
     }
 }

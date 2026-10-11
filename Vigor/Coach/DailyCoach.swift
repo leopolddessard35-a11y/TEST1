@@ -151,6 +151,8 @@ struct DailyCoachInput {
     var weightKg: Double
     var week: PlannedWeek?
     var externalPlan: [PlannedSessionInput] = []
+    /// Séances placées aujourd'hui par l'organisateur de la semaine (prioritaires sur le plan type).
+    var scheduledToday: [SessionPrescription]?
     var ftp: Double?
     var injuries: [InjuryStatus] = []
     var unavailableToday: UnavailabilityReason?
@@ -277,6 +279,8 @@ enum DailyCoach {
         let planned: [SessionPrescription]
         if !input.externalPlan.isEmpty {
             planned = input.externalPlan.map { external(from: $0, ftp: input.ftp) }
+        } else if let scheduled = input.scheduledToday {
+            planned = scheduled
         } else if let week = input.week {
             planned = template(for: week, weekday: weekday, ftp: input.ftp)
         } else {
@@ -613,6 +617,17 @@ enum DailyCoach {
     /// Phrase factuelle : les signaux (chiffrés) puis la séance retenue. Jamais de jugement.
     private static func headline(verdict: Verdict, redSignals: [String], factors: [CoachFactor], adapted: [SessionPrescription]) -> String {
         let session = adapted.first.map { $0.title.lowercased() } ?? "repos"
+        if adapted.isEmpty {
+            // Rien de placé aujourd'hui : l'état du jour, sans séance à prescrire.
+            let context = redSignals.isEmpty
+                ? (factors.filter { $0.impact > 0 }.map { $0.detail }.prefix(2).joined(separator: ", "))
+                : redSignals.prefix(3).joined(separator: ", ")
+            let start = context.isEmpty ? "Indicateurs dans ta normale" : context
+            switch verdict {
+            case .rest, .easy: return "\(start) : journée à ménager, rien de prévu aujourd'hui."
+            default: return "\(start) : pas de séance prévue aujourd'hui."
+            }
+        }
         if redSignals.isEmpty {
             let positives = factors.filter { $0.impact > 0 }.map { $0.detail }.prefix(2)
             let context = positives.isEmpty ? "Indicateurs dans ta normale" : positives.joined(separator: ", ")

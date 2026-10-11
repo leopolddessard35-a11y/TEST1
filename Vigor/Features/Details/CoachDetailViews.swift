@@ -349,6 +349,7 @@ struct WeekDetailView: View {
                 • ~80 % du volume à basse intensité, 1 à 2 séances intenses par semaine selon la phase.
                 • Affûtage final : volume réduit de ~40 % en gardant un peu d'intensité.
                 • Le plan est recalculé à chaque ouverture depuis ta condition réelle : une semaine ratée n'est jamais « rattrapée ».
+                • Le plan donne les séances de la semaine ; les jours se choisissent dans Sport → Organiser ma semaine.
                 """)
                 ReferencesCard(references: [Science.seiler2010, Science.gabbett2016, Science.mujika2003, Science.bosquet2007, Science.wilson2012])
             }

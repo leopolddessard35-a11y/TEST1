@@ -54,8 +54,8 @@ enum CoachSummary {
         let action: String
         if isRestDay {
             switch brief.verdict {
-            case .push, .go: action = "C'est ton jour de repos : profites-en pour bien manger et te coucher à l'heure."
-            default: action = "Repos prévu, ça tombe bien : marche, étirements et sommeil."
+            case .push, .go: action = "Rien de prévu aujourd'hui : tu peux ajouter une séance si l'envie est là, sinon bien manger et te coucher à l'heure."
+            default: action = "Rien de prévu aujourd'hui, ça tombe bien : marche, étirements et sommeil."
             }
         } else {
             let main = sessions.first { $0.kind != .rest } ?? sessions[0]

@@ -10,9 +10,7 @@ struct CalendarDay: Identifiable, Equatable {
         case done
         /// Grosse séance (≥ 2 h 30 ou charge ≥ 150).
         case hard
-        /// Séance prévue non faite (semaine en cours).
-        case missed
-        /// Séance prévue à venir.
+        /// Séance placée à venir (organisateur de la semaine ou Intervals.icu).
         case planned
         /// Indisponible (maladie, voyage…).
         case unavailable(UnavailabilityReason)
@@ -49,13 +47,13 @@ enum TrainingCalendar {
                       workouts: [StrengthWorkout],
                       unavailabilities: [Unavailability],
                       planned: [PlannedWorkout],
-                      weekStatus: [DayStatus],
+                      plans: [WeekPlan],
                       calendar: Calendar = .current) -> [CalendarDay?] {
         guard let interval = calendar.dateInterval(of: .month, for: reference) else { return [] }
         let firstWeekday = calendar.component(.weekday, from: interval.start)
         let leading = (firstWeekday - calendar.firstWeekday + 7) % 7
         let built = days(in: interval, activities: activities, workouts: workouts, unavailabilities: unavailabilities,
-                         planned: planned, weekStatus: weekStatus, calendar: calendar)
+                         planned: planned, plans: plans, calendar: calendar)
         return Array(repeating: nil, count: leading) + built.map { Optional($0) }
     }
 
@@ -65,11 +63,11 @@ enum TrainingCalendar {
                      workouts: [StrengthWorkout],
                      unavailabilities: [Unavailability],
                      planned: [PlannedWorkout],
-                     weekStatus: [DayStatus],
+                     plans: [WeekPlan],
                      calendar: Calendar = .current) -> [CalendarDay] {
         guard let interval = calendar.dateInterval(of: .weekOfYear, for: reference) else { return [] }
         return days(in: interval, activities: activities, workouts: workouts, unavailabilities: unavailabilities,
-                    planned: planned, weekStatus: weekStatus, calendar: calendar)
+                    planned: planned, plans: plans, calendar: calendar)
     }
 
     static func days(in interval: DateInterval,
@@ -77,21 +75,28 @@ enum TrainingCalendar {
                      workouts: [StrengthWorkout],
                      unavailabilities: [Unavailability],
                      planned: [PlannedWorkout],
-                     weekStatus: [DayStatus],
+                     plans: [WeekPlan],
                      calendar: Calendar = .current) -> [CalendarDay] {
         let today = calendar.startOfDay(for: .now)
         let sessionsByDay = self.sessionsByDay(activities: activities, workouts: workouts, calendar: calendar)
-        var statusByDay: [Date: DayStatus] = [:]
-        for status in weekStatus { statusByDay[calendar.startOfDay(for: status.date)] = status }
+        // Semaines organisées : seules les séances encore à faire apparaissent (jamais de « manqué »).
         var plannedByDay: [Date: [String]] = [:]
-        for item in planned { plannedByDay[calendar.startOfDay(for: item.date), default: []].append(item.name) }
+        var organizedDays = Set<Date>()
+        for plan in plans {
+            organizedDays.formUnion(plan.days)
+            for item in plan.items where item.isPending {
+                if let day = item.day { plannedByDay[day, default: []].append(item.session.title) }
+            }
+        }
+        for item in planned where !organizedDays.contains(calendar.startOfDay(for: item.date)) {
+            plannedByDay[calendar.startOfDay(for: item.date), default: []].append(item.name)
+        }
 
         var days: [CalendarDay] = []
         var day = interval.start
         while day < interval.end {
             let sessions = sessionsByDay[day] ?? []
-            let status = statusByDay[day]
-            let plannedNames: [String] = status.map { $0.planned.filter { $0.kind != .rest }.map(\.title) } ?? plannedByDay[day] ?? []
+            let plannedNames: [String] = day >= today ? (plannedByDay[day] ?? []) : []
             let unavailable = unavailabilities.first { calendar.startOfDay(for: $0.start) <= day && day <= calendar.startOfDay(for: $0.end) }
 
             let state: CalendarDay.State
@@ -100,9 +105,7 @@ enum TrainingCalendar {
                 state = hard ? .hard : .done
             } else if let unavailable {
                 state = .unavailable(unavailable.reason)
-            } else if let status, status.status == .missed {
-                state = .missed
-            } else if day >= today && !plannedNames.isEmpty {
+            } else if !plannedNames.isEmpty {
                 state = .planned
             } else {
                 state = day < today ? .rest : .open
@@ -174,7 +177,7 @@ enum TrainingCalendar {
 
 // MARK: - Vue
 
-/// Grand calendrier du mois : séances faites, manquées, prévues, indisponibilités, série en cours.
+/// Grand calendrier du mois : séances faites, séances placées à venir, indisponibilités, série en cours.
 struct TrainingCalendarCard: View {
     let snapshot: CoachSnapshot
     @Query(sort: \CardioActivity.start, order: .reverse) private var activities: [CardioActivity]
@@ -187,15 +190,15 @@ struct TrainingCalendarCard: View {
     @State private var expanded = false
 
     private var calendar: Calendar { .current }
+    private var plans: [WeekPlan] { [snapshot.weekPlan, snapshot.nextWeekPlan].compactMap { $0 } }
 
     var body: some View {
         let days = TrainingCalendar.month(containing: month, activities: activities, workouts: workouts,
-                                          unavailabilities: unavailabilities, planned: planned, weekStatus: snapshot.weekStatus)
+                                          unavailabilities: unavailabilities, planned: planned, plans: plans)
         let streak = TrainingCalendar.weeklyStreak(activities: activities, workouts: workouts, unavailabilities: unavailabilities)
         let monthDays = days.compactMap { $0 }
         let sessionCount = monthDays.reduce(0) { $0 + $1.sessions.count }
         let minutes = monthDays.reduce(0) { total, day in total + day.sessions.reduce(0) { $0 + $1.minutes } }
-        let isCurrentMonth = calendar.isDate(month, equalTo: .now, toGranularity: .month)
 
         GlassCard {
             VStack(spacing: 12) {
@@ -261,7 +264,7 @@ struct TrainingCalendarCard: View {
                 } else {
                     let week = TrainingCalendar.week(containing: .now, activities: activities, workouts: workouts,
                                                      unavailabilities: unavailabilities, planned: planned,
-                                                     weekStatus: snapshot.weekStatus)
+                                                     plans: plans)
                     HStack(spacing: 4) {
                         ForEach(week) { day in
                             Button { selected = day } label: { CalendarDayCell(day: day) }
@@ -283,10 +286,10 @@ struct TrainingCalendarCard: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(Theme.accent)
 
-                if isCurrentMonth, let week = snapshot.plan.currentWeek {
-                    NavigationLink { WeekDetailView(week: week) } label: {
-                        LinkRow(symbol: "list.bullet.rectangle", title: "Détail de la semaine",
-                                subtitle: "\(week.phase.label) · \(week.targetHours.hoursText) prévues")
+                if let plan = snapshot.weekPlan {
+                    NavigationLink { WeekPlannerView() } label: {
+                        LinkRow(symbol: "calendar.badge.clock", title: "Organiser ma semaine",
+                                subtitle: WeekPlannerView.summary(plan))
                     }
                     .buttonStyle(.plain)
                 }
@@ -328,7 +331,6 @@ struct TrainingCalendarCard: View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8, alignment: .leading)], alignment: .leading, spacing: 6) {
             legendItem(Circle().fill(Theme.good), "Fait")
             legendItem(Circle().fill(Theme.accent), "Grosse séance")
-            legendItem(Circle().strokeBorder(Theme.alert, lineWidth: 1.5), "Manqué")
             legendItem(Circle().strokeBorder(Color.secondary, style: StrokeStyle(lineWidth: 1.5, dash: [3, 3])), "Prévu")
             legendItem(Circle().fill(Theme.well).overlay(Circle().strokeBorder(Color.secondary.opacity(0.6), lineWidth: 1)), "Indisponible")
             legendItem(Circle().fill(Theme.well.opacity(0.7)), "Repos")
@@ -345,7 +347,7 @@ struct TrainingCalendarCard: View {
     }
 }
 
-/// Une case du calendrier : rond plein (fait), contour (manqué), pointillé (prévu), gris (repos).
+/// Une case du calendrier : rond plein (fait), pointillé (prévu), gris (repos).
 struct CalendarDayCell: View {
     let day: CalendarDay
     /// Suit la taille de texte choisie dans Réglages iOS.
@@ -383,7 +385,6 @@ struct CalendarDayCell: View {
         switch day.state {
         case .done: Circle().fill(Theme.good)
         case .hard: Circle().fill(Theme.accent.gradient)
-        case .missed: Circle().strokeBorder(Theme.alert, lineWidth: 1.5)
         case .planned: Circle().strokeBorder(Color.secondary, style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
         case .unavailable: Circle().fill(Theme.well)
         case .rest: Circle().fill(Theme.well.opacity(0.7))
@@ -405,8 +406,6 @@ struct CalendarDayCell: View {
                     .background(Theme.card, in: .circle)
                     .offset(x: 4, y: -4)
             }
-        case .missed:
-            Text(number).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.alert)
         case .unavailable(let reason):
             Image(systemName: reason.symbol).font(.caption).foregroundStyle(.secondary)
         case .planned:
@@ -422,7 +421,6 @@ struct CalendarDayCell: View {
         let date = day.date.formatted(date: .complete, time: .omitted)
         switch day.state {
         case .done, .hard: return "\(date), \(day.sessions.count) séance(s) faite(s)"
-        case .missed: return "\(date), séance manquée"
         case .planned: return "\(date), séance prévue"
         case .unavailable(let reason): return "\(date), indisponible : \(reason.label)"
         case .rest: return "\(date), repos"
@@ -454,8 +452,12 @@ private struct CalendarDayDetail: View {
                     }
                 }
                 if !day.planned.isEmpty {
-                    Section(day.state == .missed ? "Prévu, non fait" : "Prévu") {
+                    Section {
                         ForEach(day.planned, id: \.self) { Text($0) }
+                    } header: {
+                        Text("Prévu")
+                    } footer: {
+                        Text("Pour changer de jour : Sport → Organiser ma semaine.")
                     }
                 }
                 if case .unavailable(let reason) = day.state {

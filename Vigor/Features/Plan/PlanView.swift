@@ -17,8 +17,8 @@ struct SeasonPlanView: View {
                     VStack(spacing: 12) {
                         PlanHeaderCard(plan: snapshot.plan, raceName: profile.raceName)
 
-                        if let week = snapshot.plan.currentWeek, !snapshot.weekStatus.isEmpty {
-                            NavigationLink { WeekDetailView(week: week) } label: { WeekStatusCard(days: snapshot.weekStatus) }
+                        if let plan = snapshot.weekPlan {
+                            NavigationLink { WeekPlannerView() } label: { WeekPlanCard(plan: plan) }
                                 .buttonStyle(.plain)
                         }
 
@@ -278,7 +278,7 @@ struct UnavailabilityForm: View {
         case .travel: "La semaine est réduite, avec des idées de séances courtes sans matériel."
         case .vacation: "La charge est ajustée aux jours disponibles."
         case .fatigue: "La semaine devient une semaine de récupération."
-        case .motivation: "Pas de culpabilité : les séances manquées ne sont pas rattrapées."
+        case .motivation: "Pas de culpabilité : une séance sans place n'est pas rattrapée, la semaine se réorganise."
         case .other: "La charge est ajustée aux jours disponibles."
         }
     }
