@@ -8,7 +8,7 @@ enum TrainingPhase: String, CaseIterable {
         case .reprise: "Reprise"
         case .base: "Foncier"
         case .build: "Développement"
-        case .specific: "Spécifique Traka"
+        case .specific: "Spécifique course"
         case .taper: "Affûtage"
         case .race: "Course"
         }
@@ -19,7 +19,7 @@ enum TrainingPhase: String, CaseIterable {
         case .reprise: "Retour progressif après blessure : endurance facile, aucune intensité, renfo adapté."
         case .base: "Construire le moteur : beaucoup d'endurance (zone 2), sortie longue qui s'allonge, muscu prioritaire pour la masse."
         case .build: "Ajouter de l'intensité (seuil, sweet spot, VO2max) tout en gardant la sortie longue."
-        case .specific: "Simuler la Traka : longues sorties gravel, efforts au seuil sur terrain varié, nutrition d'effort testée."
+        case .specific: "Simuler la course : longues sorties gravel, efforts au seuil sur terrain varié, nutrition d'effort testée."
         case .taper: "Réduire le volume pour arriver frais, garder un peu d'intensité pour rester vif."
         case .race: "Semaine de course : repos, déblocage et c'est parti."
         }
@@ -106,7 +106,8 @@ struct InjuryStatus: Equatable {
 struct PlannerInput {
     var today: Date
     var raceDate: Date
-    var raceName: String = "The Traka 100"
+    /// Nom de l'objectif (vide = non renseigné : « ta course » dans les textes).
+    var raceName: String = ""
     var currentCTL: Double
     var targetRaceCTL: Double
     var weeklyHoursAvailable: Double
@@ -397,7 +398,7 @@ enum SeasonPlanner {
         switch kind {
         case .recovery: notes.append("Semaine de récupération : volume −40 %, aucune intensité.")
         case .taper: notes.append("Affûtage : volume réduit, 1 séance courte d'intensité pour rester vif.")
-        case .race: notes.append("🏁 \(input.raceName) : c'est la semaine de course !")
+        case .race: notes.append("🏁 \(input.raceName.isEmpty ? "Objectif" : input.raceName) : c'est la semaine de course !")
         case .load: break
         }
 

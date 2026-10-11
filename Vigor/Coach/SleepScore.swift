@@ -1,6 +1,6 @@
 import Foundation
 
-/// Score de sommeil 0–100 (formule « sleep-3 »), proche de ce que font Bevel ou Whoop :
+/// Score de sommeil 0–100 (formule « sleep-4 »), proche de ce que font Bevel ou Whoop :
 /// pas seulement « as-tu dormi assez », mais aussi la qualité de la nuit.
 ///
 /// - Durée vs besoin (50 %) : 100 % du besoin = 100 ; −2,5 points par % manquant.

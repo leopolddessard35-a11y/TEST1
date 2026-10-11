@@ -57,10 +57,10 @@ struct ContentView: View {
             _ = await NotificationScheduler.requestAuthorization()
             app.scheduleBackgroundRefresh()
         }
-        // Synchro du sommeil au premier plan, seulement si aucune n'a encore réussi aujourd'hui.
+        // Au lancement, l'une après l'autre : sommeil du jour (si pas encore fait), réparation unique
+        // de l'historique, puis synchro complète si la dernière date de plus d'une heure.
         .task {
-            await sync.syncIfNeeded()
-            await app.repairSleepHistoryIfNeeded(context: context, profile: profiles.first)
+            await app.foregroundSync(context: context, profile: profiles.first, sleep: sync)
         }
         .onChange(of: sync.lastSyncDate) {
             app.dataVersion += 1
@@ -71,15 +71,11 @@ struct ContentView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 app.scheduleBackgroundRefresh()
-                // Réveil le lendemain sans avoir fermé l'app : nouvelle journée, nouvelle synchro.
-                if !sync.hasSyncedToday {
-                    Task { await sync.syncIfNeeded() }
+                // Retour dans l'app (ex. le lendemain) : mêmes synchros, en série, puis notifications.
+                Task {
+                    await app.foregroundSync(context: context, profile: profiles.first, sleep: sync)
+                    await app.refreshNotifications(context: context)
                 }
-                // Synchronisation automatique si la dernière date de plus d'une heure.
-                if Date.now.timeIntervalSince(app.lastSync) > 3600 {
-                    Task { await app.syncAll(context: context, profile: profiles.first, silent: true) }
-                }
-                Task { await app.refreshNotifications(context: context) }
             }
         }
         .alert("Vigor", isPresented: Binding(

@@ -105,26 +105,32 @@ enum TrainingLoad {
     }
 
     /// Calcule condition / fatigue / forme jour par jour.
+    /// Sans valeur initiale, CTL et ATL sont amorcées par la moyenne des N premiers jours disponibles
+    /// (N = constante de temps, 42 j et 7 j, ou moins s'il y a moins de jours) au lieu de 0.
     static func series(daily: [Date: Double],
                        from start: Date,
                        to end: Date,
-                       initialCTL: Double = 0,
-                       initialATL: Double = 0,
+                       initialCTL: Double? = nil,
+                       initialATL: Double? = nil,
                        calendar: Calendar = .current) -> [LoadPoint] {
-        var ctl = initialCTL
-        var atl = initialATL
-        var points: [LoadPoint] = []
         var day = calendar.startOfDay(for: start)
         let last = calendar.startOfDay(for: end)
-
+        var days: [Date] = []
         while day <= last {
-            let tss = daily[day] ?? 0
+            days.append(day)
+            guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
+            day = next
+        }
+        let loads: [Double] = days.map { daily[$0] ?? 0 }
+        var ctl = initialCTL ?? Robust.ewmaSeed(loads, days: ctlDays)
+        var atl = initialATL ?? Robust.ewmaSeed(loads, days: atlDays)
+        var points: [LoadPoint] = []
+
+        for (day, tss) in zip(days, loads) {
             let form = ctl - atl
             ctl += (tss - ctl) / ctlDays
             atl += (tss - atl) / atlDays
             points.append(LoadPoint(date: day, tss: tss, ctl: ctl, atl: atl, form: form))
-            guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
-            day = next
         }
         return points
     }

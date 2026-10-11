@@ -5,8 +5,10 @@ import SwiftData
 @Model
 final class DailyWellness {
     @Attribute(.unique) var day: Date
+    /// Durée de la nuit principale selon Apple Santé (siestes exclues). Garmin : `sleepHoursGarmin`.
     var sleepHours: Double?
     var hrvMs: Double?
+    /// FC de repos Apple Santé. Garmin : `restingHeartRateGarmin`.
     var restingHeartRate: Double?
     var steps: Double?
     var activeEnergyKcal: Double?
@@ -19,8 +21,14 @@ final class DailyWellness {
     var garminReadiness: Double?
     var sleepingHeartRate: Double?
     var spO2: Double?
+    /// Fréquence respiratoire Apple Santé. Garmin : `respirationGarmin`.
     var respiration: Double?
     var bodyFatPercent: Double?
+    /// Valeurs Garmin (Intervals.icu), stockées à part pour ne jamais écraser ni mélanger les valeurs Apple :
+    /// le coach choisit UNE source par métrique sur tout l'historique (voir `CoachSnapshot`).
+    var sleepHoursGarmin: Double?
+    var restingHeartRateGarmin: Double?
+    var respirationGarmin: Double?
     /// Heure d'endormissement et de réveil (régularité du sommeil).
     var bedtime: Date?
     var wakeTime: Date?
@@ -192,14 +200,16 @@ final class Injury {
 /// Profil sportif et objectifs. Une seule instance.
 @Model
 final class AthleteProfile {
-    var ftp: Double = 206
+    /// FTP en watts (0 = inconnue : pas de TSS calculé depuis la puissance).
+    var ftp: Double = 0
     /// FC au seuil en vélo (0 = inconnue, estimée depuis la FC max).
     var cyclingLTHR: Double = 0
     /// FC au seuil en course (0 = inconnue).
     var runningLTHR: Double = 0
     var maxHeartRate: Double = 0
     var weightKg: Double = 0
-    var raceName: String = "The Traka 100"
+    /// Nom de l'objectif (vide = pas encore renseigné, l'interface affiche « Objectif »).
+    var raceName: String = ""
     var raceDate: Date = AthleteProfile.defaultRaceDate
     /// Condition (CTL) visée le jour de la course.
     var targetRaceCTL: Double = 60
@@ -233,8 +243,11 @@ final class AthleteProfile {
 
     init() {}
 
+    /// Objectif par défaut : dans 6 mois (à remplacer par la vraie date).
     static var defaultRaceDate: Date {
-        DateComponents(calendar: Calendar(identifier: .gregorian), year: 2027, month: 4, day: 25).date ?? .now
+        let calendar = Calendar.current
+        let inSixMonths = calendar.date(byAdding: .month, value: 6, to: .now) ?? .now
+        return calendar.startOfDay(for: inSixMonths)
     }
 
     var thresholds: Thresholds {
@@ -481,4 +494,13 @@ final class Experiment {
         self.metricRaw = metricRaw
         self.note = note
     }
+}
+
+extension DailyWellness {
+    /// Durée de la nuit : Apple Santé (avec horaires et stades) si présente, sinon Garmin (Intervals.icu).
+    var anySleepHours: Double? { sleepHours ?? sleepHoursGarmin }
+    /// FC au repos de la journée, quelle que soit la source (affichage d'un jour isolé).
+    var anyRestingHeartRate: Double? { restingHeartRate ?? restingHeartRateGarmin }
+    /// Respiration nocturne, quelle que soit la source (affichage d'un jour isolé).
+    var anyRespiration: Double? { respiration ?? respirationGarmin }
 }

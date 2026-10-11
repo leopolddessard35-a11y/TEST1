@@ -28,6 +28,15 @@ struct SleepNight {
     var awake: Double? = nil
 }
 
+/// Échantillon de sommeil brut, indépendant de HealthKit (pour pouvoir tester le regroupement en sessions).
+struct RawSleepSample {
+    enum Kind { case deep, core, rem, unspecified, awake }
+    let start: Date
+    let end: Date
+    let kind: Kind
+    let source: String
+}
+
 /// Un segment de la nuit, pour l'hypnogramme.
 struct SleepSegment: Identifiable, Equatable {
     enum Stage: Int, CaseIterable, Comparable {
@@ -81,7 +90,6 @@ final class HealthKitService {
         let quantities: [HKQuantityTypeIdentifier] = [
             .heartRateVariabilitySDNN, .restingHeartRate, .heartRate, .respiratoryRate, .stepCount, .activeEnergyBurned,
             .bodyMass, .vo2Max, .cyclingPower, .cyclingCadence, .distanceCycling, .distanceWalkingRunning,
-            .dietaryEnergyConsumed, .dietaryProtein, .dietaryCarbohydrates, .dietaryFatTotal,
         ]
         for identifier in quantities {
             types.insert(HKQuantityType(identifier))
@@ -131,63 +139,99 @@ final class HealthKitService {
         return hour >= 18 ? (calendar.date(byAdding: .day, value: 1, to: day) ?? day) : day
     }
 
+    /// Écart maximal entre deux échantillons « endormi » d'une même session : au-delà, c'est une autre
+    /// session (sieste, réveil prolongé).
+    nonisolated static let sessionGap: TimeInterval = 90 * 60
+
     /// Nuits de sommeil (rattachées au jour du réveil) : durée, coucher, réveil.
     /// Si plusieurs sources (Garmin + iPhone), on garde la plus complète pour ne pas compter deux fois.
     func sleepNights(days: Int) async throws -> [Date: SleepNight] {
-        let calendar = Calendar.current
         let (start, end) = range(days: days)
         let predicate = HKQuery.predicateForSamples(withStart: start, end: end)
         let descriptor = HKSampleQueryDescriptor(
             predicates: [.categorySample(type: HKCategoryType(.sleepAnalysis), predicate: predicate)],
             sortDescriptors: [SortDescriptor(\.startDate)])
         let samples = try await descriptor.result(for: store)
+        let raw: [RawSleepSample] = samples.compactMap { sample in
+            let kind: RawSleepSample.Kind
+            switch sample.value {
+            case HKCategoryValueSleepAnalysis.asleepDeep.rawValue: kind = .deep
+            case HKCategoryValueSleepAnalysis.asleepREM.rawValue: kind = .rem
+            case HKCategoryValueSleepAnalysis.asleepCore.rawValue: kind = .core
+            case HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue: kind = .unspecified
+            case HKCategoryValueSleepAnalysis.awake.rawValue: kind = .awake
+            default: return nil   // « au lit » : ignoré
+            }
+            return RawSleepSample(start: sample.startDate, end: sample.endDate, kind: kind,
+                                  source: sample.sourceRevision.source.bundleIdentifier)
+        }
+        return Self.nights(from: raw)
+    }
 
-        let asleep: Set<Int> = [
-            HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue,
-            HKCategoryValueSleepAnalysis.asleepCore.rawValue,
-            HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
-            HKCategoryValueSleepAnalysis.asleepREM.rawValue,
-        ]
-        struct Accumulator {
+    /// Regroupe les échantillons en sessions (écart > 90 min entre deux échantillons endormis = nouvelle
+    /// session), puis garde par jour la session principale : la plus longue qui se termine entre 3 h et 14 h
+    /// (à défaut la plus longue). Les siestes (autres sessions) n'entrent ni dans la durée, ni dans le coucher,
+    /// le réveil ou les stades. Entre sources, on garde la session principale la plus longue.
+    nonisolated static func nights(from samples: [RawSleepSample], calendar: Calendar = .current) -> [Date: SleepNight] {
+        struct Session {
             var seconds: Double = 0
             var deep: Double = 0
             var rem: Double = 0
             var core: Double = 0
             var awake: Double = 0
-            var first: Date = .distantFuture
-            var last: Date = .distantPast
+            var first: Date
+            var last: Date
         }
-        let awakeValue = HKCategoryValueSleepAnalysis.awake.rawValue
-        var perSource: [Date: [String: Accumulator]] = [:]
-        for sample in samples where asleep.contains(sample.value) || sample.value == awakeValue {
-            let day = Self.nightDay(forSegmentEnding: sample.endDate, calendar: calendar)
-            let source = sample.sourceRevision.source.bundleIdentifier
-            var accumulator = perSource[day]?[source] ?? Accumulator()
-            let duration = sample.endDate.timeIntervalSince(sample.startDate)
-            if sample.value == awakeValue {
-                accumulator.awake += duration
-            } else {
-                accumulator.seconds += duration
-                accumulator.first = min(accumulator.first, sample.startDate)
-                accumulator.last = max(accumulator.last, sample.endDate)
-                switch sample.value {
-                case HKCategoryValueSleepAnalysis.asleepDeep.rawValue: accumulator.deep += duration
-                case HKCategoryValueSleepAnalysis.asleepREM.rawValue: accumulator.rem += duration
-                case HKCategoryValueSleepAnalysis.asleepCore.rawValue: accumulator.core += duration
-                default: break
+        var best: [Date: Session] = [:]
+        let bySource = Dictionary(grouping: samples, by: \.source)
+        for (_, sourceSamples) in bySource {
+            let asleep = sourceSamples.filter { $0.kind != .awake }.sorted { $0.start < $1.start }
+            var sessions: [Session] = []
+            for sample in asleep {
+                let duration = max(0, sample.end.timeIntervalSince(sample.start))
+                if let last = sessions.last, sample.start.timeIntervalSince(last.last) <= sessionGap {
+                    sessions[sessions.count - 1].last = max(last.last, sample.end)
+                } else {
+                    sessions.append(Session(first: sample.start, last: sample.end))
+                }
+                let index = sessions.count - 1
+                sessions[index].seconds += duration
+                switch sample.kind {
+                case .deep: sessions[index].deep += duration
+                case .rem: sessions[index].rem += duration
+                case .core: sessions[index].core += duration
+                case .unspecified, .awake: break
                 }
             }
-            perSource[day, default: [:]][source] = accumulator
+            // Éveils : rattachés à la session qu'ils chevauchent (éveils nocturnes).
+            for sample in sourceSamples where sample.kind == .awake {
+                guard let index = sessions.firstIndex(where: { sample.start < $0.last && sample.end > $0.first }) else { continue }
+                let overlapStart = max(sample.start, sessions[index].first)
+                let overlapEnd = min(sample.end, sessions[index].last)
+                sessions[index].awake += max(0, overlapEnd.timeIntervalSince(overlapStart))
+            }
+            // Session principale de chaque jour pour cette source.
+            let byDay = Dictionary(grouping: sessions) { nightDay(forSegmentEnding: $0.last, calendar: calendar) }
+            for (day, daySessions) in byDay {
+                let morning = daySessions.filter { session in
+                    let hour = calendar.component(.hour, from: session.last)
+                    let minute = calendar.component(.minute, from: session.last)
+                    return hour >= 3 && (hour < 14 || (hour == 14 && minute == 0))
+                }
+                let candidates = morning.isEmpty ? daySessions : morning
+                guard let main = candidates.max(by: { $0.seconds < $1.seconds }), main.seconds > 0 else { continue }
+                if let current = best[day], current.seconds >= main.seconds { continue }
+                best[day] = main
+            }
         }
         var nights: [Date: SleepNight] = [:]
-        for (day, sources) in perSource {
-            guard let best = sources.values.max(by: { $0.seconds < $1.seconds }), best.seconds > 0 else { continue }
-            let staged = best.deep + best.rem + best.core > 0
-            nights[day] = SleepNight(hours: best.seconds / 3600, bedtime: best.first, wake: best.last,
-                                     deep: staged ? best.deep / 3600 : nil,
-                                     rem: staged ? best.rem / 3600 : nil,
-                                     core: staged ? best.core / 3600 : nil,
-                                     awake: staged || best.awake > 0 ? best.awake / 3600 : nil)
+        for (day, session) in best {
+            let staged = session.deep + session.rem + session.core > 0
+            nights[day] = SleepNight(hours: session.seconds / 3600, bedtime: session.first, wake: session.last,
+                                     deep: staged ? session.deep / 3600 : nil,
+                                     rem: staged ? session.rem / 3600 : nil,
+                                     core: staged ? session.core / 3600 : nil,
+                                     awake: staged || session.awake > 0 ? session.awake / 3600 : nil)
         }
         return nights
     }

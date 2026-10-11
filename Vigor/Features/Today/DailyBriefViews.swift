@@ -129,7 +129,7 @@ struct DailyBriefDetailView: View {
                 }
 
                 ExplanationCard(title: "Comment je décide", symbol: "function", text: """
-                Je pars de ta séance prévue (plan Traka ou calendrier Intervals.icu), puis j'estime ta capacité du jour en additionnant l'effet de chaque facteur :
+                Je pars de ta séance prévue (plan de saison ou calendrier Intervals.icu), puis j'estime ta capacité du jour en additionnant l'effet de chaque facteur :
                 • Santé : score de récupération (VFC, FC repos, sommeil), nuit dernière, dette de sommeil.
                 • Entraînement : fatigue accumulée (forme), pic de charge, séance Legs récente, blessures.
                 • Nutrition : calories, glucides et protéines de la veille, rapportés à ta dépense et à ton poids.

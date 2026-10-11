@@ -3,11 +3,11 @@ import Foundation
 /// Versions des formules : chaque changement d'algorithme incrémente sa version
 /// pour que l'historique reste interprétable (affichées dans Réglages et dans l'export).
 enum FormulaVersion {
-    static let readiness = "readiness-3 (VFC nuit 70 % + 7 j 30 %, médiane/MAD 60 j, zones 67/34)"
-    static let load = "load-2 (TSS / sRPE, ACWR exponentiel 7/28 j)"
+    static let readiness = "readiness-3 (VFC nuit 70 % + 7 j 30 %, médiane/MAD 60 j, zones 67/34, malus fatigue −10/−20)"
+    static let load = "load-3 (TSS / sRPE, CTL/ATL et ACWR 7/28 j amorcés sur la moyenne des premiers jours, ACWR dès 21 j, alerte > 1,5)"
     static let effort = "effort-1 (0–21 logarithmique, k = 100/ln 3)"
-    static let sleepNeed = "sleep-3 (besoin : base + effort + dette 14 j ; score : durée, efficacité, stades, régularité)"
-    static let decision = "decision-2 (règles hiérarchisées, signaux rouges)"
+    static let sleepNeed = "sleep-4 (nuit principale, siestes exclues ; besoin : base + effort + dette 14 nuits pondérées ; score : durée, efficacité, stades, régularité)"
+    static let decision = "decision-3 (capacité : récup ≥ 67 +5 %, 45–66 neutre ; règles hiérarchisées, signaux rouges)"
     static let correlations = "corr-2 (Spearman, décalages J/J+1/J+2, IC 95 %)"
 
     static var all: [String] { [readiness, load, effort, sleepNeed, decision, correlations] }
@@ -26,12 +26,6 @@ enum Robust {
     static func mad(_ values: [Double]) -> Double? {
         guard let center = median(values) else { return nil }
         return median(values.map { abs($0 - center) }).map { $0 * 1.4826 }
-    }
-
-    /// Score z robuste : (x − médiane) / MAD, avec un plancher de dispersion.
-    static func z(_ value: Double, baseline: [Double], floor: Double) -> Double? {
-        guard baseline.count >= 7, let center = median(baseline), let spread = mad(baseline) else { return nil }
-        return (value - center) / max(spread, floor)
     }
 
     /// Rangs (ex aequo = rang moyen), pour Spearman.
@@ -79,17 +73,30 @@ enum Robust {
         return (slope, se > 0 ? slope / se : (slope == 0 ? 0 : 99))
     }
 
-    /// Moyenne exponentielle sur une série quotidienne (constante de temps en jours).
+    /// Valeur de départ d'une moyenne exponentielle : moyenne des N premiers jours disponibles
+    /// (N = constante de temps, ou moins s'il y a moins de jours). Évite la sous-estimation du démarrage à 0.
+    static func ewmaSeed(_ daily: [Double], days: Double) -> Double {
+        let count = min(daily.count, max(1, Int(days.rounded())))
+        guard count > 0 else { return 0 }
+        return daily.prefix(count).reduce(0, +) / Double(count)
+    }
+
+    /// Moyenne exponentielle sur une série quotidienne (constante de temps en jours),
+    /// amorcée par la moyenne des premiers jours (`ewmaSeed`).
     static func ewma(_ daily: [Double], days: Double) -> Double {
-        var value = 0.0
+        var value = ewmaSeed(daily, days: days)
         let alpha = 1 - exp(-1 / days)
         for load in daily { value += alpha * (load - value) }
         return value
     }
 
+    /// Historique minimal (jours) pour un ACWR fiable.
+    static let minimumACWRDays = 21
+
     /// ACWR exponentiel : moyenne 7 j / moyenne 28 j (moins sensible aux effets de bord).
+    /// nil s'il y a moins de 21 jours d'historique.
     static func acuteChronicRatio(_ daily: [Double]) -> Double? {
-        guard daily.count >= 28 else { return nil }
+        guard daily.count >= minimumACWRDays else { return nil }
         let acute = ewma(daily, days: 7)
         let chronic = ewma(daily, days: 28)
         return chronic > 3 ? acute / chronic : nil
@@ -100,25 +107,6 @@ enum Robust {
         sleeps.filter { $0.daysAgo < 14 }.reduce(0) { total, night in
             total + max(0, need - night.hours) * pow(0.85, Double(night.daysAgo))
         }
-    }
-
-    /// Décalage horaire social : différence moyenne d'heure de lever week-end vs semaine (minutes).
-    static func socialJetlag(wakeTimes: [Date], calendar: Calendar = .current) -> Double? {
-        var weekday: [Double] = []
-        var weekend: [Double] = []
-        for date in wakeTimes {
-            let parts = calendar.dateComponents([.hour, .minute, .weekday], from: date)
-            let minutes = Double((parts.hour ?? 0) * 60 + (parts.minute ?? 0))
-            if parts.weekday == 1 || parts.weekday == 7 { weekend.append(minutes) } else { weekday.append(minutes) }
-        }
-        guard weekday.count >= 3, weekend.count >= 2, let a = median(weekday), let b = median(weekend) else { return nil }
-        return b - a
-    }
-
-    /// TRIMP d'Edwards : minutes par zone × coefficient de la zone (1 à 5).
-    static func edwardsTRIMP(zoneSeconds: [Double]) -> Double? {
-        guard zoneSeconds.count == 5, zoneSeconds.reduce(0, +) > 0 else { return nil }
-        return zoneSeconds.enumerated().reduce(0) { $0 + $1.element / 60 * Double($1.offset + 1) }
     }
 
     /// Efficiency Factor : puissance normalisée (ou vitesse en m/min) / FC moyenne.

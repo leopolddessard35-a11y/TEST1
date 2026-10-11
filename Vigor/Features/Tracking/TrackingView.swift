@@ -22,7 +22,7 @@ struct TrendsSection: View {
             TrendChart(title: "Respiration nocturne (resp/min)", color: Theme.sleep, points: snapshot.respirationSeries, days: days)
             TrendChart(title: "Sommeil (h)", color: Theme.sleep, points: MetricKind.sleep.series(from: snapshot.wellness), days: days)
             TrendChart(title: "VFC (ms)", color: Theme.recovery, points: snapshot.hrvSeries, days: days)
-            TrendChart(title: "FC au repos (bpm)", color: Theme.warning, points: MetricKind.restingHR.series(from: snapshot.wellness), days: days)
+            TrendChart(title: "FC au repos (bpm)", color: Theme.warning, points: snapshot.restingHRSeries, days: days)
             TrendChart(title: "Condition (CTL)", color: Theme.strain,
                        points: snapshot.load.map { DayValue(date: $0.date, value: $0.ctl) }, days: days, smooth: false)
             TrendChart(title: "Poids (kg, moyenne 7 j)", color: Theme.nutrition, points: snapshot.weightMA7, days: days, smooth: false)

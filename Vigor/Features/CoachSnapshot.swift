@@ -15,10 +15,16 @@ struct CoachSnapshot {
     /// VFC d'une seule source (Garmin rMSSD en priorité, sinon Apple SDNN).
     let hrvSeries: [DayValue]
     let hrvSource: String
+    /// FC de repos d'une seule source sur tout l'historique (Garmin si ≥ 14 valeurs sur 60 j, sinon Apple Santé).
+    let restingHRSeries: [DayValue]
+    let restingHRSource: String
+    /// Durée de sommeil : nuit Apple Santé (cohérente avec coucher, réveil, stades) quand elle existe, sinon Garmin.
+    let sleepSource: String
+    /// Source de `respirationSeries` (même règle que la FC de repos).
+    let respirationSource: String
     let macroTargets: MacroTargets?
     let todayNutrition: NutritionDay
     let plannedToday: [PlannedWorkout]
-    let todayAdvice: String
     /// Le plan du jour adapté (santé × entraînement × nutrition).
     let brief: DailyBrief
     /// Séances prévues demain (pour la notification du matin).
@@ -37,6 +43,7 @@ struct CoachSnapshot {
     let milestones: [Milestone]
     /// Poids en moyenne mobile 7 jours.
     let weightMA7: [DayValue]
+    /// Objectif d'eau du jour et eau bue (conservés pour l'affichage ; plus d'alerte hydratation).
     let hydrationTarget: Double
     let waterToday: Double
     let shoeKm: [(name: String, km: Double)]
@@ -56,8 +63,6 @@ struct CoachSnapshot {
     let lastSleepPerformance: Double?
     /// Score de sommeil de la nuit dernière (durée, efficacité, stades, régularité).
     let lastSleepScore: SleepScoreResult?
-    /// Score de sommeil des 30 dernières nuits.
-    let sleepScoreHistory: [DayValue]
     /// Dette de sommeil sur 14 jours (heures, nuits anciennes moins pondérées).
     let sleepDebt: Double
     let respiratory: RespiratorySignal?
@@ -75,9 +80,6 @@ struct CoachSnapshot {
     /// Charge sRPE (RPE × minutes) des 7 derniers jours.
     let srpeWeek: Double
     let monotony: Double?
-    let fosterStrain: Double?
-    /// Écart d'heure de lever week-end / semaine (minutes).
-    let socialJetlag: Double?
 
     var today: LoadPoint? { load.last }
 
@@ -136,12 +138,30 @@ struct CoachSnapshot {
         let sortedWellness: [DailyWellness] = wellness.sorted { $0.day < $1.day }
         var rmssd: [DayValue] = []
         var sdnn: [DayValue] = []
-        var restingHR: [DayValue] = []
+        var restingApple: [DayValue] = []
+        var restingGarmin: [DayValue] = []
+        var respirationApple: [DayValue] = []
+        var respirationGarmin: [DayValue] = []
         var wellnessByDay: [Date: DailyWellness] = [:]
+        // Durée de sommeil effective : nuit Apple Santé si elle existe (cohérente avec coucher, réveil et
+        // stades, siestes exclues), sinon durée Garmin. Tous les calculs du coach passent par `sleepByDay`.
+        var sleepByDay: [Date: Double] = [:]
+        var appleNights = 0
+        var garminNights = 0
         for record in sortedWellness {
             if let value = record.hrvRMSSD { rmssd.append(DayValue(date: record.day, value: value)) }
             if let value = record.hrvMs { sdnn.append(DayValue(date: record.day, value: value)) }
-            if let value = record.restingHeartRate { restingHR.append(DayValue(date: record.day, value: value)) }
+            if let value = record.restingHeartRate { restingApple.append(DayValue(date: record.day, value: value)) }
+            if let value = record.restingHeartRateGarmin { restingGarmin.append(DayValue(date: record.day, value: value)) }
+            if let value = record.respiration { respirationApple.append(DayValue(date: record.day, value: value)) }
+            if let value = record.respirationGarmin { respirationGarmin.append(DayValue(date: record.day, value: value)) }
+            if let hours = record.sleepHours {
+                sleepByDay[record.day] = hours
+                appleNights += 1
+            } else if let hours = record.sleepHoursGarmin {
+                sleepByDay[record.day] = hours
+                garminNights += 1
+            }
             wellnessByDay[record.day] = record
         }
         let recentRMSSD = Stats.lastDays(60, of: rmssd, today: now, calendar: calendar).count
@@ -150,9 +170,22 @@ struct CoachSnapshot {
         let hrvSeries: [DayValue] = useGarmin ? rmssd : sdnn
         let hrvSource = useGarmin ? "Garmin (rMSSD nocturne)" : "Apple Santé (SDNN)"
 
+        // FC de repos et respiration : UNE source sur tout l'historique (même règle que la VFC),
+        // jamais de mélange jour par jour entre deux capteurs qui ne mesurent pas pareil.
+        let useGarminRHR = Stats.lastDays(60, of: restingGarmin, today: now, calendar: calendar).count >= 14
+        let restingHR: [DayValue] = useGarminRHR ? restingGarmin : restingApple
+        let restingHRSource = useGarminRHR ? "Garmin" : "Apple Santé"
+        var restingByDay: [Date: Double] = [:]
+        for point in restingHR { restingByDay[point.date] = point.value }
+        let useGarminRespiration = Stats.lastDays(60, of: respirationGarmin, today: now, calendar: calendar).count >= 14
+        let respirationSeries: [DayValue] = useGarminRespiration ? respirationGarmin : respirationApple
+        let respirationSource = useGarminRespiration ? "Garmin" : "Apple Santé"
+        let sleepSource: String = garminNights == 0 ? "Apple Santé"
+            : (appleNights == 0 ? "Garmin" : "Apple Santé (Garmin pour les nuits absentes)")
+
         // Score de sommeil de chaque nuit (durée, efficacité, stades, régularité).
         func sleepScore(on day: Date) -> SleepScoreResult? {
-            guard let record = wellnessByDay[day], let hours = record.sleepHours else { return nil }
+            guard let record = wellnessByDay[day], let hours = sleepByDay[day] else { return nil }
             var priorBedtimes: [Double] = []
             for offset in 1...14 {
                 if let previous = calendar.date(byAdding: .day, value: -offset, to: day),
@@ -171,16 +204,11 @@ struct CoachSnapshot {
         func readiness(on day: Date) -> ReadinessResult? {
             ReadinessCalculator.compute(
                 hrv: hrvSeries, restingHR: restingHR,
-                lastNightSleepHours: wellnessByDay[day]?.sleepHours,
+                lastNightSleepHours: sleepByDay[day],
                 sleepNeedHours: profile.sleepNeedHours,
                 form: loadByDay[day]?.form, sleepScore: sleepScore(on: day), today: day, calendar: calendar)
         }
         let lastSleepScore: SleepScoreResult? = sleepScore(on: todayStart)
-        let sleepScoreHistory: [DayValue] = (0..<30).reversed().compactMap { offset in
-            guard let day = calendar.date(byAdding: .day, value: -offset, to: todayStart),
-                  let result = sleepScore(on: day) else { return nil }
-            return DayValue(date: day, value: Double(result.score))
-        }
         let todayReadiness = readiness(on: todayStart)
         let history: [DayValue] = (0..<60).reversed().compactMap { offset in
             guard let day = calendar.date(byAdding: .day, value: -offset, to: todayStart),
@@ -275,8 +303,8 @@ struct CoachSnapshot {
         var insightWellness: [WellnessSample] = []
         for record in sortedWellness {
             let hrv: Double? = useGarmin ? record.hrvRMSSD : record.hrvMs
-            insightWellness.append(WellnessSample(date: record.day, sleepHours: record.sleepHours, hrv: hrv,
-                                                  restingHR: record.restingHeartRate, weightKg: record.weightKg))
+            insightWellness.append(WellnessSample(date: record.day, sleepHours: sleepByDay[record.day], hrv: hrv,
+                                                  restingHR: restingByDay[record.day], weightKg: record.weightKg))
         }
         let insightInput = InsightInput(
             today: now,
@@ -377,7 +405,7 @@ struct CoachSnapshot {
             symptomRecords.append(SymptomRecord(date: symptom.date, key: symptom.key, intensity: symptom.intensity,
                                                 onsetMinutes: symptom.onsetMinutes, shoe: shoeName,
                                                 terrain: symptom.terrain?.label, fatigue: symptom.fatigue,
-                                                previousSleep: wellnessByDay[day]?.sleepHours,
+                                                previousSleep: sleepByDay[day],
                                                 previousLoad: calendar.date(byAdding: .day, value: -1, to: day).flatMap { daily[$0] }))
         }
         let symptomPatterns: [SymptomPattern] = SymptomAnalysis.patterns(symptomRecords, runsByShoe: runsByShoe, today: now)
@@ -387,15 +415,9 @@ struct CoachSnapshot {
             if let zone = zoneByKey[pattern.key], legZones.contains(zone) { recurrentLeg.append(pattern.key) }
         }
 
-        // Hydratation : ~35 ml/kg + 600 ml par heure d'entraînement prévue.
+        // Hydratation : ~35 ml/kg + 600 ml par heure d'entraînement prévue (affichage seulement).
         let hydrationTarget: Double = (currentWeight > 0 ? currentWeight * 35 : 2500) + trainingHours * 600
         let waterToday: Double = wellnessByDay[todayStart]?.waterMl ?? 0
-        var waterRatios: [Double] = []
-        for offset in 1...7 {
-            guard let day = calendar.date(byAdding: .day, value: -offset, to: todayStart),
-                  let water = wellnessByDay[day]?.waterMl, water > 0 else { continue }
-            waterRatios.append(water / max(hydrationTarget, 1))
-        }
 
         let advanced: [Insight] = AdvancedInsights.analyze(
             disciplineLoads: disciplineLoads,
@@ -408,7 +430,6 @@ struct CoachSnapshot {
             endurance: endurance,
             symptoms: symptomPatterns,
             shoeKm: shoeKm,
-            waterRatio7: waterRatios.count >= 3 ? Stats.mean(waterRatios) : nil,
             today: now)
         insights.append(contentsOf: advanced)
         insights.sort { $0.severity > $1.severity }
@@ -423,9 +444,9 @@ struct CoachSnapshot {
             guard let day = calendar.date(byAdding: .day, value: -offset, to: todayStart) else { continue }
             var record = DayRecord(date: day)
             let wellnessDay = wellnessByDay[day]
-            record.sleep = wellnessDay?.sleepHours
+            record.sleep = sleepByDay[day]
             record.hrv = useGarmin ? wellnessDay?.hrvRMSSD : wellnessDay?.hrvMs
-            record.restingHR = wellnessDay?.restingHeartRate
+            record.restingHR = restingByDay[day]
             record.load = daily[day] ?? 0
             record.lifeLoad = lifeByDay[day] ?? 0
             let nutrition = totalsByDay[day]
@@ -471,7 +492,7 @@ struct CoachSnapshot {
         var nights: [(daysAgo: Int, hours: Double)] = []
         for offset in 0..<14 {
             guard let day = calendar.date(byAdding: .day, value: -offset, to: todayStart),
-                  let sleep = wellnessByDay[day]?.sleepHours else { continue }
+                  let sleep = sleepByDay[day] else { continue }
             nights.append((daysAgo: offset, hours: sleep))
         }
         let nightsCounted: Int = nights.filter { $0.daysAgo < 7 }.count
@@ -496,11 +517,7 @@ struct CoachSnapshot {
             }
             if lowerSets >= 3, lastLegs.map({ workout.start > $0 }) ?? true { lastLegs = workout.start }
         }
-        // Fréquence respiratoire nocturne : signal précoce de maladie.
-        var respirationSeries: [DayValue] = []
-        for record in sortedWellness {
-            if let value = record.respiration { respirationSeries.append(DayValue(date: record.day, value: value)) }
-        }
+        // Fréquence respiratoire nocturne : signal précoce de maladie (série d'une seule source, voir plus haut).
         let respiratory: RespiratorySignal? = RespiratoryMonitor.signal(respiration: respirationSeries, restingHR: restingHR,
                                                                         today: now, calendar: calendar)
         if let respiratory, respiratory.isWarning {
@@ -516,7 +533,7 @@ struct CoachSnapshot {
 
         let yesterdayEffort: Double = EffortScore.score(load: daily[yesterdayStart] ?? 0)
         let lastNightNeed: Double = profile.sleepNeedHours + max(0, yesterdayEffort - 10) * 4 / 60
-        let lastSleepPerformance: Double? = wellnessByDay[todayStart]?.sleepHours.map {
+        let lastSleepPerformance: Double? = sleepByDay[todayStart].map {
             SleepCoach.performance(slept: $0, need: lastNightNeed)
         }
 
@@ -537,7 +554,7 @@ struct CoachSnapshot {
         let coachInput = DailyCoachInput(
             today: now,
             readiness: todayReadiness,
-            lastNightSleep: wellnessByDay[todayStart]?.sleepHours,
+            lastNightSleep: sleepByDay[todayStart],
             sleepNeed: profile.sleepNeedHours,
             sleepDebt7: nightsCounted >= 4 ? sleepDebt : nil,
             load: load.last,
@@ -584,6 +601,7 @@ struct CoachSnapshot {
         var wakeTimes: [Date] = []
         var bedTimes: [Date] = []
         var sleptHours: [Double] = []
+        // Horaires : uniquement les nuits Apple Santé, avec leur propre durée (coucher, réveil et durée de la même nuit).
         for record in sortedWellness where record.day >= twoWeeksAgo {
             if let wake = record.wakeTime, let bed = record.bedtime, let slept = record.sleepHours {
                 wakeTimes.append(wake)
@@ -607,7 +625,7 @@ struct CoachSnapshot {
             reportDay.recovery = readinessByDay[day]
             reportDay.load = daily[day] ?? 0
             reportDay.effort = EffortScore.score(load: reportDay.load)
-            reportDay.sleep = wellnessByDay[day]?.sleepHours
+            reportDay.sleep = sleepByDay[day]
             reportDay.trainingSeconds = trainingByDay[day] ?? 0
             if let nutrition = totalsByDay[day], nutrition.kcal > 800 {
                 reportDay.kcal = nutrition.kcal
@@ -632,7 +650,7 @@ struct CoachSnapshot {
         var missing: [String] = []
         let todayWellness = wellnessByDay[todayStart]
         func check(_ name: String, _ ok: Bool) { if ok { present.append(name) } else { missing.append(name) } }
-        check("Sommeil", todayWellness?.sleepHours != nil)
+        check("Sommeil", sleepByDay[todayStart] != nil)
         check("VFC", (useGarmin ? todayWellness?.hrvRMSSD : todayWellness?.hrvMs) != nil
               || !Stats.lastDays(2, of: hrvSeries, today: now, calendar: calendar).isEmpty)
         check("FC repos", !Stats.lastDays(2, of: restingHR, today: now, calendar: calendar).isEmpty)
@@ -671,7 +689,7 @@ struct CoachSnapshot {
             Stats.mean(efByDay[day] ?? []).map { DayValue(date: day, value: $0) }
         }
 
-        // sRPE (RPE × minutes), monotonie et strain de Foster sur 7 jours.
+        // sRPE (RPE × minutes) et monotonie de Foster sur 7 jours.
         var srpeWeek: Double = 0
         for activity in activities where activity.start >= weekAgo {
             if let rpe = activity.rpe { srpeWeek += Double(rpe) * activity.durationSeconds / 60 }
@@ -682,9 +700,6 @@ struct CoachSnapshot {
         let last7Loads: [Double] = load.suffix(7).map(\.tss)
         var monotony: Double?
         if let mean = Stats.mean(last7Loads), let sd = Stats.standardDeviation(last7Loads), sd > 0 { monotony = mean / sd }
-        let fosterStrain: Double? = monotony.map { $0 * last7Loads.reduce(0, +) }
-
-        let socialJetlag: Double? = Robust.socialJetlag(wakeTimes: wakeTimes, calendar: calendar)
 
         // Alerte déficit : la tendance du poids baisse alors que la charge monte.
         let recentWeightTrend: [DayValue] = Stats.exponentialTrend(Stats.lastDays(21, of: weights, today: now, calendar: calendar))
@@ -747,10 +762,13 @@ struct CoachSnapshot {
             insights: insights,
             hrvSeries: hrvSeries,
             hrvSource: hrvSource,
+            restingHRSeries: restingHR,
+            restingHRSource: restingHRSource,
+            sleepSource: sleepSource,
+            respirationSource: respirationSource,
             macroTargets: macroTargets,
             todayNutrition: todayNutrition,
             plannedToday: plannedToday,
-            todayAdvice: brief.headline,
             brief: brief,
             tomorrowPlan: tomorrowPlan,
             loggedMealsToday: loggedMeals,
@@ -774,7 +792,6 @@ struct CoachSnapshot {
             sleepNeed: sleepNeed,
             lastSleepPerformance: lastSleepPerformance,
             lastSleepScore: lastSleepScore,
-            sleepScoreHistory: sleepScoreHistory,
             sleepDebt: sleepDebt,
             respiratory: respiratory,
             respirationSeries: respirationSeries,
@@ -784,29 +801,7 @@ struct CoachSnapshot {
             chartEvents: chartEvents.sorted { $0.start < $1.start },
             efSeries: efSeries,
             srpeWeek: srpeWeek,
-            monotony: monotony,
-            fosterStrain: fosterStrain,
-            socialJetlag: socialJetlag)
-    }
-
-    /// Conseil du jour : croise la récupération avec la séance prévue.
-    static func advice(readiness: ReadinessResult?, planned: [PlannedWorkout], week: PlannedWeek?) -> String {
-        let hardPlanned = planned.contains { ($0.plannedTSS ?? 0) >= 70 }
-        switch (readiness?.level, hardPlanned) {
-        case (.low?, true):
-            return "Séance prévue exigeante mais récupération basse : remplace-la par 45–60 min en zone 2 et décale l'intensité de 48 h."
-        case (.low?, false):
-            return "Récupération basse : journée facile (endurance très douce, mobilité ou repos)."
-        case (.moderate?, true):
-            return "Séance prévue OK, mais réduis le nombre de répétitions intenses d'environ 20 % si les sensations ne suivent pas."
-        case (.ready?, true):
-            return "Feu vert pour la séance clé du jour."
-        case (.ready?, false):
-            return "Bonne récupération : c'est un bon jour pour une séance de qualité ou ta séance Legs."
-        default:
-            if let week { return "Semaine \(week.kind.label.lowercased()) · \(week.phase.label) : \(week.targetHours.hoursText) prévues." }
-            return "Synchronise tes données pour obtenir le conseil du jour."
-        }
+            monotony: monotony)
     }
 }
 

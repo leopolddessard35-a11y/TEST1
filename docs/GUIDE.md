@@ -58,15 +58,15 @@ Dans Xcode :
 2. **Apple Santé** : **Tout activer** → Autoriser (sinon pas de sommeil, VFC, séances).
 3. Si tu as testé « Charger des données de démo » : ⚙️ (roue en haut à gauche d'Aujourd'hui) → **Données** → **Effacer toutes les données**, pour repartir propre.
 4. Dans ⚙️ **Réglages** (4 groupes : Profil et objectif, Connexions, Notifications, Données), remplis :
-   - **Objectif** : The Traka 100, date de fin avril 2027 ;
+   - **Objectif** : nom et date de ta course (par défaut : sans nom, dans 6 mois) ;
    - **Morphologie** : sexe, taille, année de naissance, poids ;
    - **Disponibilités** : heures par semaine, 3 séances de muscu, besoin de sommeil ;
-   - **Seuils** : FTP 206 W (à re-tester), FC max, FC seuil (laisse 0 si inconnu) ;
+   - **Seuils** : FTP (0 = inconnue : pas de charge calculée depuis la puissance), FC max, FC seuil (laisse 0 si inconnu) ;
    - **Connexions → Garmin via Intervals.icu** : colle la **clé d'API** et l'**Athlete ID** → **Enregistrer la clé** ;
    - **Agenda** : minutes disponibles chaque jour ;
    - **Notifications** : heure du plan du matin, rappels de repas si tu les veux.
 5. **Connexions → Tout synchroniser**. La première fois, un an d'historique : patiente une minute.
-6. Santé → **Blessures** → **Déclarer une blessure** : l'ischio gauche (course en pause, le plan s'adapte).
+6. Si tu as une blessure : Santé → **Blessures** → **Déclarer une blessure** (zone, sports touchés : le plan s'adapte).
 7. Sport → **Musculation** → **Créer une séance type** : crée tes séances (exercices, séries, reps, repos).
 8. (Facultatif) Récupérer ton historique Hevy : dans Hevy, Profil → Réglages → Exporter les séances, puis Sport → Progression (en bas) → **Récupérer mon historique Hevy**. Une seule fois.
 

@@ -419,7 +419,8 @@ enum InsightEngine {
                 let evidence = [String(format: "Tendance du poids : %+.2f %% par semaine (%+.2f kg/sem)", ratePercent, (last.value - first.value) / weeks),
                                 String(format: "Poids lissé actuel : %.1f kg", last.value)]
                 let gaining = input.phase.map { [TrainingPhase.reprise, .base, .build].contains($0) } ?? true
-                if gaining && ratePercent > 0.75 {
+                // Seuils alignés sur les textes : idéal 0,25–0,5 %/semaine, alerte au-delà de 0,5 %.
+                if gaining && ratePercent > 0.5 {
                     insights.append(Insight(id: "nutrition.gainFast", category: .nutrition, severity: .watch,
                                             title: "Prise de poids trop rapide",
                                             evidence: evidence,
@@ -455,7 +456,7 @@ enum InsightEngine {
             insights.append(Insight(id: "data.hrvMissing", category: .data, severity: .info,
                                     title: "VFC manquante",
                                     evidence: ["\(missingHRV) nuits sans VFC sur les 7 dernières"],
-                                    recommendation: "Porte ta Fenix la nuit (bracelet bien ajusté) : le score de récupération en dépend.",
+                                    recommendation: "Porte ta montre la nuit (bracelet bien ajusté) : le score de récupération en dépend.",
                                     references: [Science.plews2013]))
         }
 
@@ -480,13 +481,17 @@ enum InsightEngine {
         }
 
         // FTP probablement sous-estimée.
-        if let ftp = input.ftp {
-            let strongRides = input.activities.filter { $0.sport.isCycling && $0.durationSeconds >= 20 * 60 && ($0.averagePower ?? 0) > ftp * 1.02 }
+        // Sorties des 60 derniers jours seulement : une ancienne FTP plus haute ne compte pas.
+        if let ftp = input.ftp, ftp > 0 {
+            let since = calendar.date(byAdding: .day, value: -60, to: input.today) ?? input.today
+            let strongRides = input.activities.filter {
+                $0.date >= since && $0.sport.isCycling && $0.durationSeconds >= 20 * 60 && ($0.averagePower ?? 0) > ftp * 1.02
+            }
             if !strongRides.isEmpty {
                 insights.append(Insight(id: "data.ftpLow", category: .data, severity: .watch,
                                         title: "FTP probablement sous-estimée",
                                         evidence: ["\(strongRides.count) sortie(s) de 20 min ou plus avec une puissance moyenne au-dessus de ta FTP (\(Int(ftp)) W)"],
-                                        recommendation: "Une FTP trop basse surestime la charge de toutes tes sorties. Fais un test (20 min ou rampe) dès que l'ischio le permet et mets-la à jour.",
+                                        recommendation: "Une FTP trop basse surestime la charge de toutes tes sorties. Fais un test (20 min ou rampe) dès que ta blessure le permet et mets-la à jour.",
                                         references: [Science.allenCoggan]))
             }
         }
@@ -497,7 +502,7 @@ enum InsightEngine {
             insights.append(Insight(id: "data.weightMissing", category: .data, severity: .info,
                                     title: "Pas de pesée récente",
                                     evidence: ["Aucun poids enregistré depuis 7 jours"],
-                                    recommendation: "Pèse-toi au moins 3 fois par semaine, le matin à jeun : c'est indispensable pour piloter la prise de masse.",
+                                    recommendation: "Pèse-toi au moins 3 fois par semaine, le matin à jeun : c'est indispensable pour ajuster tes apports à ton objectif.",
                                     references: [Science.iraki2019]))
         }
         return insights

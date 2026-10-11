@@ -9,7 +9,7 @@ struct SleepDetailView: View {
     @State private var segments: [SleepSegment] = []
     @State private var loaded = false
 
-    private var night: DailyWellness? { snapshot.wellness.last { $0.sleepHours != nil } }
+    private var night: DailyWellness? { snapshot.wellness.last { $0.anySleepHours != nil } }
 
     var body: some View {
         ScrollView {
@@ -22,7 +22,7 @@ struct SleepDetailView: View {
                 physiologyGrid
                 NavigationLink {
                     SleepNeedDetailView(need: snapshot.sleepNeed, performance: snapshot.lastSleepPerformance,
-                                        lastNight: night.flatMap { Calendar.current.isDateInToday($0.day) ? $0.sleepHours : nil },
+                                        lastNight: night.flatMap { Calendar.current.isDateInToday($0.day) ? $0.anySleepHours : nil },
                                         regularity: snapshot.bedtimeRegularity)
                 } label: {
                     GlassCard {
@@ -66,7 +66,7 @@ struct SleepDetailView: View {
                 .frame(width: 104, height: 104)
                 VStack(alignment: .leading, spacing: 6) {
                     CapsLabel(night.map { Calendar.current.isDateInToday($0.day) ? "Cette nuit" : $0.day.formatted(.dateTime.weekday(.wide).day()) } ?? "Dernière nuit")
-                    Text(night?.sleepHours?.hoursText ?? "Pas encore de nuit")
+                    Text(night?.anySleepHours?.hoursText ?? "Pas encore de nuit")
                         .font(.system(.title2, design: .rounded).weight(.heavy))
                     if let bed = night?.bedtime, let wake = night?.wakeTime {
                         Label("\(bed.formatted(date: .omitted, time: .shortened)) → \(wake.formatted(date: .omitted, time: .shortened))",
@@ -132,7 +132,7 @@ struct SleepDetailView: View {
         GlassCard {
             VStack(alignment: .leading, spacing: 12) {
                 CapsLabel("Stades de sommeil")
-                if let night, let total = night.sleepHours, let deep = night.sleepDeepHours,
+                if let night, let total = night.anySleepHours, let deep = night.sleepDeepHours,
                    let rem = night.sleepREMHours, let core = night.sleepCoreHours {
                     stageRow(.deep, hours: deep, total: total, reference: "repère 13–23 %")
                     stageRow(.rem, hours: rem, total: total, reference: "repère 20–25 %")
@@ -182,7 +182,7 @@ struct SleepDetailView: View {
     private var debtCard: some View {
         let need = snapshot.sleepNeed.base
         let start = Calendar.current.date(byAdding: .day, value: -13, to: Calendar.current.startOfDay(for: .now)) ?? .now
-        let nights = snapshot.wellness.filter { $0.day >= start && $0.sleepHours != nil }
+        let nights = snapshot.wellness.filter { $0.day >= start && $0.anySleepHours != nil }
         let debt = snapshot.sleepDebt
         return GlassCard {
             VStack(alignment: .leading, spacing: 10) {
@@ -199,8 +199,8 @@ struct SleepDetailView: View {
                 }
                 Chart {
                     ForEach(nights, id: \.day) { record in
-                        BarMark(x: .value("Nuit", record.day, unit: .day), y: .value("Sommeil", record.sleepHours ?? 0))
-                            .foregroundStyle((record.sleepHours ?? 0) >= need ? Theme.good : Theme.caution)
+                        BarMark(x: .value("Nuit", record.day, unit: .day), y: .value("Sommeil", record.anySleepHours ?? 0))
+                            .foregroundStyle((record.anySleepHours ?? 0) >= need ? Theme.good : Theme.caution)
                             .cornerRadius(3)
                     }
                     RuleMark(y: .value("Besoin", need))
@@ -223,7 +223,7 @@ struct SleepDetailView: View {
         return LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
             StatTile(title: "FC pendant le sommeil", value: night?.sleepingHeartRate.map { "\($0.noDecimal) bpm" } ?? "–")
             StatTile(title: "VFC nocturne", value: hrv.map { "\($0.noDecimal) ms" } ?? "–")
-            StatTile(title: "Respiration", value: night?.respiration.map { "\($0.oneDecimal) resp/min" } ?? "–")
+            StatTile(title: "Respiration", value: night?.anyRespiration.map { "\($0.oneDecimal) resp/min" } ?? "–")
             StatTile(title: "Score de la montre", value: night?.sleepScore.map { $0.noDecimal } ?? "–", caption: "pour comparer")
         }
     }

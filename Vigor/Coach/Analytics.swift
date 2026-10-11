@@ -95,23 +95,23 @@ enum LoadAnalytics {
         let window = 90
         guard let start = calendar.date(byAdding: .day, value: -(window - 1), to: end) else { return [] }
         var perDiscipline: [String: [Double]] = [:]
+        // Premier jour d'historique (toutes disciplines) : avant, il n'y a pas de données, pas des zéros.
+        var firstIndex = window
         for item in items {
             let day = calendar.startOfDay(for: item.date)
             guard day >= start, day <= end,
                   let index = calendar.dateComponents([.day], from: start, to: day).day, index >= 0, index < window else { continue }
             if perDiscipline[item.discipline] == nil { perDiscipline[item.discipline] = [Double](repeating: 0, count: window) }
             perDiscipline[item.discipline]?[index] += item.tss
+            firstIndex = min(firstIndex, index)
         }
+        if let oldest = items.map(\.date).min(), calendar.startOfDay(for: oldest) < start { firstIndex = 0 }
+        // Moins de 21 jours d'historique : ratio aigu / chronique pas encore fiable.
+        guard window - firstIndex >= Robust.minimumACWRDays else { return [] }
         func loads(_ daily: [Double]) -> (acute: Double, chronic: Double) {
-            // Amorçage sur la moyenne des 28 premiers jours pour éviter l'effet de bord du départ à zéro.
-            let seed = Stats.mean(Array(daily.prefix(28))) ?? 0
-            var acute = seed, chronic = seed
-            let alphaAcute = 1 - exp(-1 / 7.0), alphaChronic = 1 - exp(-1 / 28.0)
-            for load in daily {
-                acute += alphaAcute * (load - acute)
-                chronic += alphaChronic * (load - chronic)
-            }
-            return (acute, chronic)
+            // Même calcul que l'ACWR global : moyennes exponentielles amorcées par la moyenne des premiers jours.
+            let history = Array(daily.dropFirst(firstIndex))
+            return (Robust.ewma(history, days: 7), Robust.ewma(history, days: 28))
         }
         var result: [DisciplineLoad] = []
         var total = [Double](repeating: 0, count: window)

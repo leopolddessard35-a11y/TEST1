@@ -33,11 +33,13 @@ struct ReadinessComponent: Identifiable, Equatable {
     let name: String
     let score: Double
     let detail: String
-    /// Poids dans le score final (0–1).
+    /// Poids dans le score final (0–1). 0 pour un malus (voir `penalty`).
     var weight: Double = 0
+    /// Malus retranché du score final (points), pour les composantes hors moyenne pondérée.
+    var penalty: Double = 0
 
-    /// Points apportés au score final.
-    var contribution: Double { score * weight }
+    /// Points apportés au score final (négatifs pour un malus).
+    var contribution: Double { penalty > 0 ? -penalty : score * weight }
 }
 
 struct ReadinessResult: Equatable {
@@ -71,7 +73,8 @@ enum ReadinessCalculator {
                                                 detail: "Score de sommeil \(sleepScore.score) (durée, efficacité, stades, régularité)"), 0.25))
         } else if let hours = lastNightSleepHours, hours > 0 {
             let ratio = hours / max(sleepNeedHours, 1)
-            let score = clamp(ratio >= 1 ? 100 : 100 - (1 - ratio) * 200)
+            // Même pente que la durée du score de sommeil (SleepScoreCalculator) : −25 points par 10 % manquants.
+            let score = clamp(ratio >= 1 ? 100 : 100 - (1 - ratio) * 250)
             let detail = String(format: "%.1f h dormies (besoin : %.1f h)", hours, sleepNeedHours)
             weighted.append((ReadinessComponent(name: "Sommeil", score: score, detail: detail), 0.25))
         }
@@ -88,10 +91,12 @@ enum ReadinessCalculator {
         if let form, form < -25 {
             let penalty = form < -35 ? 20.0 : 10.0
             score -= penalty
+            // Malus hors moyenne : sa contribution réelle (−10 ou −20 points) est portée par `penalty`.
             components.append(ReadinessComponent(
                 name: "Fatigue d'entraînement",
                 score: clamp(100 + form * 2),
-                detail: String(format: "Forme %.0f : fatigue accumulée élevée", form)))
+                detail: String(format: "Forme %.0f : fatigue accumulée élevée (−%.0f points)", form, penalty),
+                penalty: penalty))
         }
 
         let rounded = Int(clamp(score).rounded())
@@ -141,12 +146,6 @@ enum ReadinessCalculator {
         guard let lowerBound = calendar.date(byAdding: .day, value: -(days - 1), to: startToday) else { return false }
         let day = calendar.startOfDay(for: date)
         return day >= lowerBound && day <= startToday
-    }
-
-    private static func standardDeviation(_ values: [Double], mean: Double) -> Double {
-        guard values.count > 1 else { return 0 }
-        let variance = values.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Double(values.count - 1)
-        return variance.squareRoot()
     }
 
     private static func clamp(_ value: Double) -> Double { min(100, max(0, value)) }

@@ -14,8 +14,11 @@ struct SyncReport {
 /// Écrit les données importées dans la base locale de l'app (SwiftData).
 @MainActor
 enum DataStore {
+    /// Écrit les valeurs Apple Santé dans les champs Apple (`sleepHours`, `restingHeartRate`, `respiration`…).
+    /// `resetAppleFields` : efface d'abord ces champs sur la période relue (réparation unique : d'anciennes
+    /// versions y mélangeaient des valeurs Garmin). Rien n'est effacé si la lecture échoue.
     static func syncHealth(_ health: HealthKitService, into context: ModelContext, days: Int = 365,
-                           thresholds: Thresholds? = nil) async throws -> SyncReport {
+                           thresholds: Thresholds? = nil, resetAppleFields: Bool = false) async throws -> SyncReport {
         let bpm = HKUnit.count().unitDivided(by: .minute())
         let nights = try await health.sleepNights(days: days)
         let hrv = try await health.daily(.heartRateVariabilitySDNN, unit: .secondUnit(with: .milli), cumulative: false, days: days)
@@ -30,6 +33,21 @@ enum DataStore {
         var report = SyncReport()
         let existingDays = try context.fetch(FetchDescriptor<DailyWellness>())
         var byDay = Dictionary(existingDays.map { ($0.day, $0) }, uniquingKeysWith: { first, _ in first })
+        if resetAppleFields {
+            let calendar = Calendar.current
+            let cutoff = calendar.date(byAdding: .day, value: -days, to: calendar.startOfDay(for: .now)) ?? .distantPast
+            for record in existingDays where record.day >= cutoff {
+                record.sleepHours = nil
+                record.bedtime = nil
+                record.wakeTime = nil
+                record.sleepDeepHours = nil
+                record.sleepREMHours = nil
+                record.sleepCoreHours = nil
+                record.sleepAwakeHours = nil
+                record.restingHeartRate = nil
+                record.respiration = nil
+            }
+        }
         let allDays = Set(nights.keys).union(hrv.keys).union(restingHR.keys).union(steps.keys)
             .union(energy.keys).union(weight.keys).union(vo2.keys).union(respiration.keys)
 
@@ -57,7 +75,7 @@ enum DataStore {
             if let value = energy[day] { record.activeEnergyKcal = value }
             if let value = weight[day] { record.weightKg = value }
             if let value = vo2[day] { record.vo2Max = value }
-            if let value = respiration[day], record.respiration == nil { record.respiration = value }
+            if let value = respiration[day] { record.respiration = value }
         }
         report.days = allDays.count
 
@@ -169,14 +187,15 @@ enum DataStore {
                 context.insert(record)
                 byDay[day] = record
             }
+            // Valeurs Garmin dans leurs propres champs : jamais d'écrasement des valeurs Apple Santé.
             if let value = item.hrv { record.hrvRMSSD = value }
-            if let value = item.restingHR { record.restingHeartRate = value }
-            if let value = item.sleepSecs, value > 0 { record.sleepHours = value / 3600 }
+            if let value = item.restingHR { record.restingHeartRateGarmin = value }
+            if let value = item.sleepSecs, value > 0 { record.sleepHoursGarmin = value / 3600 }
             if let value = item.sleepScore { record.sleepScore = value }
             if let value = item.readiness { record.garminReadiness = value }
             if let value = item.avgSleepingHR { record.sleepingHeartRate = value }
             if let value = item.spO2 { record.spO2 = value }
-            if let value = item.respiration { record.respiration = value }
+            if let value = item.respiration { record.respirationGarmin = value }
             if let value = item.vo2max { record.vo2Max = value }
             if let value = item.weight { record.weightKg = value }
             if let value = item.bodyFat { record.bodyFatPercent = value }

@@ -9,7 +9,7 @@ struct HealthMonitorGrid: View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
             tile(.respiration, series: snapshot.respirationSeries,
                  note: snapshot.respiratory.map { "\($0.delta.decimals(1, signed: true)) resp/min vs ta normale" })
-            tile(.restingHR, series: MetricKind.restingHR.series(from: wellness))
+            tile(.restingHR, series: snapshot.restingHRSeries, note: snapshot.restingHRSource)
             tile(.hrv, series: snapshot.hrvSeries, note: snapshot.hrvSource)
             tile(.sleep, series: MetricKind.sleep.series(from: wellness), extra: sleepTiles)
             tile(.weight, series: MetricKind.weight.series(from: wellness))

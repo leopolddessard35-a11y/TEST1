@@ -71,12 +71,12 @@ enum MetricKind: String, Identifiable, CaseIterable {
         wellness.compactMap { record in
             let value: Double?
             switch self {
-            case .sleep: value = record.sleepHours
+            case .sleep: value = record.anySleepHours
             case .hrv: value = record.hrvRMSSD ?? record.hrvMs
-            case .restingHR: value = record.restingHeartRate
+            case .restingHR: value = record.anyRestingHeartRate
             case .weight: value = record.weightKg
             case .vo2max: value = record.vo2Max
-            case .respiration: value = record.respiration
+            case .respiration: value = record.anyRespiration
             }
             return value.map { DayValue(date: record.day, value: $0) }
         }

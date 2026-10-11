@@ -1,116 +1,70 @@
 # Vigor — coach santé & entraînement perso (iPhone)
 
-App iOS personnelle façon Bevel : elle réunit sommeil, récupération, sport, musculation et (bientôt) nutrition,
+Version **1.0**. App iOS personnelle façon Bevel : elle réunit sommeil, récupération, sport, musculation et nutrition,
 puis **croise les données** pour te dire quoi faire : augmenter ou baisser les charges, allonger les sorties,
 lever le pied, adapter le plan quand tu es malade, blessé ou en déplacement.
 
-Objectif actuel : **The Traka 100 (fin avril 2027)** + prise de masse (PPL 3×/semaine) + VO2max.
+L'objectif (nom et date de la course, FTP, morphologie) se règle dans *Réglages → Profil et objectif* :
+aucune valeur personnelle n'est pré-remplie (FTP 0 = inconnue, aucun TSS calculé depuis la puissance tant qu'elle n'est pas saisie).
 
-## Ce que fait la version 0.2
+## Organisation
 
 | Onglet | Contenu |
 |---|---|
-| **Aujourd'hui** | Score de récupération + conseil du jour (croisé avec la séance prévue), **analyse du coach**, sommeil, VFC, FC repos, pas, poids, VO2max, nutrition du jour, charge, semaine en cours. **Chaque carte s'ouvre** sur un écran détaillé : courbes 30 j / 90 j / 1 an, ta zone normale, tendance, explication du calcul et sources scientifiques |
-| **Entraînement** | Import Hevy (CSV complet), volume par muscle, prochaines charges conseillées, courbes de charge, sorties |
-| **Plan** | Plan vélo jusqu'à la Traka (reprise → foncier → développement → spécifique → affûtage), indisponibilités et blessures, recalcul automatique |
-| **Nutrition** | Journal par repas, **scan de code-barres** (Open Food Facts), recherche, aliments de référence, création manuelle, objectifs calories / protéines / glucides / lipides calculés chaque jour |
-| **Réglages** | Profil, seuils, morphologie, **connexion Garmin via Intervals.icu**, synchronisation, mode démo |
+| **Aujourd'hui** | Trois anneaux (Effort, Récupération, Sommeil), coaching du jour (verdict, séance adaptée, 3 priorités), « À faire aujourd'hui », configuration guidée. Chaque carte s'ouvre sur un écran détaillé (courbes 30 j / 90 j / 1 an, zone normale, explication du calcul, sources) |
+| **Santé** | Moniteur (respiration, FC repos, VFC, sommeil, poids, VO2max vs ta normale), sommeil, blessures et symptômes, analyses |
+| **Sport** | Semaine / mois, musculation (programmes, séance en direct, progression), vélo, saison, charge et hors-sport |
+| **Nutrition** | Journal par repas, scan de code-barres (Open Food Facts), table Ciqual, objectifs calories / macros du jour |
+| **+** | Saisies rapides (repas, pesée, séance, effort ressenti, symptôme, blessure, hors sport, imprévu) |
 
-Mode clair / sombre automatique (suit le réglage de l'iPhone).
+Réglages en 4 groupes : Profil et objectif, Connexions, Notifications, Données. Pas de gamification, de badges ni de classement.
 
+## Sources de données
 
-## Couverture fonctionnelle (checklist « app de suivi santé & sport »)
+- **Apple Santé** : nuits (nuit principale seulement, voir plus bas), VFC (SDNN), FC de repos, respiration, pas, énergie active, poids, VO2max, séances. Aucune donnée nutritionnelle n'est lue dans Santé (le journal est tenu dans l'app).
+- **Garmin via Intervals.icu** (gratuit) : séances complètes (TSS, puissance normalisée, IF, zones), VFC nocturne (rMSSD), durée et score de sommeil, readiness Garmin, FC de repos, SpO2, respiration, VO2max, poids, calendrier des séances prévues.
+- Les valeurs Garmin sont stockées **à part** (`sleepHoursGarmin`, `restingHeartRateGarmin`, `respirationGarmin`) : elles n'écrasent jamais les valeurs Apple. Le coach choisit **une source par métrique sur tout l'historique** :
+  - VFC, FC de repos, respiration : Garmin s'il y a au moins 14 valeurs Garmin sur 60 jours, sinon Apple Santé (source affichée) ;
+  - durée de sommeil : nuit Apple Santé quand elle existe (cohérente avec coucher, réveil et stades), sinon durée Garmin.
+- **Nuits** : les échantillons sont regroupés en sessions (plus de 90 min entre deux échantillons = nouvelle session) ; pour chaque jour on garde la session la plus longue qui se termine entre 3 h et 14 h (à défaut la plus longue). Les **siestes** sont exclues de la durée, du coucher, du réveil et des stades.
 
-| Domaine | Dans Vigor |
-|---|---|
-| Décision quotidienne | Carte « Plan du jour » en tête d'accueil : jauge d'énergie, verdict go / ajuster / repos, séance adaptée, 3 priorités |
-| Charge & fatigue | Ratio 7 j / 28 j global **et par discipline** (vélo, course, muscu, hors sport) · volume hebdo (heures, km, tonnage) avec alerte > 10 % · **charge hors sport** (travaux, journées debout, pas > 12 000) · **RPE** après chaque séance (corrige la charge et détecte la fatigue) |
-| Récupération | VFC 7 j vs base 60 j · FC repos vs normale · sommeil : durée, dette, **régularité du coucher** · score détaillé |
-| Endurance | **Temps par zone de FC**, % Z1–Z2, **dérive cardiaque**, cadence, dénivelé, puissance, allure ajustée (GAP estimée) · **chaussures** (km, alerte 600 km) et **terrain** |
-| Musculation | Charges, reps, RIR, 1RM estimé, **records**, stagnation, volume par muscle, tonnage, lien Legs → vélo |
-| Nutrition & poids | Calories / macros, glucides autour des séances, **hydratation**, **poids en moyenne mobile 7 j croisé avec les apports** et la dépense mesurée |
-| Journal de symptômes | Saisie rapide (zone, côté, type, intensité, minute d'apparition, sport, chaussures, terrain, fatigue) · analyse : chaussure, terrain, fatigue, sommeil, évolution · alerte si récurrent |
-| Objectifs & plan | **Plusieurs échéances** (A / B / C) · forme attendue vs réelle · **prévu vs réalisé** de la semaine (séances manquées) · **jalons** de fin de phase |
-| Tendances & croisements | Onglet Suivi : courbes 30 j / 90 j / 1 an avec moyennes mobiles · corrélations sommeil ↔ VFC, charge ↔ VFC, hors sport ↔ VFC, sommeil ↔ RPE, glucides / protéines / calories ↔ récupération |
-| Technique | Sync auto à l'ouverture (> 1 h) et en arrière-plan · saisie rapide en 1 geste · données 100 % locales · alertes limitées aux seuils critiques (1 fois/jour max) |
-
-Pas de gamification, de badges ni de classement.
-
-### Scores quotidiens (inspirés de Whoop / Bevel)
-- **Effort 0–21** (logarithmique) : séances + muscu + hors sport + pas · 1 h facile ≈ 9, 1 h au seuil ≈ 14, 3 h de sortie longue ≈ 18 · **cible du jour** selon la récupération (14–18 / 10–14 / 4–9).
-- **Besoin de sommeil** recalculé chaque jour : base + 4 min par point d'effort au-delà de 10 + ¼ de la dette (max 1 h) · **heure de coucher conseillée** selon ton réveil habituel et ton efficacité de sommeil · **performance de sommeil** (sommeil / besoin).
-- **Fréquence respiratoire nocturne** : + 1 resp/min au-dessus de ta normale (30 j) = signal précoce de maladie, renforcé si la FC de repos monte aussi → intensité supprimée + alerte.
-- **Bilan hebdomadaire** (7 derniers jours vs précédents) : récup, effort, sommeil, performance, volume, calories, faits marquants · notification le dimanche à 19 h.
-
-### Le coach du jour (`Coach/DailyCoach.swift`)
-Chaque matin, Vigor part de ta séance prévue (plan Traka réparti en semaine type PPL + vélo, ou calendrier Intervals.icu)
-et estime ta **capacité du jour** en croisant :
-- **Santé** : score de récupération, nuit dernière, dette de sommeil sur 7 jours ;
-- **Entraînement** : fatigue accumulée, pic de charge, séance Legs de moins de 30 h, blessures ;
-- **Nutrition** : déficit calorique, glucides et protéines de la veille.
-
-Il en déduit un verdict (performer / feu vert / ajuster / lever le pied / repos), **adapte chaque séance** (type, durée,
-watts cibles calculés sur ta FTP, séries et RPE en muscu), te donne la nutrition autour de la séance et tes 3 priorités.
-Une nuit de moins de 6 h ou une fatigue extrême suppriment l'intensité quel que soit le score.
-
-### Notifications
-- **Matin** : verdict, séance adaptée, priorité n° 1 (iOS réveille l'app pour synchroniser Intervals.icu avant).
-- **Soir** : protéines / calories manquantes, préparation de la séance du lendemain (glucides, heure de coucher).
-Réglables dans *Réglages → Notifications*.
-
-### Le « cerveau » (dossier `Vigor/Coach`)
-- `InsightEngine.swift` : **analyse critique** de tes données, règle par règle, chacune justifiée par une publication :
-  surmenage (VFC ↓ + FC repos ↑, Plews 2013 / Buchheit 2014), dette et irrégularité du sommeil, progression de charge trop rapide
-  et ratio aigu/chronique (Gabbett 2016), monotonie (Foster 1998), répartition 80/20 (Seiler 2010), volume par muscle
-  (Schoenfeld 2017), stagnation, jambes trop proches du vélo intense (Wilson 2012), protéines (Morton 2018), glucides des jours longs
-  (Burke 2011), vitesse de prise de masse (Iraki 2019), qualité des données (VFC manquante, mesure aberrante, FTP sous-estimée…).
-- `NutritionPlanner.swift` : métabolisme de base (Mifflin-St Jeor), objectifs du jour selon l'entraînement et la phase,
-  puis **dépense énergétique réelle mesurée** (apports − variation de poids lissé × 7 700 kcal/kg) dès 3 semaines de données.
-- `Readiness.swift`, `TrainingLoad.swift`, `StrengthProgression.swift`, `MuscleMap.swift`, `SeasonPlanner.swift` : voir version 0.1.
-- `Science.swift` : toutes les références citées dans l'app.
-
-### Connecter Garmin (Intervals.icu, gratuit)
+### Connecter Garmin (Intervals.icu)
 1. Crée un compte sur [intervals.icu](https://intervals.icu) et relie Garmin Connect (*Settings → Connections*).
 2. *Settings → Developer Settings* : copie l'**Athlete ID** et génère une **API Key**.
-3. Dans Vigor : *Réglages → Garmin via Intervals.icu* → colle les deux → *Enregistrer la clé* → *Tout synchroniser*.
+3. Dans Vigor : *Réglages → Connexions → Garmin via Intervals.icu* → colle les deux → *Enregistrer la clé* → *Tout synchroniser*.
 
-Tu récupères : séances complètes (TSS, puissance normalisée, IF), VFC nocturne (rMSSD), score de sommeil, readiness Garmin,
-FC de repos, SpO2, respiration, VO2max, poids, et le calendrier des séances prévues.
+## Synchronisation
 
-## Organisation (v1.0) et couleurs
+- À l'ouverture et au retour dans l'app, **l'une après l'autre** (jamais en parallèle) : sommeil du jour s'il n'a pas encore été lu, réparation unique de l'historique après une mise à jour, puis synchro complète si la dernière date de plus d'une heure.
+- `SyncService` (`Vigor/Services/Sync/`) : lit la nuit dans Apple Santé (simulateur compris), sinon via Intervals.icu ; une seule synchro réussie par jour ; état observable `isSyncing` / `syncError` / `lastSyncDate`. Les sources factices ne servent qu'aux aperçus SwiftUI et aux tests.
+- Arrière-plan : iOS est sollicité pour réveiller l'app 1 h avant le bilan du matin (le jour même si l'heure n'est pas passée, sinon le lendemain).
+- Raccourcis : action **« Synchroniser les données du matin »**. Automatisation conseillée : Raccourcis → Automatisation → **Mode Sommeil → Lorsqu'il se désactive** → action Vigor → **Exécuter immédiatement**. Aussi : « Plan du jour » et « Noter l'effort ».
 
-- **Aujourd'hui** : ta forme (3 anneaux), le coaching en 2 phrases avec la séance du jour (▶ lance la muscu), « À faire aujourd'hui » (manger, séance, coucher, revue du dimanche) et, tant que ce n'est pas fini, « Configurer Vigor ».
-- **Santé** : moniteur (6 mesures vs ta normale), sommeil, blessures et symptômes, analyses (récupération, jour par jour, tendances, analyse du coach).
-- **Sport** (onglet) : la semaine (le mois en grand au tap), la musculation (programmes, fraîcheur, progression), le vélo, la saison Traka, la charge et le hors-sport.
-- **Nutrition** et **+** (saisies récentes en tête).
-- **Réglages** en 4 groupes : Profil et objectif, Connexions, Notifications, Données.
-- Palette « terre et forêt » (noyer, blé, mousse, olive). La couleur indique le statut : mousse = OK, blé = à surveiller, brique = alerte.
+## Notifications
 
-## Design (v0.7, style Bevel)
+- **Matin** : verdict, séance adaptée, priorité n° 1. Programmé pour aujourd'hui si l'heure n'est pas encore passée, sinon annonce du lendemain (remplacée par le vrai bilan si l'app est réveillée en arrière-plan).
+- **Repas** (optionnels) et **soir** (optionnel) : programmés sur les 3 prochains jours, pour ne pas s'arrêter si l'app n'est pas rouverte.
+- **Revue du dimanche** à 19 h (suit l'interrupteur du bilan du matin).
+- **Alertes de seuil** : surcharge, fatigue très élevée, dette de sommeil, symptôme récurrent, maladie probable (une fois par jour au plus).
+Réglables dans *Réglages → Notifications*. Pas de pastille sur l'icône.
 
-- Fond gris très clair, cartes blanches très arrondies avec ombre douce ; mode sombre automatique (cartes gris foncé sur fond noir).
-- Accueil : trois anneaux à dégradé (Effort, Récupération, Sommeil) et le « Coaching » du jour dessous ; « Moniteur de santé » en grille (respiration, FC repos, VFC, sommeil, poids, VO2max), avec une mini-jauge verticale et un statut Normal / Supérieur / Inférieur par rapport à ta médiane sur 30 jours ; énergie du jour ; aliments du jour (anneau des calories et grilles de points pour les macros).
-- Activité : calendrier de la semaine, effort du jour, fraîcheur musculaire par muscle (fatigue qui s'efface en 48 à 72 h, sorties vélo et course comptées pour les jambes). Le Plan s'ouvre avec le bouton calendrier.
-- Barre d'onglets flottante (Accueil, Santé, Activité, Nutrition) et bouton « + » rond, classé par thème :
-  - Nutrition : repas, pesée ;
-  - Entraînement : séance de muscu en direct (façon Hevy : exercices, séries kg × reps, échauffement, charges proposées par le coach, valeurs de la séance précédente, minuteur de repos avec notification, brouillon sauvegardé), séance d'endurance manuelle (avec alerte doublon), effort ressenti, import Hevy CSV ;
-  - Corps et santé : symptôme, blessure ;
-  - Quotidien : activité hors sport, imprévu.
+## Méthodes et formules (versionnées, affichées dans Réglages et dans l'export)
 
-## Musculation intégrée (v0.9, plus besoin de Hevy)
+- **Récupération (readiness-3)** : VFC 50 % (nuit 70 % + moyenne 7 j 30 %, en ln, médiane / MAD 60 j), FC de repos 25 %, sommeil 25 % (score de sommeil). Zones : ≥ 67 prêt, 34–66 moyen, < 34 bas ; une journée « dans ta normale » ≈ 60. Fatigue d'entraînement (forme < −25) : malus de 10 ou 20 points, affiché comme tel.
+- **Charge (load-3)** : TSS (puissance si FTP connue, sinon FC, sinon RPE, sinon durée), sRPE = RPE × minutes ; CTL/ATL/forme (Banister, 42 j / 7 j) et ACWR en moyennes exponentielles 7 / 28 j, **amorcées par la moyenne des premiers jours** (pas de départ à 0) ; ACWR global et par discipline seulement à partir de 21 jours d'historique ; seuil d'alerte ACWR **> 1,5** partout ; monotonie de Foster.
+- **Effort (effort-1)** : 0–21 logarithmique (séances + muscu + hors sport + pas > 12 000).
+- **Sommeil (sleep-4)** : nuit principale (siestes exclues) ; score = durée vs besoin (−25 points par 10 % manquants), efficacité, stades, régularité du coucher ; besoin = base + effort + part de la dette ; **dette sur 14 nuits pondérées** (× 0,85 par jour d'ancienneté).
+- **Décision (decision-3)** : capacité du jour = somme des facteurs. Récupération : ≥ 67 → +5 %, 45–66 → neutre, moyenne < 45 → −15 %, basse → −40 %. Puis règles hiérarchisées (2 signaux rouges → adapter, 3 ou douleur → repos), nuit < 6 h ou fatigue extrême → pas d'intensité.
+- **Corrélations (corr-2)** : Spearman, décalages J / J+1 / J+2, IC 95 %.
+- **Nutrition** : Mifflin-St Jeor, glucides selon le volume (Burke 2011), protéines 1,8 g/kg, dépense réelle mesurée (apports − variation du poids lissé × 7 700 kcal/kg) dès 3 semaines de données ; vitesse de prise de poids : idéal 0,25–0,5 %/semaine, alerte au-delà de 0,5 %.
+- **Analyse critique** (`Coach/InsightEngine.swift`, `AdvancedInsights.swift`) : surmenage (VFC ↓ + FC repos ↑), dette et irrégularité du sommeil, progression de charge, ACWR, monotonie, répartition 80/20, volume par muscle, stagnation, interférence Legs → vélo, protéines, glucides des jours longs, zones de FC, dérive cardiaque, chaussures, symptômes récurrents, qualité des données (VFC manquante, mesure aberrante, FTP probablement sous-estimée sur les 60 derniers jours).
+- `Science.swift` : toutes les références citées dans l'app.
 
-- **Banque d'exercices** : ~70 exercices en français (filtres par groupe musculaire et matériel, recherche par nom ou muscle), exercices perso avec leurs muscles, fiche par exercice (historique, records, 1RM estimé).
-- **Programmes et séances types** : aucune séance pré-remplie : tu crées tes propres séances (exercices, séries, plage de répétitions, repos, notes, réordonnables).
-- **Séance en direct** : lancée depuis une séance type ou en libre ; charges proposées d'après la dernière séance, colonne « Précédent », échauffements, records détectés à la fin.
-- **Repos** : compte à rebours dans l'app (±15 s) et notification à la fin du repos avec la prochaine série. La Dynamic Island est prête mais désactivée (voir `Extras/VigorWidgets`) : l'extension prendrait une 4e place d'app sur le compte gratuit.
-- **Historique** par mois (exercices, séries, tonnage, durée).
-- L'import Hevy reste disponible une fois, pour récupérer l'ancien historique.
+L'hydratation n'est plus suivie par le coach (pas d'alerte).
 
-## Synchro du sommeil au réveil (SyncService + Raccourcis)
+## Musculation intégrée
 
-- `SyncService` (`Vigor/Services/Sync/`) : `syncSleepData(force:allowPrompt:)` lit la nuit dans Apple Santé (`sleepAnalysis`), sinon via l'API Intervals.icu ; une seule synchro réussie par jour (date en cache dans UserDefaults) ; état observable `isSyncing` / `syncError` / `lastSyncDate`. Sources, cache et stockage derrière des protocoles (mock pour le simulateur, les aperçus et les tests).
-- Au premier plan : synchro à l'ouverture et au retour dans l'app si rien n'a réussi aujourd'hui ; indicateur discret en haut de l'accueil ; tirer pour forcer.
-- Raccourcis : action **« Synchroniser les données du matin »**. Automatisation conseillée : Raccourcis → Automatisation → **Mode Sommeil → Lorsqu'il se désactive** → action Vigor « Synchroniser les données du matin » → **Exécuter immédiatement**.
+Banque d'exercices en français (filtres, exercices perso), séances types personnelles, séance en direct (charges proposées, colonne « Précédent », échauffements, minuteur de repos avec notification, records), historique par mois. L'import Hevy reste disponible pour récupérer l'ancien historique.
 
 ## Installer l'app sur ton iPhone (gratuit, sans compte développeur payant)
 
@@ -147,35 +101,10 @@ Pas besoin de choisir une *Team* pour le simulateur. Aperçu encore plus rapide 
 Hevy → Profil → ⚙️ Réglages → *Exporter et importer des données* → **Exporter les séances** → enregistre le CSV dans *Fichiers*.
 Puis Vigor → Sport → Progression → **Récupérer mon historique Hevy**. Tu peux réimporter l'export complet chaque semaine : rien n'est dupliqué.
 
-## Feuille de route
-- [x] **Étape 1** — Socle : design Liquid Glass, Apple Santé, import Hevy, charge d'entraînement, récupération, progression muscu, plan Traka adaptatif
-- [x] **Étape 2** — Nutrition : scan code-barres (Open Food Facts), aliments sans code-barres (table Ciqual), macros au gramme, repas favoris, bilan apports / dépenses
-- [x] **Étape 3** — Intervals.icu : données Garmin complètes (Body Battery, Training Readiness, score de sommeil, puissance seconde par seconde), calendrier des séances vélo
-- [ ] **Étape 4** — Programmes PPL dans l'app (prévu vs réalisé), carte du corps, tests FTP / VO2max, alertes croisées (jambes lourdes la veille d'une séance vélo intense, déficit calorique en semaine chargée…)
+## Non inclus
 
-⚠️ Les conseils de l'app ne remplacent pas un avis médical, en particulier pour la blessure aux ischios.
+- Widgets écran verrouillé, complication Apple Watch, Dynamic Island (extension prête mais désactivée : compte développeur payant ou place d'app supplémentaire nécessaire).
+- Body Battery et puissance seconde par seconde Garmin (non lus).
+- Lecture de la nutrition depuis Apple Santé.
 
-
-## Architecture et méthodes (v0.6)
-
-**Design** : 5 onglets au pouce — Aujourd'hui (verdict → 3–4 raisons → détail au tap), Charge, Récup, Journal, Plan.
-Chaque chiffre est accompagné de son écart à ta base et d'une tendance. Courbes avec bande de normalité (médiane ± MAD),
-événements annotés (maladie, voyage, travaux, chaussures, blessure), trous de données visibles, explorateur jour par jour
-à axe synchronisé. Chiffres à chasse fixe, Dynamic Type, états jamais codés par la seule couleur.
-Notifications rares par défaut : verdict du matin, alertes de seuil, revue du dimanche (repas et soir : optionnels).
-
-**Moteur** :
-- Récupération : médiane / MAD 60 j, score z (ln VFC 7 j, FC repos), contributions affichées.
-- Charge : TSS (puissance / FC / RPE), sRPE = RPE × minutes, TRIMP d'Edwards (zones), tonnage ; ACWR en moyennes exponentielles 7/28 j par discipline ; monotonie et strain de Foster ; Banister CTL/ATL/TSB.
-- Sommeil : besoin dynamique, dette 14 j pondérée (× 0,85/jour), régularité (coucher, lever week-end vs semaine).
-- Endurance : zones de FC, % Z2, découplage, Efficiency Factor à conditions comparables.
-- Muscu : 1RM (Epley), stagnation par régression 6 semaines avec test de significativité, règle d'interférence Legs → sortie longue.
-- Nutrition : tendance de poids exponentielle, dépense adaptative, alerte déficit (poids ↓ et charge ↑).
-- Symptômes : délai d'apparition médian par chaussure, terrain, fatigue, sommeil, charge de la veille ; export PDF.
-- Décision : capacité + règles hiérarchisées (2 signaux rouges → adapter, 3 ou douleur → repos), agenda par jour, semaine allégée automatique si fatigue accumulée ; règles déclenchées affichées.
-- Statistiques : Spearman décalé J/J+1/J+2, n et IC 95 %, « indice » si < 30 points ; expériences N = 1 (avant / pendant, d de Cohen).
-- Qualité : score de confiance du jour, parsing strict (« 1:23:45 », « -- », virgules), dédoublonnage multi-sources, journées physiques non déclarées.
-- Technique : 100 % local (SwiftData), formules versionnées, export CSV/JSON, Raccourcis Siri (plan du jour, effort, synchro du matin),
-  narration de la revue par le modèle Apple Intelligence local (il reformule, il ne calcule pas).
-
-Non inclus (compte développeur payant nécessaire) : widgets écran verrouillé et complication Apple Watch.
+⚠️ Les conseils de l'app ne remplacent pas un avis médical, en particulier en cas de blessure.

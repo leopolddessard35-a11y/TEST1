@@ -84,6 +84,36 @@ struct SleepTimeTests {
         #expect(HealthKitService.nightDay(forSegmentEnding: date(11, 15)) == calendar.startOfDay(for: date(11, 7)))
     }
 
+    @Test func napDoesNotChangeTheNight() {
+        let calendar = Calendar.current
+        let samples = [
+            RawSleepSample(start: date(10, 23), end: date(11, 3), kind: .core, source: "watch"),
+            RawSleepSample(start: date(11, 3), end: date(11, 3, 20), kind: .awake, source: "watch"),
+            RawSleepSample(start: date(11, 3, 20), end: date(11, 7), kind: .deep, source: "watch"),
+            // Sieste de 14 h à 15 h : session séparée (écart > 90 min), exclue de la nuit.
+            RawSleepSample(start: date(11, 14), end: date(11, 15), kind: .core, source: "watch"),
+        ]
+        let nights = HealthKitService.nights(from: samples, calendar: calendar)
+        let night = nights[calendar.startOfDay(for: date(11, 7))]
+        #expect(nights.count == 1)
+        #expect(abs((night?.hours ?? 0) - (4 + 3 + 2.0 / 3)) < 0.001)
+        #expect(night?.bedtime == date(10, 23))
+        #expect(night?.wake == date(11, 7))
+        #expect(abs((night?.awake ?? 0) - 1.0 / 3) < 0.001)
+    }
+
+    @Test func longestMorningSessionWinsOverALongerAfternoonOne() {
+        let calendar = Calendar.current
+        let samples = [
+            RawSleepSample(start: date(11, 1), end: date(11, 5), kind: .unspecified, source: "phone"),
+            RawSleepSample(start: date(11, 9), end: date(11, 15), kind: .unspecified, source: "phone"),
+        ]
+        let night = HealthKitService.nights(from: samples, calendar: calendar)[calendar.startOfDay(for: date(11, 5))]
+        #expect(night?.hours == 4)
+        #expect(night?.wake == date(11, 5))
+        #expect(night?.deep == nil)
+    }
+
     @Test func bedtimeAdviceIsAnEveningTime() {
         let wakes = (1...7).map { date($0, 7, 15) }
         let beds = (1...7).map { date($0, 6, 45).addingTimeInterval(-8 * 3600) }

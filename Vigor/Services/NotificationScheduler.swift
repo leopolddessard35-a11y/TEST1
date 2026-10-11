@@ -3,8 +3,13 @@ import UserNotifications
 
 /// Notifications locales (fonctionnent avec un compte Apple gratuit).
 enum NotificationScheduler {
+    /// Bilan du matin d'aujourd'hui (programmé ou envoyé en arrière-plan).
     static let morningID = "vigor.morning"
+    /// Annonce du matin de demain (séance prévue), remplacée par le vrai bilan au réveil.
+    static let morningTomorrowID = "vigor.morning.tomorrow"
     static let eveningID = "vigor.evening"
+    /// Nombre de jours programmés d'avance (repas, soir) : les rappels continuent même sans ouvrir l'app.
+    static let daysAhead = 3
 
     enum Keys {
         static let morningEnabled = "notif.morning.enabled"
@@ -56,7 +61,7 @@ enum NotificationScheduler {
     static var eveningMinutes: Int { UserDefaults.standard.object(forKey: Keys.eveningMinutes) as? Int ?? 21 * 60 + 30 }
 
     static func requestAuthorization() async -> Bool {
-        (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+        (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])) ?? false
     }
 
     /// Reprogramme les notifications à partir du dernier calcul du coach.
@@ -65,25 +70,55 @@ enum NotificationScheduler {
         let settings = await center.notificationSettings()
         guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else { return }
         let pending = await center.pendingNotificationRequests()
-        let mealIDs = pending.map(\.identifier).filter { $0.hasPrefix("vigor.meal.") }
-        center.removePendingNotificationRequests(withIdentifiers: [morningID, eveningID] + mealIDs)
+        let ownIDs = pending.map(\.identifier).filter {
+            $0.hasPrefix("vigor.meal.") || $0.hasPrefix(morningID) || $0.hasPrefix(eveningID)
+        }
+        center.removePendingNotificationRequests(withIdentifiers: ownIDs)
 
         let calendar = Calendar.current
-        if morningEnabled, let content = morningFallback(snapshot) {
+        let today = calendar.startOfDay(for: now)
+        if morningEnabled {
+            // Matin d'aujourd'hui : l'app est ouverte avant l'heure du bilan → on le programme tout de suite
+            // (il reflète déjà la nuit synchronisée), sauf s'il a déjà été envoyé.
+            let todayAt = calendar.date(byAdding: .minute, value: morningMinutes, to: today) ?? today
+            let alreadySent = UserDefaults.standard.double(forKey: Keys.lastMorningBrief) == today.timeIntervalSince1970
+            if todayAt > now, !alreadySent {
+                schedule(id: morningID, content: morningBriefContent(snapshot), at: today, minutes: morningMinutes)
+            }
             // Matin de demain : séance prévue. Le contenu est remplacé par le vrai bilan si l'app
             // se réveille en arrière-plan avant (synchronisation Intervals.icu).
-            let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) ?? now
-            schedule(id: morningID, content: content, at: tomorrow, minutes: morningMinutes)
+            if let content = morningFallback(snapshot) {
+                let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? now
+                schedule(id: morningTomorrowID, content: content, at: tomorrow, minutes: morningMinutes)
+            }
         }
         scheduleMeals(snapshot, now: now)
         scheduleWeeklyReport(snapshot, now: now)
         await sendThresholdAlerts(snapshot, now: now)
-        if eveningEnabled, let content = evening(snapshot) {
-            let todayAt = calendar.date(byAdding: .minute, value: eveningMinutes, to: calendar.startOfDay(for: now)) ?? now
-            if todayAt > now {
-                schedule(id: eveningID, content: content, at: calendar.startOfDay(for: now), minutes: eveningMinutes)
+        if eveningEnabled {
+            // Ce soir avec le bilan complet, puis les soirs suivants (rappel de coucher seul) :
+            // les rappels ne s'arrêtent pas si l'app n'est pas rouverte.
+            for offset in 0..<daysAhead {
+                guard let day = calendar.date(byAdding: .day, value: offset, to: today),
+                      let at = calendar.date(byAdding: .minute, value: eveningMinutes, to: day), at > now,
+                      let content = offset == 0 ? evening(snapshot) : genericEvening(snapshot) else { continue }
+                schedule(id: offset == 0 ? eveningID : "\(eveningID).d\(offset)", content: content, at: day, minutes: eveningMinutes)
             }
         }
+    }
+
+    /// Contenu du bilan du matin (verdict, séance adaptée, priorité).
+    private static func morningBriefContent(_ snapshot: CoachSnapshot) -> UNMutableNotificationContent {
+        let brief = snapshot.brief
+        let content = UNMutableNotificationContent()
+        let score = snapshot.readiness.map { " · récup \($0.score)" } ?? ""
+        content.title = "\(brief.verdict.label)\(score)"
+        var lines = [brief.headline]
+        if let session = brief.adapted.first { lines.append("→ \(session.title)") }
+        if let priority = brief.priorities.first { lines.append(priority) }
+        content.body = lines.joined(separator: "\n")
+        content.sound = .default
+        return content
     }
 
     /// Bilan du matin, envoyé tout de suite (depuis la synchronisation en arrière-plan).
@@ -95,18 +130,17 @@ enum NotificationScheduler {
         guard minutes >= morningMinutes - 90, minutes <= 11 * 60,
               UserDefaults.standard.double(forKey: Keys.lastMorningBrief) != dayKey else { return }
 
-        let brief = snapshot.brief
-        let content = UNMutableNotificationContent()
-        let score = snapshot.readiness.map { " · récup \($0.score)" } ?? ""
-        content.title = "\(brief.verdict.label)\(score)"
-        var lines = [brief.headline]
-        if let session = brief.adapted.first { lines.append("→ \(session.title)") }
-        if let priority = brief.priorities.first { lines.append(priority) }
-        content.body = lines.joined(separator: "\n")
-        content.sound = .default
-
         let center = UNUserNotificationCenter.current()
-        center.removePendingNotificationRequests(withIdentifiers: [morningID])
+        // Le bilan programmé est déjà arrivé ce matin : pas de doublon.
+        let delivered = await center.deliveredNotifications()
+        if delivered.contains(where: { $0.request.identifier == morningID && calendar.isDate($0.date, inSameDayAs: now) }) {
+            UserDefaults.standard.set(dayKey, forKey: Keys.lastMorningBrief)
+            return
+        }
+        let content = morningBriefContent(snapshot)
+        // L'annonce programmée la veille pour ce matin est remplacée par le vrai bilan
+        // (celle de demain est reprogrammée par `refresh` juste après).
+        center.removePendingNotificationRequests(withIdentifiers: [morningID, morningTomorrowID])
         let request = UNNotificationRequest(identifier: morningID, content: content, trigger: nil)
         try? await center.add(request)
         UserDefaults.standard.set(dayKey, forKey: Keys.lastMorningBrief)
@@ -132,7 +166,7 @@ enum NotificationScheduler {
             }
             let missingKcal = targets.kcal - snapshot.todayNutrition.kcal
             if missingKcal > 500 {
-                lines.append(String(format: "Encore %.0f kcal pour ton objectif de prise de masse.", missingKcal))
+                lines.append(String(format: "Encore %.0f kcal pour atteindre ton objectif du jour.", missingKcal))
             }
         }
         let tomorrowBike = snapshot.tomorrowPlan.filter { $0.kind.isBike }
@@ -150,9 +184,20 @@ enum NotificationScheduler {
         return content
     }
 
+    /// Soirs suivants : on ne connaît pas encore les apports ni le besoin de sommeil, simple rappel de coucher.
+    private static func genericEvening(_ snapshot: CoachSnapshot) -> UNMutableNotificationContent? {
+        let content = UNMutableNotificationContent()
+        content.title = "Bilan du soir"
+        content.body = "Pense au coucher : vise environ \(snapshot.sleepNeed.total.hoursText) de sommeil. Ouvre Vigor pour le bilan complet."
+        content.sound = .default
+        return content
+    }
+
     // MARK: Bilan hebdomadaire
 
     /// Le dimanche à 19 h : bilan des 7 derniers jours.
+    /// NB : volontairement rattaché à l'interrupteur « bilan du matin » (pas de réglage dédié) :
+    /// désactiver le bilan du matin coupe aussi la revue hebdomadaire.
     private static func scheduleWeeklyReport(_ snapshot: CoachSnapshot, now: Date) {
         guard morningEnabled, let report = snapshot.weeklyReport else { return }
         let calendar = Calendar.current
@@ -204,26 +249,27 @@ enum NotificationScheduler {
 
     // MARK: Repas
 
-    /// Rappels de repas pour aujourd'hui (s'ils ne sont pas encore renseignés) et demain.
+    /// Rappels de repas pour aujourd'hui (s'ils ne sont pas encore renseignés) et les jours suivants
+    /// (`daysAhead` jours au total, identifiants distincts) : ils continuent même sans rouvrir l'app.
     private static func scheduleMeals(_ snapshot: CoachSnapshot, now: Date) {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: now)
-        let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? today
         for meal in remindedMeals where mealEnabled(meal) {
             let minutes = mealMinutes(meal)
-            let todayAt = calendar.date(byAdding: .minute, value: minutes, to: today) ?? today
-            if todayAt > now, !snapshot.loggedMealsToday.contains(meal),
-               let content = mealContent(meal, snapshot: snapshot, forTomorrow: false) {
-                schedule(id: "vigor.meal.\(meal.rawValue).today", content: content, at: today, minutes: minutes)
-            }
-            if let content = mealContent(meal, snapshot: snapshot, forTomorrow: true) {
-                schedule(id: "vigor.meal.\(meal.rawValue).tomorrow", content: content, at: tomorrow, minutes: minutes)
+            for offset in 0..<daysAhead {
+                guard let day = calendar.date(byAdding: .day, value: offset, to: today),
+                      let at = calendar.date(byAdding: .minute, value: minutes, to: day), at > now else { continue }
+                if offset == 0, snapshot.loggedMealsToday.contains(meal) { continue }
+                guard let content = mealContent(meal, snapshot: snapshot, dayOffset: offset) else { continue }
+                schedule(id: "vigor.meal.\(meal.rawValue).d\(offset)", content: content, at: day, minutes: minutes)
             }
         }
     }
 
     /// Contenu d'un rappel de repas : quantités visées + conseil adapté aux séances de la journée.
-    static func mealContent(_ meal: Meal, snapshot: CoachSnapshot, forTomorrow: Bool) -> UNMutableNotificationContent? {
+    /// `dayOffset` : 0 = aujourd'hui (reste à manger), 1 = demain (séances prévues), au-delà = part standard sans séance connue.
+    static func mealContent(_ meal: Meal, snapshot: CoachSnapshot, dayOffset: Int) -> UNMutableNotificationContent? {
+        let forTomorrow = dayOffset > 0
         guard let targets = snapshot.macroTargets else {
             let content = UNMutableNotificationContent()
             content.title = meal.label
@@ -231,7 +277,12 @@ enum NotificationScheduler {
             content.sound = .default
             return content
         }
-        let sessions = forTomorrow ? snapshot.tomorrowPlan : snapshot.brief.adapted
+        let sessions: [SessionPrescription] = switch dayOffset {
+        case 0: snapshot.brief.adapted
+        case 1: snapshot.tomorrowPlan
+        default: []
+        }
+        let nextDaySessions: [SessionPrescription] = dayOffset == 0 ? snapshot.tomorrowPlan : []
         let mealShare = share(of: meal)
 
         // Aujourd'hui : on répartit ce qui reste sur les repas restants. Demain : part standard.
@@ -250,7 +301,7 @@ enum NotificationScheduler {
         }
 
         var lines = [String(format: "Vise ~%.0f kcal · %.0f g de protéines · %.0f g de glucides.", kcal, protein, carbs)]
-        if let tip = mealTip(meal, sessions: sessions, tomorrowSessions: snapshot.tomorrowPlan, forTomorrow: forTomorrow) {
+        if let tip = mealTip(meal, sessions: sessions, tomorrowSessions: nextDaySessions, forTomorrow: forTomorrow) {
             lines.append(tip)
         }
         let content = UNMutableNotificationContent()
@@ -269,7 +320,7 @@ enum NotificationScheduler {
         case .breakfast:
             if let long { return "\(long.title) aujourd'hui : petit-déjeuner riche en glucides (flocons d'avoine, pain, miel, banane)." }
             if let intense { return "\(intense.title) aujourd'hui : garde des glucides à chaque repas pour avoir du jus." }
-            return "Une source de protéines dès le matin (skyr, œufs, fromage blanc) aide la prise de muscle."
+            return "Une source de protéines dès le matin (skyr, œufs, fromage blanc) aide à couvrir tes besoins."
         case .lunch:
             if let intense { return "\(intense.title) plus tard : déjeuner riche en glucides (riz, pâtes, pommes de terre), léger en graisses." }
             if let strength { return "Séance \(strength.kind.label.lowercased()) aujourd'hui : protéines + glucides au déjeuner." }

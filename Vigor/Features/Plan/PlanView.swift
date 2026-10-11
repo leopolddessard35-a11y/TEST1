@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
 
-/// La saison (Traka) : phase, semaine, imprévus, blessures, échéances, forme prévue vs réelle.
+/// La saison (objectif principal) : phase, semaine, imprévus, blessures, échéances, forme prévue vs réelle.
 /// Affichée dans l'onglet Entraînement (poussée dans sa pile de navigation).
 struct SeasonPlanView: View {
     @Environment(\.modelContext) private var context

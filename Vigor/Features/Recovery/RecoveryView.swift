@@ -81,7 +81,7 @@ private struct SleepSummaryCard: View {
     let snapshot: CoachSnapshot
 
     var body: some View {
-        let last = snapshot.wellness.last { $0.sleepHours != nil }
+        let last = snapshot.wellness.last { $0.anySleepHours != nil }
         NavigationLink {
             SleepDetailView(snapshot: snapshot)
         } label: {
@@ -90,7 +90,7 @@ private struct SleepSummaryCard: View {
                     HStack(alignment: .firstTextBaseline) {
                         VStack(alignment: .leading, spacing: 2) {
                             CapsLabel(last.map { Calendar.current.isDateInToday($0.day) ? "Cette nuit" : $0.day.formatted(.dateTime.weekday(.wide).day()) } ?? "Dernière nuit")
-                            if let hours = last?.sleepHours {
+                            if let hours = last?.anySleepHours {
                                 Text(hours.hoursText)
                                     .font(.system(.title, design: .rounded).weight(.heavy)).monospacedDigit()
                             } else {
@@ -217,15 +217,15 @@ struct DayExplorer: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(day.formatted(date: .complete, time: .omitted)).font(.headline)
                         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                            StatTile(title: "Sommeil", value: record?.sleepHours?.hoursText ?? "–")
+                            StatTile(title: "Sommeil", value: record?.anySleepHours?.hoursText ?? "–")
                             StatTile(title: "VFC", value: (record?.hrvRMSSD ?? record?.hrvMs)?.noDecimal ?? "–")
-                            StatTile(title: "FC repos", value: record?.restingHeartRate?.noDecimal ?? "–")
+                            StatTile(title: "FC repos", value: record?.anyRestingHeartRate?.noDecimal ?? "–")
                             StatTile(title: "Charge", value: point.map { $0.tss.noDecimal } ?? "–")
                             StatTile(title: "Forme", value: point.map { $0.form.noDecimal } ?? "–")
                             StatTile(title: "Poids", value: record?.weightKg?.oneDecimal ?? "–")
                             StatTile(title: "Calories", value: nutrition.map { $0.kcal.noDecimal } ?? "–")
                             StatTile(title: "Protéines", value: nutrition.map { "\($0.protein.noDecimal) g" } ?? "–")
-                            StatTile(title: "Respiration", value: record?.respiration?.oneDecimal ?? "–")
+                            StatTile(title: "Respiration", value: record?.anyRespiration?.oneDecimal ?? "–")
                         }
                         ForEach(events) { event in
                             Label(event.label, systemImage: event.symbol).font(.footnote)

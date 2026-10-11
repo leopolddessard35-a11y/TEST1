@@ -122,7 +122,7 @@ struct IntervalsSleepProvider: SleepDataProvider {
     }
 }
 
-/// Source factice : simulateur, aperçus SwiftUI et tests. Jamais utilisée sur l'iPhone en production.
+/// Source factice : aperçus SwiftUI et tests uniquement (jamais branchée sur la vraie base, simulateur compris).
 @MainActor
 struct MockSleepProvider: SleepDataProvider {
     var ready = true

@@ -58,3 +58,12 @@ Aucune erreur de compilation certaine n'a été trouvée, mais le code n'a pas p
 - **Notifications** : rien n'explique un refus, et l'autorisation est demandée au premier lancement sans contexte.
 - **Nutrition** : pas d'état vide sans poids renseigné. La date ne change pas à minuit si l'app reste ouverte.
 - **Apple Santé** : l'app demande des autorisations inutiles (lecture nutrition, texte d'écriture des repas).
+
+---
+
+## État après corrections (V1.0)
+
+- **Lots 1 et 2** : corrigés (confirmations, séries cochées, suppression de séance, séance protégée, champs numériques, siestes, sources Garmin et Apple séparées, démarrage de la charge, coach recalé, notifications sur 3 jours, synchros en série, import CIQUAL, recherche d'aliments, scan, configuration, mesures anciennes).
+- **Lot 3** : code mort retiré.
+- **Lot 4** : textes personnels neutralisés, explications alignées sur les formules, virgule décimale, zones tactiles et VoiceOver, version 1.0.
+- **Reste à vérifier dans Xcode** : compilation, focus kg → reps dans la séance, import réel de la table CIQUAL.

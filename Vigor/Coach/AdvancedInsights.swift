@@ -14,7 +14,7 @@ struct EnduranceQuality: Equatable {
 }
 
 /// Règles qui exploitent les nouvelles données : discipline, volume, hors sport, RPE, horaires,
-/// zones de FC, dérive cardiaque, symptômes, chaussures, hydratation.
+/// zones de FC, dérive cardiaque, symptômes, chaussures.
 enum AdvancedInsights {
     static func analyze(disciplineLoads: [DisciplineLoad],
                         volumeAlerts: [String],
@@ -26,7 +26,6 @@ enum AdvancedInsights {
                         endurance: [EnduranceQuality],
                         symptoms: [SymptomPattern],
                         shoeKm: [(name: String, km: Double)],
-                        waterRatio7: Double?,
                         today: Date) -> [Insight] {
         var insights: [Insight] = []
 
@@ -113,7 +112,7 @@ enum AdvancedInsights {
                                             evidence: evidence,
                                             recommendation: "Ta FC dérive moins sur les sorties longues : ton moteur aérobie se renforce. Tu peux allonger la sortie longue.",
                                             references: [Science.allenCoggan]))
-                    return finish(insights, symptoms: symptoms, shoeKm: shoeKm, waterRatio7: waterRatio7)
+                    return finish(insights, symptoms: symptoms, shoeKm: shoeKm)
                 }
             }
             if drift > 5 {
@@ -124,10 +123,10 @@ enum AdvancedInsights {
                                         references: [Science.allenCoggan, Science.jeukendrup2014]))
             }
         }
-        return finish(insights, symptoms: symptoms, shoeKm: shoeKm, waterRatio7: waterRatio7)
+        return finish(insights, symptoms: symptoms, shoeKm: shoeKm)
     }
 
-    private static func finish(_ base: [Insight], symptoms: [SymptomPattern], shoeKm: [(name: String, km: Double)], waterRatio7: Double?) -> [Insight] {
+    private static func finish(_ base: [Insight], symptoms: [SymptomPattern], shoeKm: [(name: String, km: Double)]) -> [Insight] {
         var insights = base
         for pattern in symptoms where pattern.isRecurrent {
             var evidence = [String(format: "%d épisodes sur 14 jours (%d au total), intensité moyenne %.1f / 10", pattern.recentCount, pattern.count, pattern.averageIntensity)]
@@ -144,13 +143,6 @@ enum AdvancedInsights {
                                     title: "Chaussures usées : \(shoe.name)",
                                     evidence: [String(format: "%.0f km parcourus", shoe.km)],
                                     recommendation: "Au-delà de 600–800 km, l'amorti diminue nettement. Pense à les remplacer, surtout si une douleur apparaît.",
-                                    references: []))
-        }
-        if let ratio = waterRatio7, ratio < 0.7 {
-            insights.append(Insight(id: "hydration.low", category: .nutrition, severity: .info,
-                                    title: "Hydratation insuffisante",
-                                    evidence: [String(format: "%.0f %% de ton objectif d'eau en moyenne sur 7 jours", ratio * 100)],
-                                    recommendation: "Garde une gourde à portée de main et bois 500 à 750 ml par heure de sport.",
                                     references: []))
         }
         return insights

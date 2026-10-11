@@ -38,7 +38,7 @@ extension WeeklyReport {
         // Point de vigilance : le signal le plus préoccupant.
         var vigilance = "Rien de préoccupant dans les données de la semaine."
         var adjustment = "Semaine suivante : progression normale du plan (+5 à 10 % de volume au maximum)."
-        if let ratio = acuteChronic, ratio > 1.4 {
+        if let ratio = acuteChronic, ratio > 1.5 {
             vigilance = String(format: "Charge en forte hausse (ratio 7 j / 28 j : %.2f).", ratio)
             adjustment = "Semaine suivante : volume −15 %, une seule séance intense."
         } else if let performance = current.sleepPerformance, performance < 0.85 {

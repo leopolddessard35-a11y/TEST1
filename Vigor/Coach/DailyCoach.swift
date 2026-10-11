@@ -142,6 +142,7 @@ struct DailyCoachInput {
     var readiness: ReadinessResult?
     var lastNightSleep: Double?
     var sleepNeed: Double
+    /// Dette de sommeil pondérée sur 14 nuits (× 0,85 par jour d'ancienneté). Nom historique conservé.
     var sleepDebt7: Double?
     var load: LoadPoint?
     var acuteChronicRatio: Double?
@@ -290,7 +291,14 @@ enum DailyCoach {
 
         // Santé : récupération (VFC + FC repos + sommeil).
         if let readiness = input.readiness {
-            let impact: Double = readiness.level == .ready ? 0.05 : (readiness.level == .moderate ? -0.15 : -0.4)
+            // Calibré sur readiness-3 : une journée « dans ta normale » ≈ 60 (zones 67/34).
+            // ≥ 67 : bonus · 45–66 : neutre (normal) · moyenne mais < 45 : −15 % · basse (< 34) : −40 %.
+            let impact: Double
+            switch readiness.level {
+            case .ready: impact = 0.05
+            case .low: impact = -0.4
+            case .moderate: impact = readiness.score >= 45 ? 0 : -0.15
+            }
             factors.append(CoachFactor(domain: .health, name: "Récupération", impact: impact,
                                        detail: "\(readiness.score)/100 · \(readiness.level.label.lowercased())"))
         }
@@ -312,7 +320,7 @@ enum DailyCoach {
         }
         if let debt = input.sleepDebt7, debt >= 5 {
             factors.append(CoachFactor(domain: .health, name: "Dette de sommeil", impact: -0.1,
-                                       detail: String(format: "%.1f h manquantes sur 7 jours", debt)))
+                                       detail: String(format: "%.1f h manquantes sur 14 nuits (les plus récentes pèsent plus)", debt)))
             priorities.append((0.7, String(format: "Dette de sommeil de %.0f h : vise +45 min par nuit cette semaine.", debt)))
         }
 

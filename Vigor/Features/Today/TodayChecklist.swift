@@ -23,7 +23,7 @@ struct TodayChecklistCard: View {
                 Divider().padding(.leading, 44)
                 NavigationLink {
                     SleepNeedDetailView(need: snapshot.sleepNeed, performance: snapshot.lastSleepPerformance,
-                                        lastNight: snapshot.wellness.last.flatMap { Calendar.current.isDateInToday($0.day) ? $0.sleepHours : nil },
+                                        lastNight: snapshot.wellness.last.flatMap { Calendar.current.isDateInToday($0.day) ? $0.anySleepHours : nil },
                                         regularity: snapshot.bedtimeRegularity)
                 } label: {
                     ChecklistRow(symbol: "moon.zzz.fill", title: "Coucher vers \(snapshot.sleepNeed.bedtimeText)",
@@ -137,7 +137,7 @@ struct SetupChecklistCard: View {
     let onOpenSettings: () -> Void
 
     static var sleepRecordDescriptor: FetchDescriptor<DailyWellness> {
-        var descriptor = FetchDescriptor<DailyWellness>(predicate: #Predicate { $0.sleepHours != nil })
+        var descriptor = FetchDescriptor<DailyWellness>(predicate: #Predicate { $0.sleepHours != nil || $0.sleepHoursGarmin != nil })
         descriptor.fetchLimit = 1
         return descriptor
     }

@@ -15,7 +15,7 @@ enum CoachSummary {
         let brief = snapshot.brief
         let sessions = brief.adapted
         let isRestDay = sessions.isEmpty || sessions.allSatisfy { $0.kind == .rest }
-        let sleepHours: Double? = snapshot.wellness.last.flatMap { Calendar.current.isDateInToday($0.day) ? $0.sleepHours : nil }
+        let sleepHours: Double? = snapshot.wellness.last.flatMap { Calendar.current.isDateInToday($0.day) ? $0.anySleepHours : nil }
         let sleepText: String = sleepHours.map { " (\($0.hoursText))" } ?? ""
         let performance = snapshot.lastSleepPerformance
 
