@@ -142,6 +142,7 @@ struct TrendChart: View {
                         }
                     }
                     .chartYScale(domain: .automatic(includesZero: false))
+                    .dateAxis(days: days)
                     .frame(height: 120)
                     if smooth {
                         Text(days > 120 ? "Ligne : moyenne mobile 28 jours" : "Ligne : moyenne mobile 7 jours").font(.caption2).foregroundStyle(.secondary)

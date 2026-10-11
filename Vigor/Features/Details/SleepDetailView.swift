@@ -208,6 +208,7 @@ struct SleepDetailView: View {
                             Text("besoin \(need.hoursText)").font(.caption2).foregroundStyle(.secondary)
                         }
                 }
+                .dateAxis(days: 14)
                 .frame(height: 140)
                 Text("Chaque heure manquée s'ajoute à la dette ; les nuits anciennes comptent moins (× 0,85 par jour). On rattrape au mieux 1 h par nuit : mieux vaut se coucher plus tôt plusieurs soirs.")
                     .font(.caption).foregroundStyle(.secondary)

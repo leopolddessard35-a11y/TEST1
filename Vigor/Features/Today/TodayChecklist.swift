@@ -103,7 +103,8 @@ struct ChecklistRow<Trailing: View>: View {
                 .background(done ? AnyShapeStyle(Theme.good) : AnyShapeStyle(Theme.well), in: .circle)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
-                Text(subtitle).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                // 2 lignes maximum : la carte garde une hauteur stable au fil de la journée.
+                Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }
             Spacer(minLength: 6)
             trailing

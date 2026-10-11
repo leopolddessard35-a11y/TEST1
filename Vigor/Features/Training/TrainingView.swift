@@ -415,6 +415,7 @@ private struct LoadChartCard: View {
                     }
                 }
                 .chartForegroundStyleScale(["Condition": Theme.recovery, "Fatigue": Theme.strain, "Forme": Theme.sleep])
+                .dateAxis(days: 120)
                 .frame(height: 200)
             }
         }

@@ -221,6 +221,7 @@ struct EnergyBalanceCard: View {
                         }
                     }
                     .chartYScale(domain: .automatic(includesZero: false))
+                    .dateAxis(days: 42)
                     .frame(height: 120)
                     Text("Poids en moyenne mobile 7 jours (jamais le chiffre du jour).").font(.caption2).foregroundStyle(.secondary)
                 }
@@ -236,6 +237,7 @@ struct EnergyBalanceCard: View {
                                 .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
                         }
                     }
+                    .dateAxis(days: 42)
                     .frame(height: 110)
                 }
                 HStack {

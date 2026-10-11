@@ -391,6 +391,7 @@ struct SyncedChart: View {
                 .chartXScale(domain: domain)
                 .chartYScale(domain: .automatic(includesZero: bars))
                 .chartXSelection(value: $selected)
+                .dateAxis(days: max(1, Int(domain.upperBound.timeIntervalSince(domain.lowerBound) / 86_400)))
                 .frame(height: 90)
             }
         }

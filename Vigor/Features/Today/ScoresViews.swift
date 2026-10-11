@@ -110,6 +110,7 @@ struct EffortDetailView: View {
                                 .cornerRadius(3)
                         }
                         .chartYScale(domain: 0...21)
+                        .dateAxis(days: 30)
                         .frame(height: 160)
                         if let mean = Stats.mean(history.suffix(7).map(\.value)) {
                             Text(String(format: "Moyenne 7 jours : %.1f / 21", mean)).font(.caption).foregroundStyle(.secondary)

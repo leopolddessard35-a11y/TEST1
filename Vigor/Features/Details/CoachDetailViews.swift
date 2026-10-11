@@ -58,6 +58,7 @@ struct ReadinessDetailView: View {
                                     .cornerRadius(3)
                             }
                             .chartYScale(domain: 0...100)
+                            .dateAxis(days: 30)
                             .frame(height: 160)
                         }
                     }
@@ -121,6 +122,7 @@ struct LoadDetailView: View {
                             }
                         }
                         .chartForegroundStyleScale(["Condition": Theme.recovery, "Fatigue": Theme.strain, "Forme": Theme.sleep])
+                        .dateAxis(days: days)
                         .frame(height: 240)
                     }
                 }

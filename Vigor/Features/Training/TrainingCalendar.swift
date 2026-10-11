@@ -198,11 +198,11 @@ struct TrainingCalendarCard: View {
                     Divider().frame(height: 44)
                     stat(value: "\(sessionCount)", unit: (Double(minutes) / 60).hoursText, title: "Ce mois", symbol: nil)
                 }
+                // Respiration entre les chiffres et le calendrier.
+                Divider().padding(.vertical, 6)
                 if expanded {
                     Text("Une semaine compte dans la série à partir de \(TrainingCalendar.weeklyTarget) séances.")
                         .font(.caption2).foregroundStyle(.secondary)
-
-                    Divider()
 
                     HStack {
                         Image(systemName: "calendar").foregroundStyle(Theme.accent)

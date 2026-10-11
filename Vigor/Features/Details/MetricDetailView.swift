@@ -234,6 +234,7 @@ struct MetricDetailView: View {
                             }
                         }
                         .chartYScale(domain: .automatic(includesZero: kind == .steps))
+                        .dateAxis(days: days)
                         .frame(height: 220)
                         if kind != .steps {
                             Text("Bande colorée : ta zone normale (médiane ± écart robuste sur 60 jours). Trous = jours sans donnée\(missing > 0 ? " (\(missing) sur la période)" : ""). Zones grisées : événements (maladie, voyage, travaux, chaussures).")
