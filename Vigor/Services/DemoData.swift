@@ -31,7 +31,6 @@ enum DemoData {
                 record.bedtime = bed.addingTimeInterval(Double(bedMinutes) * 60)
                 record.wakeTime = record.bedtime?.addingTimeInterval((record.sleepHours ?? 7.5) * 3600 + 1800)
             }
-            if offset < 10 { record.waterMl = Double.random(in: 1500...3200, using: &random) }
             let drift: Double = Double(120 - offset) * 0.01
             let noise: Double = Double.random(in: -0.3...0.3, using: &random)
             record.weightKg = 72 + drift + noise
@@ -140,7 +139,7 @@ enum DemoData {
             }
         }
 
-        // Chaussures, sorties course (avant la blessure) et journal du pied gauche.
+        // Chaussures, sorties course et symptômes fictifs au pied.
         let shoeA = Shoe(name: "Pegasus 41", initialKm: 420, isDefault: true)
         let shoeB = Shoe(name: "Novablast 5", initialKm: 80)
         context.insert(shoeA)
@@ -189,7 +188,7 @@ enum DemoData {
 
         // Échéances.
         let goals: [(String, Int, Int, Sport, Double, GoalPriority)] = [
-            ("The Traka 100", 2027, 4, .cycling, 100, .a),
+            ("Gravel 100 km (démo)", 2027, 4, .cycling, 100, .a),
             ("Semi-marathon", 2027, 3, .running, 21.1, .b),
             ("Sortie 200 km", 2027, 6, .cycling, 200, .b),
             ("Trail 30 km", 2027, 9, .running, 30, .c),
@@ -200,9 +199,9 @@ enum DemoData {
             }
         }
 
-        // Ta blessure actuelle, pour voir l'adaptation du plan.
+        // Une blessure fictive, pour voir l'adaptation du plan.
         if let injuryStart = calendar.date(byAdding: .day, value: -10, to: today) {
-            context.insert(Injury(title: "Ischio gauche (démo)", muscles: [.hamstrings], affectsRunning: true,
+            context.insert(Injury(title: "Blessure de démonstration", muscles: [.hamstrings], affectsRunning: true,
                                   affectsCycling: false, severity: 2, start: injuryStart))
         }
         try context.save()
@@ -210,6 +209,10 @@ enum DemoData {
 
     /// Efface toutes les données de l'app (le profil est conservé).
     static func clear(_ context: ModelContext) throws {
+        try context.delete(model: FoodItem.self)
+        try context.delete(model: Experiment.self)
+        try context.delete(model: WorkoutRoutine.self)
+        try context.delete(model: CustomExercise.self)
         try context.delete(model: DailyWellness.self)
         try context.delete(model: CardioActivity.self)
         try context.delete(model: StrengthSet.self)

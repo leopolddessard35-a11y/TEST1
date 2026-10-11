@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import Charts
+import Combine
 
 /// Écran autonome (conservé) : enveloppe le contenu nutrition.
 struct NutritionView: View {
@@ -19,8 +20,11 @@ struct NutritionView: View {
 struct NutritionContent: View {
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
+    @Environment(\.scenePhase) private var scenePhase
     @Query(sort: \FoodEntry.date) private var entries: [FoodEntry]
     @State private var day = Calendar.current.startOfDay(for: .now)
+    /// Vrai tant que le jour affiché est « aujourd'hui » : il suit alors le passage de minuit.
+    @State private var followsToday = true
     @State private var adding = false
 
     var body: some View {
@@ -37,6 +41,10 @@ struct NutritionContent: View {
                         MacroSummaryTile(targets: targets, totals: totals)
                     }
                     .buttonStyle(.plain)
+                } else {
+                    EmptyStateCard(title: "Objectifs du jour indisponibles",
+                                   message: "Renseigne ton poids et ta taille dans Réglages → Profil et objectif pour calculer tes calories et tes macros.",
+                                   symbol: "person.crop.circle.badge.questionmark")
                 }
 
                 Button { adding = true } label: {
@@ -46,6 +54,12 @@ struct NutritionContent: View {
                 }
                 .buttonStyle(.glassProminent)
                 .controlSize(.large)
+
+                if dayEntries.isEmpty {
+                    EmptyStateCard(title: Calendar.current.isDateInToday(day) ? "Aucun repas noté aujourd'hui" : "Aucun repas noté ce jour-là",
+                                   message: "Touche « Ajouter un aliment » : recherche, scan du code-barres ou tes favoris en un tap.",
+                                   symbol: "fork.knife")
+                }
 
                 ForEach(Meal.allCases) { meal in
                     let items = dayEntries.filter { $0.meal == meal }
@@ -72,6 +86,22 @@ struct NutritionContent: View {
         .sheet(isPresented: $adding) {
             AddFoodView(meal: Calendar.current.isDateInToday(day) ? Meal.suggested() : .lunch, day: day) { app.dataVersion += 1 }
         }
+        .onAppear { rollOverToToday() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { rollOverToToday() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: RunLoop.main)) { _ in
+            rollOverToToday()
+        }
+        .onChange(of: day) { _, newDay in
+            followsToday = Calendar.current.isDateInToday(newDay)
+        }
+    }
+
+    /// Si « aujourd'hui » était affiché, on passe au nouveau jour après minuit.
+    private func rollOverToToday() {
+        let today = Calendar.current.startOfDay(for: .now)
+        if followsToday && day != today { day = today }
     }
 }
 
@@ -161,9 +191,7 @@ private struct MealCard: View {
                 HStack {
                     Label(meal.label, systemImage: meal.symbol).font(.headline)
                     Spacer()
-                    if !entries.isEmpty {
-                        Text("\(NutritionView.totals(of: entries, day: .now).kcal.noDecimal) kcal").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
-                    }
+                    Text("\(NutritionView.totals(of: entries, day: .now).kcal.noDecimal) kcal").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
                 }
                 ForEach(entries) { entry in
                     HStack {
@@ -181,8 +209,12 @@ private struct MealCard: View {
                                 app.dataVersion += 1
                             }
                         } label: {
-                            Image(systemName: "ellipsis.circle").foregroundStyle(.secondary)
+                            Image(systemName: "ellipsis.circle")
+                                .foregroundStyle(.secondary)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
                         }
+                        .accessibilityLabel("Options pour \(entry.name)")
                     }
                 }
             }
@@ -243,7 +275,7 @@ struct EnergyBalanceCard: View {
                 HStack {
                     StatTile(title: "Apport moyen 14 j", value: intake14.map { "\($0.noDecimal) kcal" } ?? "–")
                     StatTile(title: "Dépense (\(method))", value: expenditure.map { "\($0.noDecimal) kcal" } ?? "–")
-                    StatTile(title: "Poids 14 j", value: change.map { String(format: "%+.1f kg", $0) } ?? "–")
+                    StatTile(title: "Poids 14 j", value: change.map { "\($0.formatted(.number.precision(.fractionLength(1)).sign(strategy: .always()))) kg" } ?? "–")
                 }
                 Text(verdict(intake: intake14, change: change)).font(.footnote)
             }

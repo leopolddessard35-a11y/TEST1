@@ -8,6 +8,7 @@ struct CiqualImportView: View {
     @State private var store = CiqualStore.shared
     @State private var address = CiqualStore.defaultURLs.first ?? ""
     @State private var importing = false
+    @State private var confirmRemove = false
 
     var body: some View {
         List {
@@ -47,10 +48,12 @@ struct CiqualImportView: View {
                     Label(store.isInstalled ? "Mettre à jour depuis l'ANSES" : "Télécharger depuis l'ANSES", systemImage: "arrow.down.circle.fill")
                 }
                 .disabled(store.isWorking)
-                TextField("Adresse de l'archive XML", text: $address, axis: .vertical)
-                    .font(.caption.monospaced())
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
+                DisclosureGroup("Avancé") {
+                    TextField("Adresse de l'archive XML", text: $address, axis: .vertical)
+                        .font(.caption.monospaced())
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
             } header: {
                 Text("1. Téléchargement direct")
             } footer: {
@@ -74,7 +77,13 @@ struct CiqualImportView: View {
 
             if store.isInstalled {
                 Section {
-                    Button("Supprimer la table", role: .destructive) { store.remove() }
+                    Button("Supprimer la table", role: .destructive) { confirmRemove = true }
+                        .confirmationDialog("Supprimer la table CIQUAL ?", isPresented: $confirmRemove, titleVisibility: .visible) {
+                            Button("Supprimer", role: .destructive) { store.remove() }
+                            Button("Annuler", role: .cancel) {}
+                        } message: {
+                            Text("Les aliments déjà ajoutés à ton journal sont conservés. Tu pourras réinstaller la table à tout moment.")
+                        }
                 } footer: {
                     Text("Table de composition nutritionnelle des aliments CIQUAL, ANSES. Licence ouverte Etalab. Valeurs pour 100 g ; « traces » compte pour 0 et « < x » pour la moitié du seuil.")
                 }

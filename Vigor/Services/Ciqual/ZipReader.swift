@@ -65,6 +65,8 @@ enum ZipReader {
         let extraLength = Int(u16(bytes, header + 28))
         let start = header + 30 + nameLength + extraLength
         guard start + entry.compressedSize <= bytes.count else { throw ZipError.corrupted }
+        // Entrée vide (fichier de 0 octet, dossier) : rien à décompresser.
+        if entry.uncompressedSize == 0 { return Data() }
 
         switch entry.method {
         case 0:

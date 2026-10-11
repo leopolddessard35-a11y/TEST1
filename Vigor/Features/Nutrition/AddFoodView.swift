@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import VisionKit
+import AVFoundation
 
 /// Ajout d'un aliment, pensé pour aller vite :
 /// une seule liste (recherche + récents + favoris), ajout en un tap de ta portion habituelle,
@@ -19,9 +20,14 @@ struct AddFoodView: View {
     @State private var results: [FoodProduct] = []
     @State private var isLoading = false
     @State private var error: String?
+    @State private var scanError: String?
+    /// `nil` tant que l'accès à la caméra n'a pas été demandé.
+    @State private var cameraGranted: Bool?
     @State private var selected: FoodProduct?
     @State private var manualBarcode = ""
     @State private var creatingCustom = false
+    /// Aliment créé à la main, dont on ouvre la quantité une fois le formulaire fermé.
+    @State private var pendingCustom: FoodProduct?
     @State private var lastScanned: String?
     @State private var added: [String] = []
     @State private var installingCiqual = false
@@ -71,10 +77,17 @@ struct AddFoodView: View {
             .sheet(isPresented: $installingCiqual) {
                 NavigationStack { CiqualImportView(isSheet: true) }
             }
-            .sheet(isPresented: $creatingCustom) {
-                CustomFoodForm { product in
-                    creatingCustom = false
+            .sheet(isPresented: $creatingCustom, onDismiss: {
+                // Une seule feuille à la fois : la quantité s'ouvre après la fermeture du formulaire.
+                if let product = pendingCustom {
+                    pendingCustom = nil
                     selected = product
+                }
+            }) {
+                CustomFoodForm { product in
+                    saveCustom(product)
+                    pendingCustom = product
+                    creatingCustom = false
                 }
             }
             .sensoryFeedback(.success, trigger: added.count)
@@ -89,21 +102,28 @@ struct AddFoodView: View {
                 HStack {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                     TextField("Rechercher un aliment ou une marque", text: $query)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
                         .submitLabel(.search)
                         .onSubmit { Task { await search() } }
+                        .onChange(of: query) {
+                            results = []
+                            error = nil
+                        }
                     if isLoading { ProgressView() }
                 }
                 Button {
-                    scanning = true
+                    Task { await openScanner() }
                 } label: {
                     Label("Scanner un code-barres", systemImage: "barcode.viewfinder").font(.headline)
                 }
             }
 
             if query.isEmpty {
+                if !ciqual.isInstalled { ciqualSuggestion }
                 let frequent = recents.filter { $0.useCount >= 3 }.sorted { $0.useCount > $1.useCount }.prefix(6)
                 if !frequent.isEmpty {
-                    Section("Favoris · un tap = ta portion habituelle") {
+                    Section("Favoris · + = ta portion habituelle") {
                         ForEach(Array(frequent)) { item in quickRow(item) }
                     }
                 }
@@ -118,7 +138,8 @@ struct AddFoodView: View {
             } else {
                 let generic = ciqual.search(query)
                 let reference = generic.isEmpty ? CommonFoods.search(query) : []
-                let matchingRecents = recents.filter { $0.name.localizedCaseInsensitiveContains(query) }
+                let needle = CiqualStore.fold(query.trimmingCharacters(in: .whitespaces))
+                let matchingRecents = recents.filter { CiqualStore.fold($0.name).contains(needle) }
                 if !matchingRecents.isEmpty {
                     Section("Déjà mangés") {
                         ForEach(matchingRecents.prefix(8)) { item in quickRow(item) }
@@ -134,15 +155,7 @@ struct AddFoodView: View {
                         ForEach(reference) { product in productRow(product) }
                     }
                 }
-                if !ciqual.isInstalled {
-                    Section {
-                        Button { installingCiqual = true } label: {
-                            Label("Ajouter 3 000 aliments génériques (table CIQUAL)", systemImage: "leaf.fill")
-                        }
-                    } footer: {
-                        Text("Riz, viandes, légumes, plats… sans code-barres, au gramme près, hors ligne.")
-                    }
-                }
+                if !ciqual.isInstalled { ciqualSuggestion }
                 if !results.isEmpty {
                     Section("Open Food Facts") {
                         ForEach(results) { product in productRow(product) }
@@ -155,6 +168,32 @@ struct AddFoodView: View {
             }
             if let error { Section { Text(error).foregroundStyle(Theme.warning) } }
         }
+    }
+
+    /// Proposition d'installer la table CIQUAL (aliments sans code-barres).
+    private var ciqualSuggestion: some View {
+        Section {
+            Button { installingCiqual = true } label: {
+                Label("Ajouter 3 000 aliments génériques (table CIQUAL)", systemImage: "leaf.fill")
+            }
+        } footer: {
+            Text("Riz, viandes, légumes, plats… sans code-barres, au gramme près, hors ligne.")
+        }
+    }
+
+    /// Enregistre tout de suite l'aliment créé à la main : il reste disponible même si la quantité est annulée.
+    private func saveCustom(_ product: FoodProduct) {
+        let item = FoodItem(key: product.key, name: product.name, brand: product.brand, barcode: product.barcode,
+                            source: product.source, kcal100: product.kcal100, protein100: product.protein100,
+                            carbs100: product.carbs100, fat100: product.fat100)
+        item.fiber100 = product.fiber100
+        item.sugar100 = product.sugar100
+        item.saturatedFat100 = product.saturatedFat100
+        item.salt100 = product.salt100
+        item.servingGrams = product.servingGrams
+        item.lastUsed = .now
+        context.insert(item)
+        try? context.save()
     }
 
     /// Ligne d'un aliment connu : tap sur « + » = ajout immédiat de la portion habituelle.
@@ -200,9 +239,25 @@ struct AddFoodView: View {
 
     // MARK: Scan
 
+    /// Demande l'accès à la caméra avant de vérifier la disponibilité du scanner.
+    private func openScanner() async {
+        scanError = nil
+        scanning = true
+        if cameraGranted != true {
+            cameraGranted = await AVCaptureDevice.requestAccess(for: .video)
+        }
+    }
+
     @ViewBuilder private var scanView: some View {
         VStack(spacing: 12) {
-            if DataScannerViewController.isSupported && DataScannerViewController.isAvailable {
+            if cameraGranted == nil {
+                ProgressView("Accès à la caméra…")
+                    .frame(maxWidth: .infinity, minHeight: 200)
+            } else if cameraGranted == false {
+                ContentUnavailableView("Caméra non autorisée",
+                                       systemImage: "camera.badge.ellipsis",
+                                       description: Text("Autorise la caméra pour Vigor dans les Réglages de l'iPhone, ou tape le code-barres ci-dessous."))
+            } else if DataScannerViewController.isSupported && DataScannerViewController.isAvailable {
                 BarcodeScannerView { code in
                     guard code != lastScanned else { return }
                     lastScanned = code
@@ -214,7 +269,7 @@ struct AddFoodView: View {
             } else {
                 ContentUnavailableView("Scanner indisponible",
                                        systemImage: "barcode.viewfinder",
-                                       description: Text("La caméra n'est pas accessible (simulateur ou autorisation refusée). Tape le code-barres ci-dessous."))
+                                       description: Text("Le scanner n'est pas disponible sur cet appareil (simulateur, caméra occupée ou restreinte). Tape le code-barres ci-dessous."))
             }
             HStack {
                 TextField("Code-barres", text: $manualBarcode)
@@ -226,8 +281,11 @@ struct AddFoodView: View {
             }
             .padding(.horizontal)
             if isLoading { ProgressView("Recherche du produit…") }
-            if let error { Text(error).font(.footnote).foregroundStyle(Theme.warning).padding(.horizontal) }
-            Button("Retour à la liste") { scanning = false }
+            if let scanError { Text(scanError).font(.footnote).foregroundStyle(Theme.warning).padding(.horizontal) }
+            Button("Retour à la liste") {
+                scanning = false
+                scanError = nil
+            }
                 .buttonStyle(.glass)
             Spacer()
         }
@@ -235,15 +293,16 @@ struct AddFoodView: View {
 
     private func lookup(barcode: String) async {
         isLoading = true
-        error = nil
+        scanError = nil
         defer { isLoading = false }
         do {
             selected = try await OpenFoodFacts.product(barcode: barcode)
             scanning = false
         } catch {
-            self.error = error.localizedDescription
-            lastScanned = nil
+            scanError = error.localizedDescription
         }
+        // Permet de rescanner le même produit (nouvel ajout ou nouvel essai).
+        lastScanned = nil
     }
 
     private func search() async {
@@ -253,9 +312,13 @@ struct AddFoodView: View {
         error = nil
         defer { isLoading = false }
         do {
-            results = try await OpenFoodFacts.search(text)
-            if results.isEmpty { error = "Aucun produit trouvé. Essaie la marque, ou « Créer » en haut à droite." }
+            let found = try await OpenFoodFacts.search(text)
+            // La recherche a changé pendant la requête : on ignore ce résultat périmé.
+            guard query.trimmingCharacters(in: .whitespaces) == text else { return }
+            results = found
+            if found.isEmpty { error = "Aucun produit trouvé. Essaie la marque, ou « Créer » en haut à droite." }
         } catch {
+            guard query.trimmingCharacters(in: .whitespaces) == text else { return }
             self.error = error.localizedDescription
         }
     }
@@ -313,8 +376,7 @@ struct FoodPortionView: View {
                 }
                 Section("Quantité") {
                     HStack {
-                        TextField("Grammes", value: $grams, format: .number)
-                            .keyboardType(.decimalPad)
+                        DecimalFieldNonOptional("Grammes", value: $grams)
                         Text("g").foregroundStyle(.secondary)
                     }
                     HStack {
@@ -330,7 +392,7 @@ struct FoodPortionView: View {
                     }
                 }
                 Section("Pour \(grams.noDecimal) g") {
-                    row("Calories", product.kcal100, "kcal")
+                    row("Calories", product.kcal100, "kcal", decimals: false)
                     row("Protéines", product.protein100, "g")
                     row("Glucides", product.carbs100, "g")
                     if let sugar = product.sugar100 { row("dont sucres", sugar, "g") }
@@ -354,11 +416,13 @@ struct FoodPortionView: View {
         }
     }
 
-    private func row(_ label: String, _ per100: Double, _ unit: String) -> some View {
-        HStack {
+    private func row(_ label: String, _ per100: Double, _ unit: String, decimals: Bool = true) -> some View {
+        let value = per100 * grams / 100
+        return HStack {
             Text(label)
             Spacer()
-            Text("\((per100 * grams / 100).oneDecimal) \(unit)").monospacedDigit().foregroundStyle(.secondary)
+            Text("\(decimals ? value.formatted(.number.precision(.fractionLength(1))) : value.noDecimal) \(unit)")
+                .monospacedDigit().foregroundStyle(.secondary)
         }
     }
 
@@ -443,8 +507,7 @@ struct CustomFoodForm: View {
         HStack {
             Text(label)
             Spacer()
-            TextField(label, value: value, format: .number)
-                .keyboardType(.decimalPad)
+            DecimalFieldNonOptional(label, value: value)
                 .multilineTextAlignment(.trailing)
                 .frame(width: 90)
         }

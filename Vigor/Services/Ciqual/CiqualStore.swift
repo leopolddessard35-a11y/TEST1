@@ -29,9 +29,15 @@ extension FoodProduct {
 enum CiqualParser {
     enum ParseError: LocalizedError {
         case missingFiles
+        case unreadable
 
         var errorDescription: String? {
-            "Fichiers CIQUAL introuvables : il faut l'archive XML (alim, compo, const) téléchargée sur ciqual.anses.fr."
+            switch self {
+            case .missingFiles:
+                "Fichiers CIQUAL introuvables : il faut l'archive XML (alim, compo, const) téléchargée sur ciqual.anses.fr."
+            case .unreadable:
+                "Fichier CIQUAL illisible (format XML inattendu)."
+            }
         }
     }
 
@@ -82,7 +88,7 @@ enum CiqualParser {
         // 1. Codes des constituants utiles.
         var codes: [String: Nutrient] = [:]
         if let constData = file("const_") {
-            for row in rows(constData, record: "CONST") {
+            for row in try rows(constData, record: "CONST") {
                 guard let code = row["const_code"], let name = row["const_nom_fr"] else { continue }
                 for nutrient in Nutrient.allCases where nutrient.matches(name) && !codes.values.contains(nutrient) {
                     codes[code] = nutrient
@@ -95,13 +101,13 @@ enum CiqualParser {
 
         // 2. Noms des aliments.
         var names: [String: String] = [:]
-        for row in rows(alimData, record: "ALIM") {
+        for row in try rows(alimData, record: "ALIM") {
             if let code = row["alim_code"], let name = row["alim_nom_fr"], !name.isEmpty { names[code] = name }
         }
 
         // 3. Teneurs (fichier volumineux : on ne garde que les constituants utiles).
         var values: [String: [Nutrient: Double]] = [:]
-        for row in rows(compoData, record: "COMPO", keep: { codes[$0["const_code"] ?? ""] != nil }) {
+        for row in try rows(compoData, record: "COMPO", keep: { codes[$0["const_code"] ?? ""] != nil }) {
             guard let food = row["alim_code"], let code = row["const_code"], let nutrient = codes[code],
                   let value = number(row["teneur"]) else { continue }
             values[food, default: [:]][nutrient] = value
@@ -136,12 +142,35 @@ enum CiqualParser {
         return halve ? value / 2 : value
     }
 
-    private static func rows(_ data: Data, record: String, keep: (([String: String]) -> Bool)? = nil) -> [[String: String]] {
+    /// Lit les enregistrements ; si le XML est refusé (encodage Windows-1252 mal déclaré…),
+    /// réessaie après conversion en UTF-8, sinon lève une erreur claire.
+    private static func rows(_ data: Data, record: String, keep: (([String: String]) -> Bool)? = nil) throws -> [[String: String]] {
+        if let rows = parseRows(data, record: record, keep: keep) { return rows }
+        if let text = String(data: data, encoding: .windowsCP1252),
+           let utf8 = declaringUTF8(text).data(using: .utf8),
+           let rows = parseRows(utf8, record: record, keep: keep) {
+            return rows
+        }
+        throw ParseError.unreadable
+    }
+
+    /// `nil` si l'analyse XML échoue.
+    private static func parseRows(_ data: Data, record: String, keep: (([String: String]) -> Bool)?) -> [[String: String]]? {
         let reader = RecordReader(record: record, keep: keep)
         let parser = XMLParser(data: data)
         parser.delegate = reader
-        parser.parse()
-        return reader.rows
+        return parser.parse() ? reader.rows : nil
+    }
+
+    /// Remplace l'attribut `encoding` de la déclaration XML par UTF-8 (le texte vient d'être réencodé).
+    private static func declaringUTF8(_ text: String) -> String {
+        guard let start = text.range(of: "<?xml"),
+              let end = text.range(of: "?>", range: start.upperBound..<text.endIndex) else { return text }
+        let declaration = String(text[start.lowerBound..<end.upperBound])
+        guard let regex = try? NSRegularExpression(pattern: "encoding\\s*=\\s*[\"'][^\"']*[\"']") else { return text }
+        let fixed = regex.stringByReplacingMatches(in: declaration, range: NSRange(declaration.startIndex..., in: declaration),
+                                                   withTemplate: "encoding=\"UTF-8\"")
+        return String(text[text.startIndex..<start.lowerBound]) + fixed + String(text[end.upperBound...])
     }
 
     /// Lecteur XML en flux : chaque <RECORD> devient un dictionnaire balise → texte.
@@ -191,6 +220,8 @@ final class CiqualStore {
     private(set) var progress = ""
     private(set) var lastError: String?
     @ObservationIgnored private var folded: [String] = []
+    /// Mots de chaque nom replié, pour une correspondance en début de mot (« riz » ≠ « chorizo »).
+    @ObservationIgnored private var foldedWords: [[String]] = []
 
     private init() {
         loadFromDisk()
@@ -216,14 +247,16 @@ final class CiqualStore {
         installedAt = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.modificationDate]) as? Date
     }
 
-    /// Recherche hors ligne : tous les mots doivent apparaître (accents et casse ignorés) ;
+    /// Recherche hors ligne : chaque mot tapé doit commencer un mot du nom (accents et casse ignorés) ;
     /// les noms qui commencent par le premier mot et les plus courts passent devant.
     func search(_ query: String, limit: Int = 20) -> [CiqualFood] {
-        let tokens = Self.fold(query).split(separator: " ").map(String.init).filter { $0.count >= 2 }
+        let tokens = Self.words(Self.fold(query)).filter { $0.count >= 2 }
         guard !tokens.isEmpty else { return [] }
         var hits: [(food: CiqualFood, rank: Int)] = []
-        for (index, name) in folded.enumerated() where tokens.allSatisfy({ name.contains($0) }) {
-            let rank = (name.hasPrefix(tokens[0]) ? 0 : 1000) + name.count
+        for (index, words) in foldedWords.enumerated()
+        where tokens.allSatisfy({ token in words.contains { $0.hasPrefix(token) } }) {
+            let name = folded[index]
+            let rank = ((words.first?.hasPrefix(tokens[0]) ?? false) ? 0 : 1000) + name.count
             hits.append((foods[index], rank))
         }
         return hits.sorted { $0.rank < $1.rank }.prefix(limit).map(\.food)
@@ -244,7 +277,7 @@ final class CiqualStore {
                 lastError = "Téléchargement refusé (code \(http.statusCode)). Importe le fichier à la main (voir ci-dessous)."
                 return
             }
-            try await install(zipOrXML: [("ciqual.zip", data)])
+            try await install { [("ciqual.zip", data)] }
         } catch {
             lastError = error.localizedDescription
         }
@@ -256,14 +289,9 @@ final class CiqualStore {
         lastError = nil
         progress = "Lecture des fichiers…"
         defer { isWorking = false; progress = "" }
-        var payloads: [(String, Data)] = []
-        for url in urls {
-            let accessing = url.startAccessingSecurityScopedResource()
-            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-            if let data = try? Data(contentsOf: url) { payloads.append((url.lastPathComponent, data)) }
-        }
         do {
-            try await install(zipOrXML: payloads)
+            // Lecture des fichiers hors du fil principal (archive de plusieurs Mo).
+            try await install { Self.read(urls) }
         } catch {
             lastError = error.localizedDescription
         }
@@ -275,9 +303,22 @@ final class CiqualStore {
         installedAt = nil
     }
 
-    private func install(zipOrXML payloads: [(String, Data)]) async throws {
+    nonisolated private static func read(_ urls: [URL]) -> [(String, Data)] {
+        var payloads: [(String, Data)] = []
+        for url in urls {
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            if let data = try? Data(contentsOf: url) { payloads.append((url.lastPathComponent, data)) }
+        }
+        return payloads
+    }
+
+    /// `load` fournit les fichiers (.zip ou .xml) ; lecture, décompression, analyse et écriture se font hors du fil principal.
+    private func install(load: @escaping @Sendable () throws -> [(String, Data)]) async throws {
         progress = "Analyse de la table (environ 3 000 aliments)…"
+        let target = fileURL
         let foods: [CiqualFood] = try await Task.detached(priority: .userInitiated) {
+            let payloads = try load()
             var files: [String: Data] = [:]
             for (name, data) in payloads {
                 let bytes = [UInt8](data)
@@ -289,11 +330,12 @@ final class CiqualStore {
                     files[name] = data
                 }
             }
-            return try CiqualParser.parse(files: files)
+            let parsed = try CiqualParser.parse(files: files)
+            guard !parsed.isEmpty else { throw CiqualParser.ParseError.missingFiles }
+            let data = try JSONEncoder().encode(parsed)
+            try data.write(to: target, options: .atomic)
+            return parsed
         }.value
-        guard !foods.isEmpty else { throw CiqualParser.ParseError.missingFiles }
-        let data = try JSONEncoder().encode(foods)
-        try data.write(to: fileURL, options: .atomic)
         setFoods(foods)
         installedAt = .now
     }
@@ -301,10 +343,21 @@ final class CiqualStore {
     private func setFoods(_ list: [CiqualFood]) {
         foods = list
         folded = list.map { Self.fold($0.name) }
+        foldedWords = folded.map { Self.words($0) }
     }
 
+    /// Minuscules sans accents ; « œ » → « oe », « æ » → « ae » (« bœuf » = « boeuf »).
     nonisolated static func fold(_ text: String) -> String {
         text.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "fr_FR"))
+            .replacingOccurrences(of: "œ", with: "oe")
+            .replacingOccurrences(of: "Œ", with: "oe")
+            .replacingOccurrences(of: "æ", with: "ae")
+            .replacingOccurrences(of: "Æ", with: "ae")
             .replacingOccurrences(of: ",", with: " ")
+    }
+
+    /// Découpe un texte replié en mots (lettres et chiffres).
+    nonisolated static func words(_ folded: String) -> [String] {
+        folded.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
     }
 }

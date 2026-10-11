@@ -35,12 +35,12 @@ enum Exporter {
         let wellness = try context.fetch(FetchDescriptor<DailyWellness>(sortBy: [SortDescriptor(\.day)]))
         try write("sante_quotidienne",
                   header: ["jour", "sommeil_h", "coucher", "lever", "vfc_sdnn_ms", "vfc_rmssd_ms", "fc_repos", "respiration",
-                           "pas", "energie_active_kcal", "poids_kg", "vo2max", "score_sommeil", "readiness_garmin", "eau_ml"],
+                           "pas", "energie_active_kcal", "poids_kg", "vo2max", "score_sommeil", "readiness_garmin"],
                   rows: wellness.map { record in
                       [date(record.day), number(record.sleepHours), date(record.bedtime), date(record.wakeTime), number(record.hrvMs),
                        number(record.hrvRMSSD), number(record.restingHeartRate), number(record.respiration), number(record.steps),
                        number(record.activeEnergyKcal), number(record.weightKg), number(record.vo2Max), number(record.sleepScore),
-                       number(record.garminReadiness), number(record.waterMl)]
+                       number(record.garminReadiness)]
                   })
 
         let activities = try context.fetch(FetchDescriptor<CardioActivity>(sortBy: [SortDescriptor(\.start)]))
@@ -74,7 +74,7 @@ enum Exporter {
         let foods = try context.fetch(FetchDescriptor<FoodEntry>(sortBy: [SortDescriptor(\.date)]))
         try write("repas", header: ["date", "repas", "aliment", "marque", "grammes", "kcal", "proteines_g", "glucides_g", "lipides_g"],
                   rows: foods.map { entry in
-                      [date(entry.date), entry.mealRaw, entry.name, entry.brand, number(entry.grams), number(entry.kcal),
+                      [date(entry.date), entry.meal.label, entry.name, entry.brand, number(entry.grams), number(entry.kcal),
                        number(entry.protein), number(entry.carbs), number(entry.fat)]
                   })
 

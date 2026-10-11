@@ -96,8 +96,8 @@ enum OpenFoodFacts {
             switch self {
             case .notFound: "Produit introuvable dans Open Food Facts. Tu peux le créer à la main."
             case .incomplete: "Ce produit n'a pas de valeurs nutritionnelles complètes. Tu peux le créer à la main."
-            case .network(let code): "Open Food Facts ne répond pas (code \(code)). Réessaie dans un instant ou utilise les aliments courants."
-            case .offline: "Pas de connexion Internet. Les aliments courants, favoris et récents restent disponibles."
+            case .network: "Open Food Facts ne répond pas. Réessaie dans un instant, ou cherche dans la table CIQUAL et tes favoris."
+            case .offline: "Pas de connexion Internet. La table CIQUAL, tes favoris et tes aliments récents restent disponibles."
             case .busy: "Open Food Facts est surchargé. Réessaie dans une minute, ou scanne le code-barres (plus fiable)."
             }
         }
@@ -166,10 +166,12 @@ enum OpenFoodFacts {
 
         let names: [String] = [raw.productNameFR?.text, raw.productName?.text].compactMap { $0 }
         let name = names.first { !$0.isEmpty } ?? "Produit sans nom"
-        let barcode = raw.code?.text ?? fallbackBarcode
+        let code = raw.code?.text?.trimmingCharacters(in: .whitespaces)
+        let barcode = (code?.isEmpty == false ? code : nil) ?? fallbackBarcode
         let brand = raw.brands?.text?.split(separator: ",").first.map { String($0).trimmingCharacters(in: .whitespaces) } ?? ""
         return FoodProduct(
-            key: "off|\(barcode ?? name)",
+            // Sans code-barres, un identifiant unique évite les doublons d'id dans les listes.
+            key: barcode.map { "off|\($0)" } ?? "off|\(name)|\(UUID().uuidString)",
             barcode: barcode,
             name: name,
             brand: brand,
@@ -188,7 +190,7 @@ enum OpenFoodFacts {
     private static func get(_ url: URL, attempt: Int = 0) async throws -> Data {
         var request = URLRequest(url: url)
         // Open Food Facts demande un User-Agent « App/Version (contact) ».
-        request.setValue("Vigor/0.8 (app iOS personnelle; contact: vigor-app)", forHTTPHeaderField: "User-Agent")
+        request.setValue("Vigor/1.0 (app iOS personnelle)", forHTTPHeaderField: "User-Agent")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.timeoutInterval = 20
         let data: Data

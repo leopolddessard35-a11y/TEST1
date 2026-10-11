@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UserNotifications
 
 /// Les 4 groupes de réglages.
 enum SettingsPage: String, Hashable {
@@ -25,7 +26,7 @@ struct SettingsView: View {
                         link(profile, .profile, "Profil et objectif", "person.crop.circle", "Course, morphologie, seuils, disponibilités")
                         link(profile, .connections, "Connexions", "link", "Garmin via Intervals.icu, Apple Santé")
                         link(profile, .notifications, "Notifications", "bell", "Plan du matin, repas, alertes")
-                        link(profile, .data, "Données", "externaldrive", "Chaussures, export, démo")
+                        link(profile, .data, "Données", "externaldrive", "Aliments CIQUAL, chaussures, export")
                     }
                 } else {
                     ProgressView()
@@ -62,9 +63,14 @@ struct SettingsView: View {
 private struct ProfileForm: View {
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
+    @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
     @Bindable var profile: AthleteProfile
     let page: SettingsPage
     @State private var apiKey = ""
+    @State private var notificationsDenied = false
+    @State private var confirmLoadDemo = false
+    @State private var confirmClearData = false
     @AppStorage(NotificationScheduler.Keys.morningEnabled) private var morningEnabled = true
     @AppStorage(NotificationScheduler.Keys.morningMinutes) private var morningMinutes = 7 * 60 + 15
     @AppStorage(NotificationScheduler.Keys.eveningEnabled) private var eveningEnabled = false
@@ -93,8 +99,7 @@ private struct ProfileForm: View {
                 }
                 numberField("Taille (cm)", value: $profile.heightCm)
                 Stepper("Année de naissance : \(profile.birthYear > 0 ? String(profile.birthYear) : "–")",
-                        value: $profile.birthYear, in: 1940...2015)
-                    .onAppear { if profile.birthYear == 0 { profile.birthYear = 1995 } }
+                        value: birthYearBinding, in: 1940...2015)
                 numberField("Poids (kg)", value: $profile.weightKg)
             } header: {
                 Text("Morphologie")
@@ -116,7 +121,7 @@ private struct ProfileForm: View {
             } header: {
                 Text("Seuils")
             } footer: {
-                Text("0 = inconnu. La FTP sert à calculer la charge de tes sorties avec puissance. Re-teste-la dès que ta blessure le permet.")
+                Text("0 = inconnu. La FTP sert à calculer la charge de tes sorties avec puissance. Re-teste-la régulièrement pour garder des zones justes.")
             }
             }
             if page == .connections {
@@ -134,10 +139,19 @@ private struct ProfileForm: View {
             } header: {
                 Text("Garmin via Intervals.icu")
             } footer: {
-                Text("1. Crée un compte gratuit sur intervals.icu et relie Garmin Connect (Settings → Connections).\n2. Settings → Developer Settings : copie l'« Athlete ID » et génère une « API Key ».\n3. Colle-les ici, puis synchronise. Tu récupères tes séances complètes, la VFC nocturne, le score de sommeil, la readiness Garmin et ton calendrier d'entraînement.")
+                Text("1. Crée un compte gratuit sur intervals.icu et relie Garmin Connect (Settings → Connections).\n2. Settings → Developer Settings : copie l'« Athlete ID » et génère une « API Key ».\n3. Colle-les ici, puis synchronise. Tu récupères tes séances complètes, la VFC nocturne, le score de sommeil, la récupération Garmin et ton calendrier d'entraînement.")
             }
             }
             if page == .notifications {
+            if notificationsDenied {
+                Section {
+                    Label("Les notifications sont désactivées pour Vigor dans les réglages de l'iPhone : aucun rappel ne sera affiché.", systemImage: "bell.slash")
+                        .foregroundStyle(Theme.warning)
+                    Button("Ouvrir les réglages de l'iPhone") {
+                        if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                    }
+                }
+            }
             Section {
                 Toggle("Plan du matin", isOn: $morningEnabled)
                 if morningEnabled {
@@ -181,34 +195,84 @@ private struct ProfileForm: View {
                     Label(app.isSyncing ? "Synchronisation…" : "Tout synchroniser (Apple Santé + Intervals.icu)", systemImage: "arrow.triangle.2.circlepath")
                 }
                 .disabled(app.isSyncing)
-                Label("Muscu : séances dans Activité → Muscu (historique Hevy importable une fois)", systemImage: "dumbbell")
+                Label("Musculation : séances dans Sport → Musculation (historique Hevy importable une fois)", systemImage: "dumbbell")
             }
             }
+            #if DEBUG
             if page == .data {
             Section {
-                Button("Charger des données de démo") {
-                    try? DemoData.load(into: context)
-                    app.dataVersion += 1
-                    app.statusMessage = "Données de démo chargées : 4 mois de sommeil, VFC, vélo, muscu PPL et repas."
-                }
-                Button("Effacer toutes les données", role: .destructive) {
-                    try? DemoData.clear(context)
-                    app.dataVersion += 1
-                }
+                Button("Charger des données de démo") { confirmLoadDemo = true }
+                    .confirmationDialog("Charger les données de démo ?", isPresented: $confirmLoadDemo, titleVisibility: .visible) {
+                        Button("Remplacer mes données par la démo", role: .destructive) { loadDemo() }
+                        Button("Annuler", role: .cancel) {}
+                    } message: {
+                        Text("Toutes tes données actuelles (séances, mesures, repas, aliments, programmes…) seront effacées puis remplacées. Ton profil est conservé.")
+                    }
+                Button("Effacer toutes les données", role: .destructive) { confirmClearData = true }
+                    .confirmationDialog("Effacer toutes les données ?", isPresented: $confirmClearData, titleVisibility: .visible) {
+                        Button("Tout effacer", role: .destructive) { clearData() }
+                        Button("Annuler", role: .cancel) {}
+                    } message: {
+                        Text("Séances, mesures, repas, aliments, programmes, exercices et expériences seront supprimés définitivement. Ton profil est conservé.")
+                    }
             } header: {
                 Text("Démo")
             } footer: {
-                Text("Pour essayer l'app dans le simulateur, sans iPhone ni Apple Santé. « Effacer » supprime séances, mesures et repas, pas ton profil.")
+                Text("Pour essayer l'app dans le simulateur, sans iPhone ni Apple Santé. « Effacer » supprime séances, mesures, repas, aliments, programmes et expériences, pas ton profil.")
             }
             }
+            #endif
         }
         .scrollContentBackground(.hidden)
         .background(AppBackground())
         .onAppear { apiKey = app.intervalsAPIKey }
+        .task { await refreshNotificationStatus() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await refreshNotificationStatus() } }
+        }
         .onChange(of: morningEnabled) { app.dataVersion += 1 }
         .onChange(of: eveningEnabled) { app.dataVersion += 1 }
-        .onDisappear { try? context.save() }
+        .onDisappear {
+            try? context.save()
+            app.dataVersion += 1
+        }
     }
+
+    /// Année de naissance : « – » tant qu'elle n'est pas saisie ; le premier tap démarre à 1995.
+    private var birthYearBinding: Binding<Int> {
+        Binding(
+            get: { profile.birthYear == 0 ? 1995 : profile.birthYear },
+            set: { newValue in
+                profile.birthYear = profile.birthYear == 0 ? 1995 : newValue
+            })
+    }
+
+    private func refreshNotificationStatus() async {
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        notificationsDenied = settings.authorizationStatus == .denied
+    }
+
+    #if DEBUG
+    private func loadDemo() {
+        do {
+            try DemoData.load(into: context)
+            app.statusMessage = "Données de démo chargées : 4 mois de sommeil, VFC, vélo, muscu PPL et repas."
+        } catch {
+            app.statusMessage = "Chargement de la démo impossible : \(error.localizedDescription)"
+        }
+        app.dataVersion += 1
+    }
+
+    private func clearData() {
+        do {
+            try DemoData.clear(context)
+            app.statusMessage = "Toutes les données ont été effacées (profil conservé)."
+        } catch {
+            app.statusMessage = "Effacement impossible : \(error.localizedDescription)"
+        }
+        app.dataVersion += 1
+    }
+    #endif
 
     @ViewBuilder
     private func mealRow(_ title: String, isOn: Binding<Bool>, minutes: Binding<Int>) -> some View {
@@ -236,8 +300,7 @@ private struct ProfileForm: View {
         HStack {
             Text(title)
             Spacer()
-            TextField(title, value: value, format: .number)
-                .keyboardType(.decimalPad)
+            DecimalFieldNonOptional(title, value: value)
                 .multilineTextAlignment(.trailing)
                 .frame(width: 90)
         }
@@ -275,13 +338,17 @@ private struct ShoesSection: View {
                             context.delete(shoe)
                             save()
                         }
-                    } label: { Image(systemName: "ellipsis.circle") }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("Options de \(shoe.name)")
                 }
             }
             HStack {
                 TextField("Nouvelle paire", text: $name)
-                TextField("km déjà faits", value: $initialKm, format: .number)
-                    .keyboardType(.decimalPad)
+                DecimalFieldNonOptional("km déjà faits", value: $initialKm)
                     .frame(width: 90)
                 Button("Ajouter") {
                     context.insert(Shoe(name: name, initialKm: initialKm, isDefault: shoes.allSatisfy { $0.retired }))
