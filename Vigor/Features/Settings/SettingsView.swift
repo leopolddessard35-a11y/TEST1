@@ -445,18 +445,29 @@ private struct AgendaSection: View {
     @Environment(AppModel.self) private var app
     @Bindable var profile: AthleteProfile
     private let names = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
+    private static let durations: [Int] = [30, 45, 60, 75, 90, 120, 150, 180, 240, 300, 360]
 
     var body: some View {
         Section {
-            ForEach(0..<7, id: \.self) { index in
-                let minutes = profile.weekdayMinutes[index]
-                Stepper("\(names[index]) : \(minutes == 0 ? "sans limite" : (Double(minutes) / 60).hoursText)",
-                        value: Binding(get: { minutes }, set: { update(index, $0) }), in: 0...360, step: 15)
+            // Lundi en premier, comme la semaine d'entraînement.
+            ForEach([1, 2, 3, 4, 5, 6, 0], id: \.self) { index in
+                Picker(names[index], selection: Binding(get: { profile.weekdayMinutes[index] }, set: { update(index, $0) })) {
+                    Text("Sans limite").tag(0)
+                    Text("Repos (0 min)").tag(-1)
+                    // Valeur réglée avant (pas de 15 min) : gardée dans la liste.
+                    let current = profile.weekdayMinutes[index]
+                    if current > 0, !Self.durations.contains(current) {
+                        Text((Double(current) / 60).hoursText).tag(current)
+                    }
+                    ForEach(Self.durations, id: \.self) { minutes in
+                        Text((Double(minutes) / 60).hoursText).tag(minutes)
+                    }
+                }
             }
         } header: {
             Text("Disponibilités par jour")
         } footer: {
-            Text("Ex. mercredi et jeudi à 45 min : les séances de ces jours sont raccourcies automatiquement.")
+            Text("« Repos (0 min) » : aucune séance n'est placée ce jour-là. Une durée : les séances de ce jour sont raccourcies ou placées ailleurs.")
         }
     }
 

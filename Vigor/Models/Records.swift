@@ -257,11 +257,16 @@ final class AthleteProfile {
         return values.count == 7 ? values : [0, 0, 0, 0, 0, 0, 0]
     }
 
-    /// Minutes disponibles pour un jour (calendrier : 1 = dimanche), nil = pas de contrainte.
+    /// Minutes disponibles pour un jour (calendrier : 1 = dimanche) : nil = pas de contrainte, 0 = jour sans entraînement.
+    /// Stockage : 0 = sans limite (valeur historique), −1 = repos, > 0 = minutes.
     func availableMinutes(weekday: Int) -> Int? {
         let minutes = weekdayMinutes[min(max(weekday - 1, 0), 6)]
+        if minutes < 0 { return 0 }
         return minutes > 0 ? minutes : nil
     }
+
+    /// Jours sans entraînement choisis (0 min).
+    var restWeekdays: Int { weekdayMinutes.filter { $0 < 0 }.count }
 
     var sex: Sex { Sex(rawValue: sexRaw) ?? .male }
 

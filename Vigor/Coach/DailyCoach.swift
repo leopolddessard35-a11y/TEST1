@@ -497,8 +497,12 @@ enum DailyCoach {
                              phase: input.week?.phase ?? .base, changes: &changes)
         }
 
-        // Contrainte d'agenda : minutes disponibles aujourd'hui.
-        if let available = input.availableMinutesToday, available > 0 {
+        // Contrainte d'agenda : minutes disponibles aujourd'hui (0 = jour sans entraînement choisi).
+        if input.availableMinutesToday == 0, adapted.contains(where: { $0.minutes > 0 }) {
+            adapted = []
+            changes.append("Jour sans entraînement dans tes disponibilités : pas de séance aujourd'hui.")
+            rules.append("Agenda : 0 min disponible → pas de séance")
+        } else if let available = input.availableMinutesToday, available > 0 {
             let total = adapted.reduce(0) { $0 + $1.minutes }
             if total > available {
                 let ratio = Double(available) / Double(total)

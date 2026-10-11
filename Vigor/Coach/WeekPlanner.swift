@@ -461,7 +461,10 @@ enum WeekPlanner {
             result.penalty += 3
             result.reasons.append("Muscu des jambes le même jour")
         }
-        if let availableMinutes, minutes > 0, availableMinutes < minutes {
+        if availableMinutes == 0 {
+            result.blocked = true
+            result.reasons.append("Jour sans entraînement (0 min dans tes disponibilités)")
+        } else if let availableMinutes, minutes > 0, availableMinutes < minutes {
             result.penalty += availableMinutes * 2 < minutes ? 4 : 2
             result.reasons.append("\(availableMinutes) min disponibles ce jour-là")
         }

@@ -258,7 +258,8 @@ struct CoachSnapshot {
             injuries: injuryStatuses,
             fatigueDetected: fatigueDetected)
         plannerInput.priorLoadWeeks = priorLoadWeeks
-        plannerInput.bikeSessionsPerWeek = profile.bikeSessionsPerWeek
+        // Pas plus de séances vélo que de jours où tu peux t'entraîner.
+        plannerInput.bikeSessionsPerWeek = max(1, min(profile.bikeSessionsPerWeek, 7 - profile.restWeekdays))
         // Pas d'objectif renseigné : pas de plan inventé, seulement le suivi et l'analyse.
         let hasGoal = !profile.raceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let rawPlan: SeasonPlan = hasGoal
