@@ -93,3 +93,18 @@ struct SleepTimeTests {
         #expect((21 * 60...23 * 60 + 59).contains(need.bedtimeMinutes))
     }
 }
+
+struct TrainingCalendarTests {
+    @Test func monthGridStartsOnTheFirstWeekday() {
+        let reference = DateComponents(calendar: .current, year: 2026, month: 10, day: 15).date!
+        let days = TrainingCalendar.month(containing: reference, activities: [], workouts: [], unavailabilities: [],
+                                          planned: [], weekStatus: [])
+        #expect(days.compactMap { $0 }.count == 31)
+        // Octobre 2026 commence un jeudi : 3 cases vides avec une semaine qui commence le lundi.
+        var calendar = Calendar.current
+        calendar.firstWeekday = 2
+        let mondayFirst = TrainingCalendar.month(containing: reference, activities: [], workouts: [], unavailabilities: [],
+                                                 planned: [], weekStatus: [], calendar: calendar)
+        #expect(mondayFirst.prefix(while: { $0 == nil }).count == 3)
+    }
+}

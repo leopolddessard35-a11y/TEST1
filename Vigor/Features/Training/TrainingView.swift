@@ -11,7 +11,7 @@ struct TrainingView: View {
             ScrollView {
                 SnapshotReader { profile, snapshot in
                     VStack(spacing: 12) {
-                        WeekOverviewCard(snapshot: snapshot)
+                        TrainingCalendarCard(snapshot: snapshot)
 
                         SectionHeader(title: "Musculation", symbol: "dumbbell.fill")
                         StrengthPlansSection()
