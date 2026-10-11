@@ -17,13 +17,13 @@ struct ContentView: View {
     var body: some View {
         // Barre d'onglets flottante d'iOS 26 ; l'onglet « + » (rôle recherche) est le bouton rond séparé, comme dans Bevel.
         TabView(selection: $selection) {
-            Tab("Accueil", systemImage: "house.fill", value: AppTab.today) { TodayView() }
+            Tab("Aujourd'hui", systemImage: "sun.max.fill", value: AppTab.today) { TodayView() }
             Tab("Santé", systemImage: "heart.fill", value: AppTab.health) { RecoveryView() }
-            Tab("Activité", systemImage: "figure.outdoor.cycle", value: AppTab.activity) { TrainingView() }
+            Tab("Entraînement", systemImage: "figure.outdoor.cycle", value: AppTab.activity) { TrainingView() }
             Tab("Nutrition", systemImage: "fork.knife", value: AppTab.nutrition) { NutritionView() }
             Tab("Ajouter", systemImage: "plus", value: AppTab.add, role: .search) { QuickAddView() }
         }
-        .tint(Theme.strain)
+        .tint(Theme.accent)
         .onChange(of: selection) { old, new in
             // Le « + » ouvre la feuille d'ajout rapide sans quitter l'écran en cours.
             if new == .add {

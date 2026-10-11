@@ -46,7 +46,7 @@ enum MetricKind: String, Identifiable, CaseIterable {
         switch self {
         case .sleep: Theme.sleep
         case .hrv: Theme.recovery
-        case .restingHR: Theme.warning
+        case .restingHR: Theme.accent
         case .steps, .weight: Theme.nutrition
         case .vo2max: Theme.strain
         case .respiration: Theme.sleep
@@ -276,7 +276,7 @@ struct EventBadge: View {
             .font(.system(size: 9, weight: .semibold))
             .foregroundStyle(.secondary)
             .frame(width: 18, height: 18)
-            .background(Color(uiColor: .secondarySystemGroupedBackground), in: .circle)
+            .background(Theme.card, in: .circle)
             .overlay(Circle().stroke(Color.secondary.opacity(0.25), lineWidth: 0.5))
             .padding(.top, 2)
     }

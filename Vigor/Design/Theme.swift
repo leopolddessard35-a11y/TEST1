@@ -1,26 +1,61 @@
 import SwiftUI
 
-enum Theme {
-    // Palette inspirée de Bevel : couleurs franches, lisibles sur fond clair comme sombre.
-    static let recovery = Color(red: 0.20, green: 0.78, blue: 0.47)
-    static let strain = Color(red: 1.00, green: 0.52, blue: 0.22)
-    static let sleep = Color(red: 0.42, green: 0.45, blue: 0.98)
-    static let nutrition = Color(red: 0.98, green: 0.72, blue: 0.18)
-    static let warning = Color(red: 0.96, green: 0.30, blue: 0.33)
+extension Color {
+    /// Couleur hexadécimale (« 656D4A »).
+    init(hex: UInt32) {
+        self.init(red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255, blue: Double(hex & 0xFF) / 255)
+    }
 
-    /// Dégradés des anneaux (clair → saturé), comme les cadrans de Bevel.
-    static let recoveryGradient = [Color(red: 0.62, green: 0.93, blue: 0.55), recovery]
-    static let strainGradient = [Color(red: 1.00, green: 0.80, blue: 0.36), strain]
-    static let sleepGradient = [Color(red: 0.62, green: 0.80, blue: 1.00), sleep]
-    static let nutritionGradient = [Color(red: 1.00, green: 0.88, blue: 0.45), nutrition]
+    /// Couleur qui change en mode sombre.
+    init(light: UInt32, dark: UInt32) {
+        self.init(uiColor: UIColor { traits in
+            let hex = traits.userInterfaceStyle == .dark ? dark : light
+            return UIColor(red: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
+                           blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
+        })
+    }
+}
+
+/// Palette « terre et forêt » : noyer, blé, mousse, olive.
+/// 582F0E · 7F4F24 · 936639 · A68A64 · B6AD90 · C2C5AA · A4AC86 · 656D4A · 414833 · 333D29
+enum Theme {
+    // Rôles fonctionnels. La couleur sert d'abord au STATUT : vert mousse = OK, blé = à surveiller, brique = alerte.
+    /// OK / récupéré / dans la norme.
+    static let good = Color(light: 0x656D4A, dark: 0xA4AC86)
+    /// À surveiller.
+    static let caution = Color(light: 0x936639, dark: 0xB6AD90)
+    /// Alerte (seule teinte hors palette, nécessaire pour distinguer une alerte d'un simple « à surveiller »).
+    static let alert = Color(light: 0x9C4221, dark: 0xD0805A)
+    /// Couleur de marque : boutons, onglet actif, pastilles d'icône.
+    static let accent = Color(light: 0x7F4F24, dark: 0xA68A64)
+    /// Texte fort chaud (titres de cartes importants).
+    static let ink = Color(light: 0x333D29, dark: 0xE8E6DA)
+
+    // Surfaces.
+    static let background = Color(light: 0xF3F1EA, dark: 0x1A1E15)
+    static let card = Color(light: 0xFCFBF7, dark: 0x262C1F)
+    static let well = Color(light: 0xE9E6DB, dark: 0x333D29)
+
+    // Familles de mesures (anneaux, graphiques).
+    static let recovery = good
+    static let strain = Color(light: 0x936639, dark: 0xC29A6B)
+    static let sleep = Color(light: 0x414833, dark: 0xC2C5AA)
+    static let nutrition = Color(light: 0xA68A64, dark: 0xB6AD90)
+    static let warning = alert
+
+    /// Dégradés des anneaux (clair → profond).
+    static let recoveryGradient = [Color(light: 0xA4AC86, dark: 0x656D4A), good]
+    static let strainGradient = [Color(light: 0xB6AD90, dark: 0x7F4F24), strain]
+    static let sleepGradient = [Color(light: 0xA4AC86, dark: 0x656D4A), sleep]
+    static let nutritionGradient = [Color(light: 0xC2C5AA, dark: 0x936639), nutrition]
 
     static let cardRadius: CGFloat = 26
 
     static func color(for level: ReadinessLevel) -> Color {
         switch level {
-        case .ready: recovery
-        case .moderate: nutrition
-        case .low: warning
+        case .ready: good
+        case .moderate: caution
+        case .low: alert
         }
     }
 }
@@ -136,14 +171,14 @@ struct AppBackground: View {
     var body: some View {
         let dark = colorScheme == .dark
         ZStack {
-            Color(uiColor: .systemGroupedBackground)
+            Theme.background
             // Halo coloré en haut de l'écran, qui s'efface vers le milieu.
             ZStack {
-                Circle().fill(Theme.strain.opacity(dark ? 0.22 : 0.16)).frame(width: 340).blur(radius: 110).offset(x: -150, y: -330)
-                Circle().fill(Theme.sleep.opacity(dark ? 0.24 : 0.14)).frame(width: 320).blur(radius: 120).offset(x: 160, y: -280)
-                Circle().fill(Theme.recovery.opacity(dark ? 0.16 : 0.10)).frame(width: 300).blur(radius: 130).offset(x: 40, y: -120)
+                Circle().fill(Color(hex: 0xA68A64).opacity(dark ? 0.20 : 0.22)).frame(width: 340).blur(radius: 110).offset(x: -150, y: -330)
+                Circle().fill(Color(hex: 0xA4AC86).opacity(dark ? 0.18 : 0.24)).frame(width: 320).blur(radius: 120).offset(x: 160, y: -280)
+                Circle().fill(Color(hex: 0x656D4A).opacity(dark ? 0.14 : 0.08)).frame(width: 300).blur(radius: 130).offset(x: 40, y: -120)
             }
-            LinearGradient(colors: [.clear, Color(uiColor: .systemGroupedBackground).opacity(0.0), Color(uiColor: .systemGroupedBackground)],
+            LinearGradient(colors: [.clear, Theme.background.opacity(0.0), Theme.background],
                            startPoint: .top, endPoint: .center)
             PaperGrain(opacity: dark ? 0.05 : 0.035)
         }
@@ -189,7 +224,7 @@ struct CardBackground: ViewModifier {
         content
             .background {
                 ZStack {
-                    shape.fill(Color(uiColor: .secondarySystemGroupedBackground))
+                    shape.fill(Theme.card)
                     shape.fill(LinearGradient(colors: [.white.opacity(dark ? 0.05 : 0.6), .clear],
                                               startPoint: .top, endPoint: .bottom))
                     if let tint {
@@ -254,7 +289,7 @@ struct SectionHeader: View {
     let title: String
     var trailing: String?
     var symbol: String?
-    var tint: Color = Theme.strain
+    var tint: Color = Theme.accent
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {

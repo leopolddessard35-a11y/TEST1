@@ -1,19 +1,17 @@
 import SwiftUI
 import SwiftData
 
-struct PlanView: View {
+/// La saison (Traka) : phase, semaine, imprévus, blessures, échéances, forme prévue vs réelle.
+/// Affichée dans l'onglet Entraînement (poussée dans sa pile de navigation).
+struct SeasonPlanView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \PlanBaseline.weekStart) private var baselines: [PlanBaseline]
     @Query(sort: \Unavailability.start, order: .reverse) private var unavailabilities: [Unavailability]
     @Query(sort: \Injury.start, order: .reverse) private var injuries: [Injury]
     @State private var showUnavailability = false
     @State private var showInjury = false
-    @Environment(\.dismiss) private var dismiss
-    /// Ouvert en feuille depuis l'onglet Activité : affiche un bouton OK.
-    var presentedAsSheet = false
 
     var body: some View {
-        NavigationStack {
             ScrollView {
                 SnapshotReader { profile, snapshot in
                     VStack(spacing: 16) {
@@ -86,19 +84,14 @@ struct PlanView: View {
                 }
             }
             .background(AppBackground())
-            .navigationTitle("Plan")
-            .toolbar {
-                if presentedAsSheet {
-                    ToolbarItem(placement: .confirmationAction) { Button("OK") { dismiss() } }
-                }
-            }
+            .navigationTitle("Saison")
+            .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showUnavailability) { UnavailabilityForm() }
             .sheet(isPresented: $showInjury) { InjuryForm() }
-        }
     }
 }
 
-extension PlanView {
+extension SeasonPlanView {
     /// Mémorise la projection de chaque semaine la première fois qu'elle apparaît (courbe « prévue »).
     func saveBaselines(_ plan: SeasonPlan) {
         let known = Set(baselines.map(\.weekStart))
@@ -186,7 +179,7 @@ private struct WeekCard: View {
     }
 }
 
-private struct InjuryRow: View {
+struct InjuryRow: View {
     @Environment(\.modelContext) private var context
     let injury: Injury
 
@@ -208,7 +201,7 @@ private struct InjuryRow: View {
     }
 }
 
-private struct UnavailabilityRow: View {
+struct UnavailabilityRow: View {
     @Environment(\.modelContext) private var context
     let item: Unavailability
 

@@ -3,11 +3,9 @@ import SwiftUI
 extension Verdict {
     var color: Color {
         switch self {
-        case .push: Theme.strain
-        case .go: Theme.recovery
-        case .adjust: Theme.nutrition
-        case .easy: Theme.sleep
-        case .rest: Theme.warning
+        case .push, .go: Theme.good
+        case .adjust, .easy: Theme.caution
+        case .rest: Theme.alert
         }
     }
 }

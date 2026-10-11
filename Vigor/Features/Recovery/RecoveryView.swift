@@ -1,41 +1,163 @@
 import SwiftUI
 import Charts
+import SwiftData
 
 /// Onglet Récup : chaque chiffre avec son contexte (écart à ta base + tendance),
 /// explorateur jour par jour avec axe de temps synchronisé, tendances et croisements.
 struct RecoveryView: View {
-    enum Segment: String, CaseIterable {
-        case today = "Vue"
-        case explore = "Jour par jour"
-        case trends = "Tendances"
-        case symptoms = "Symptômes"
-    }
-
-    @State private var segment: Segment = .today
-
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 16) {
-                    Picker("Vue", selection: $segment) {
-                        ForEach(Segment.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    SnapshotReader { _, snapshot in
-                        switch segment {
-                        case .today: RecoveryTodaySection(snapshot: snapshot)
-                        case .explore: DayExplorer(snapshot: snapshot)
-                        case .trends: TrendsSection(snapshot: snapshot)
-                        case .symptoms: JournalSection(patterns: snapshot.symptomPatterns)
+                SnapshotReader { _, snapshot in
+                    // Santé = surveiller. Chaque mesure a ici son unique « domicile » ; les analyses sont au 2e niveau.
+                    VStack(spacing: 12) {
+                        SectionHeader(title: "Moniteur", trailing: "vs ta normale", symbol: "heart.text.square.fill")
+                        HealthMonitorGrid(snapshot: snapshot)
+
+                        SectionHeader(title: "Sommeil", symbol: "bed.double.fill")
+                        SleepSummaryCard(snapshot: snapshot)
+
+                        SectionHeader(title: "Corps", symbol: "figure.stand")
+                        BodyJournalCard(snapshot: snapshot)
+
+                        SectionHeader(title: "Analyses", symbol: "chart.xyaxis.line")
+                        GlassCard {
+                            VStack(spacing: 0) {
+                                NavigationLink {
+                                    ReadinessDetailView(readiness: snapshot.readiness, history: Array(snapshot.readinessHistory.suffix(30)),
+                                                        hrvSource: snapshot.hrvSource)
+                                } label: {
+                                    LinkRow(symbol: "heart.text.square", title: "Récupération",
+                                            subtitle: "Comment le score est calculé, 30 derniers jours")
+                                }
+                                Divider().padding(.leading, 44)
+                                NavigationLink {
+                                    DetailPage(title: "Jour par jour") { DayExplorer(snapshot: snapshot) }
+                                } label: {
+                                    LinkRow(symbol: "calendar.day.timeline.left", title: "Jour par jour",
+                                            subtitle: "Sommeil, VFC, charge et repas sur un même axe")
+                                }
+                                Divider().padding(.leading, 44)
+                                NavigationLink {
+                                    DetailPage(title: "Tendances") { TrendsSection(snapshot: snapshot) }
+                                } label: {
+                                    LinkRow(symbol: "chart.line.uptrend.xyaxis", title: "Tendances et liens",
+                                            subtitle: "Ce qui influence ta forme, expériences")
+                                }
+                                Divider().padding(.leading, 44)
+                                NavigationLink {
+                                    InsightsView(insights: snapshot.insights)
+                                } label: {
+                                    LinkRow(symbol: "brain.head.profile", title: "Analyse du coach",
+                                            subtitle: snapshot.insights.first?.title ?? "Rien à signaler",
+                                            badge: snapshot.insights.isEmpty ? nil : "\(snapshot.insights.count)")
+                                }
+                            }
                         }
+                        .buttonStyle(.plain)
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 24)
                 }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 24)
             }
             .background(AppBackground())
             .navigationTitle("Santé")
         }
+    }
+}
+
+/// La nuit dernière et la nuit à venir.
+private struct SleepSummaryCard: View {
+    let snapshot: CoachSnapshot
+
+    var body: some View {
+        let last = snapshot.wellness.last { $0.sleepHours != nil }
+        NavigationLink {
+            SleepNeedDetailView(need: snapshot.sleepNeed, performance: snapshot.lastSleepPerformance,
+                                lastNight: snapshot.wellness.last.flatMap { Calendar.current.isDateInToday($0.day) ? $0.sleepHours : nil },
+                                regularity: snapshot.bedtimeRegularity)
+        } label: {
+            GlassCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            CapsLabel(last.map { Calendar.current.isDateInToday($0.day) ? "Cette nuit" : $0.day.formatted(.dateTime.weekday(.wide).day()) } ?? "Dernière nuit")
+                            Text(last?.sleepHours?.hoursText ?? "–")
+                                .font(.system(.title, design: .rounded).weight(.heavy)).monospacedDigit()
+                        }
+                        Spacer()
+                        if let performance = snapshot.lastSleepPerformance {
+                            StatusPill(text: "\(Int((performance * 100).rounded())) % du besoin",
+                                       color: performance >= 0.85 ? Theme.good : (performance >= 0.7 ? Theme.caution : Theme.alert))
+                        }
+                        DetailChevron()
+                    }
+                    if let bed = last?.bedtime, let wake = last?.wakeTime {
+                        Label("\(bed.formatted(date: .omitted, time: .shortened)) → \(wake.formatted(date: .omitted, time: .shortened))",
+                              systemImage: "clock")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    Divider()
+                    HStack {
+                        Label("Ce soir : coucher vers \(snapshot.sleepNeed.bedtimeText)", systemImage: "moon.zzz.fill")
+                            .font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Text(snapshot.sleepNeed.total.hoursText).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Symptômes et blessures : un résumé, le détail au tap.
+private struct BodyJournalCard: View {
+    let snapshot: CoachSnapshot
+    @Query(sort: \Injury.start, order: .reverse) private var injuries: [Injury]
+    @Query(sort: \Symptom.date, order: .reverse) private var symptoms: [Symptom]
+    @State private var addingInjury = false
+
+    var body: some View {
+        let active = injuries.filter(\.isActive)
+        let weekAgo = Calendar.current.date(byAdding: .day, value: -7, to: .now) ?? .now
+        let recent = symptoms.filter { $0.date >= weekAgo }.count
+        GlassCard {
+            VStack(spacing: 0) {
+                NavigationLink {
+                    DetailPage(title: "Blessures") {
+                        GlassCard {
+                            VStack(alignment: .leading, spacing: 10) {
+                                if active.isEmpty {
+                                    Text("Aucune blessure en cours.").foregroundStyle(.secondary)
+                                }
+                                ForEach(active) { injury in InjuryRow(injury: injury) }
+                            }
+                        }
+                        Button { addingInjury = true } label: {
+                            Label("Déclarer une blessure", systemImage: "plus").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.glassProminent)
+                        .tint(Theme.accent)
+                        .controlSize(.large)
+                    }
+                    .sheet(isPresented: $addingInjury) { InjuryForm() }
+                } label: {
+                    LinkRow(symbol: "cross.case", title: "Blessures",
+                            subtitle: active.isEmpty ? "Aucune en cours" : active.map(\.title).joined(separator: ", "),
+                            badge: active.isEmpty ? nil : "\(active.count)", badgeColor: Theme.alert)
+                }
+                Divider().padding(.leading, 44)
+                NavigationLink {
+                    DetailPage(title: "Symptômes") { JournalSection(patterns: snapshot.symptomPatterns) }
+                } label: {
+                    LinkRow(symbol: "bandage", title: "Journal des symptômes",
+                            subtitle: recent == 0 ? "Rien cette semaine" : "\(recent) cette semaine · motifs récurrents détectés",
+                            badge: recent == 0 ? nil : "\(recent)", badgeColor: Theme.caution)
+                }
+            }
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -132,7 +254,7 @@ struct MetricContext {
 
 // MARK: - Aujourd'hui
 
-private struct RecoveryTodaySection: View {
+struct RecoveryTodaySection: View {
     let snapshot: CoachSnapshot
 
     var body: some View {
@@ -175,7 +297,7 @@ private struct RecoveryTodaySection: View {
 
 // MARK: - Explorateur jour par jour (axe synchronisé)
 
-private struct DayExplorer: View {
+struct DayExplorer: View {
     let snapshot: CoachSnapshot
     @State private var selected: Date?
     @State private var days = 30

@@ -13,44 +13,13 @@ struct TodayView: View {
         NavigationStack {
             ScrollView {
                 SnapshotReader { _, snapshot in
-                    // Niveau 1 : les trois anneaux + le coaching. Niveau 2 : le moniteur. Niveau 3 : le détail, au tap.
+                    // Trois questions, trois cartes : comment je vais, quoi faire, ce qu'il me reste à faire aujourd'hui.
+                    // Le reste (mesures, analyses) vit dans Santé et Entraînement.
                     VStack(spacing: 12) {
                         SyncStatusBadge()
+                        SetupChecklistCard { showSettings = true }
                         RingsCoachingCard(snapshot: snapshot)
-
-                        SectionHeader(title: "Moniteur de santé", trailing: "vs ta normale", symbol: "heart.text.square.fill", tint: Theme.warning)
-                        HealthMonitorGrid(snapshot: snapshot)
-
-                        SectionHeader(title: "Énergie", symbol: "bolt.fill", tint: Theme.recovery)
-                        NavigationLink {
-                            DailyBriefDetailView(brief: snapshot.brief, confidence: snapshot.confidence)
-                        } label: {
-                            EnergyCard(brief: snapshot.brief)
-                        }
-                        .buttonStyle(.plain)
-
-                        SectionHeader(title: "Aliments du jour", symbol: "fork.knife", tint: Theme.nutrition)
-                        if let targets = snapshot.macroTargets {
-                            TodayNutritionCard(targets: targets, today: snapshot.todayNutrition) { addingFood = true }
-                        } else {
-                            Button { addingFood = true } label: {
-                                Label("Ajouter un repas", systemImage: "plus").font(.headline).frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.glassProminent)
-                            .controlSize(.large)
-                        }
-
-                        if let report = snapshot.weeklyReport, let review = snapshot.weeklyReview,
-                           [1, 2].contains(Calendar.current.component(.weekday, from: .now)) {
-                            SectionHeader(title: "Revue de la semaine", symbol: "calendar", tint: Theme.sleep)
-                            NavigationLink {
-                                DetailPage(title: "Revue de la semaine") { WeeklyReviewCard(report: report, review: review) }
-                            } label: {
-                                SimpleTile(title: "Point fort", value: review.strongPoint, caption: review.adjustment,
-                                           symbol: "calendar.badge.checkmark", tint: Theme.sleep)
-                            }
-                            .buttonStyle(.plain)
-                        }
+                        TodayChecklistCard(snapshot: snapshot) { addingFood = true }
                     }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 24)
@@ -83,6 +52,9 @@ struct TodayView: View {
 /// Carte principale façon Bevel : effort, récupération, sommeil en anneaux, puis le coaching du jour.
 private struct RingsCoachingCard: View {
     let snapshot: CoachSnapshot
+    @Query(sort: \WorkoutRoutine.order) private var routines: [WorkoutRoutine]
+    @State private var startingRoutine: WorkoutRoutine?
+    @State private var startingFree = false
 
     var body: some View {
         let brief = snapshot.brief
@@ -135,23 +107,56 @@ private struct RingsCoachingCard: View {
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
-                    if !summary.isRestDay {
-                        ForEach(brief.adapted.filter { $0.kind != .rest }) { session in
-                            SessionRow(session: session, changed: !brief.planned.contains(session), compact: true)
-                                .padding(10)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(Color.secondary.opacity(0.08), in: .rect(cornerRadius: 14, style: .continuous))
-                        }
-                    }
                 }
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
+
+            // Séance du jour : la muscu se lance d'ici, en un tap.
+            let sessions = brief.adapted.filter { $0.kind != .rest }
+            if !sessions.isEmpty {
+                VStack(spacing: 8) {
+                    ForEach(sessions) { session in
+                        HStack(spacing: 10) {
+                            SessionRow(session: session, changed: !brief.planned.contains(session), compact: true)
+                            Spacer(minLength: 4)
+                            if session.kind.isStrength {
+                                Button {
+                                    if let routine = routine(for: session.kind) { startingRoutine = routine } else { startingFree = true }
+                                } label: {
+                                    Label("Démarrer", systemImage: "play.fill").font(.subheadline.weight(.semibold))
+                                }
+                                .buttonStyle(.glassProminent)
+                                .tint(Theme.accent)
+                            }
+                        }
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Theme.well.opacity(0.6), in: .rect(cornerRadius: 14, style: .continuous))
+                    }
+                }
+            }
         }
+        .sheet(item: $startingRoutine) { routine in WorkoutLoggerView(routine: routine) }
+        .sheet(isPresented: $startingFree) { WorkoutLoggerView() }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
         .card()
         .scrollAppear()
+    }
+
+    /// Séance type correspondant à la séance prescrite (Push → « Push A », Legs → « Legs »…).
+    private func routine(for kind: SessionKind) -> WorkoutRoutine? {
+        let keys: [String]
+        switch kind {
+        case .push: keys = ["push"]
+        case .pull: keys = ["pull"]
+        case .legs: keys = ["leg", "jambe"]
+        case .upper: keys = ["upper", "haut"]
+        case .fullBody: keys = ["full", "complet"]
+        default: keys = []
+        }
+        return routines.first { routine in keys.contains { routine.name.lowercased().contains($0) } }
     }
 }
 
@@ -222,8 +227,8 @@ private struct SideRing: View {
     }
 }
 
-/// Grille 2 colonnes : chaque mesure du matin comparée à ta normale des 30 derniers jours.
-private struct HealthMonitorGrid: View {
+/// Grille 2 colonnes : chaque mesure du matin comparée à ta normale (60 derniers jours).
+struct HealthMonitorGrid: View {
     let snapshot: CoachSnapshot
 
     var body: some View {

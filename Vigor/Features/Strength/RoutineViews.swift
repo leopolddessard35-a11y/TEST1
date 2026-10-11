@@ -23,14 +23,14 @@ struct StrengthPlansSection: View {
                     .font(.headline).frame(maxWidth: .infinity)
             }
             .buttonStyle(.glassProminent)
-            .tint(Theme.strain)
+            .tint(Theme.accent)
             .controlSize(.large)
 
             if routines.isEmpty {
                 GlassCard(tint: Theme.strain) {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(spacing: 8) {
-                            IconBadge(symbol: "list.bullet.clipboard.fill", tint: Theme.strain, size: 26)
+                            IconBadge(symbol: "list.bullet.clipboard.fill", tint: Theme.accent, size: 26)
                             Text("Programmes").font(.headline)
                         }
                         Text("Crée tes séances types (exercices, séries, répétitions, repos) et lance-les en un tap. Les charges sont proposées d'après ta dernière séance.")
@@ -39,7 +39,7 @@ struct StrengthPlansSection: View {
                             Label("Créer mon programme PPL", systemImage: "wand.and.stars").frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.glassProminent)
-                        .tint(Theme.strain)
+                        .tint(Theme.accent)
                         Button { creating = true } label: {
                             Label("Séance type vide", systemImage: "plus").frame(maxWidth: .infinity)
                         }
@@ -131,7 +131,7 @@ private struct RoutineCard: View {
                     Label("Démarrer", systemImage: "play.fill").font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.glassProminent)
-                .tint(Theme.strain)
+                .tint(Theme.accent)
             }
         }
     }

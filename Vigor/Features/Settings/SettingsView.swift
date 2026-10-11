@@ -1,21 +1,60 @@
 import SwiftUI
 import SwiftData
 
+/// Les 4 groupes de réglages.
+enum SettingsPage: String, Hashable {
+    case profile, connections, notifications, data
+}
+
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Query private var profiles: [AthleteProfile]
+    @AppStorage(Appearance.storageKey) private var appearance = Appearance.light.rawValue
 
     var body: some View {
         NavigationStack {
-            Group {
+            List {
+                Section("Apparence") {
+                    Picker("Apparence", selection: $appearance) {
+                        ForEach(Appearance.allCases) { Text($0.label).tag($0.rawValue) }
+                    }
+                    .pickerStyle(.segmented)
+                }
                 if let profile = profiles.first {
-                    ProfileForm(profile: profile)
+                    Section {
+                        link(profile, .profile, "Profil et objectif", "person.crop.circle", "Course, morphologie, seuils, disponibilités")
+                        link(profile, .connections, "Connexions", "link", "Garmin via Intervals.icu, Apple Santé")
+                        link(profile, .notifications, "Notifications", "bell", "Plan du matin, repas, alertes")
+                        link(profile, .data, "Données", "externaldrive", "Chaussures, export, démo")
+                    }
                 } else {
                     ProgressView()
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(AppBackground())
             .navigationTitle("Réglages")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("OK") { dismiss() } } }
+        }
+    }
+
+    private func link(_ profile: AthleteProfile, _ page: SettingsPage, _ title: String, _ symbol: String, _ detail: String) -> some View {
+        NavigationLink {
+            ProfileForm(profile: profile, page: page)
+                .navigationTitle(title)
+                .navigationBarTitleDisplayMode(.inline)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: symbol)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 30, height: 30)
+                    .background(Theme.accent.gradient, in: .rect(cornerRadius: 8, style: .continuous))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                    Text(detail).font(.caption).foregroundStyle(.secondary)
+                }
+            }
         }
     }
 }
@@ -24,8 +63,8 @@ private struct ProfileForm: View {
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
     @Bindable var profile: AthleteProfile
+    let page: SettingsPage
     @State private var apiKey = ""
-    @AppStorage(Appearance.storageKey) private var appearance = Appearance.light.rawValue
     @AppStorage(NotificationScheduler.Keys.morningEnabled) private var morningEnabled = true
     @AppStorage(NotificationScheduler.Keys.morningMinutes) private var morningMinutes = 7 * 60 + 15
     @AppStorage(NotificationScheduler.Keys.eveningEnabled) private var eveningEnabled = false
@@ -42,12 +81,7 @@ private struct ProfileForm: View {
 
     var body: some View {
         Form {
-            Section("Apparence") {
-                Picker("Apparence", selection: $appearance) {
-                    ForEach(Appearance.allCases) { Text($0.label).tag($0.rawValue) }
-                }
-                .pickerStyle(.segmented)
-            }
+            if page == .profile {
             Section("Objectif") {
                 TextField("Course", text: $profile.raceName)
                 DatePicker("Date", selection: $profile.raceDate, displayedComponents: .date)
@@ -84,6 +118,8 @@ private struct ProfileForm: View {
             } footer: {
                 Text("0 = inconnu. La FTP sert à calculer la charge de tes sorties avec puissance. Re-teste-la dès que ta blessure le permet.")
             }
+            }
+            if page == .connections {
             Section {
                 SecureField("Clé d'API", text: $apiKey)
                     .textInputAutocapitalization(.never)
@@ -100,6 +136,8 @@ private struct ProfileForm: View {
             } footer: {
                 Text("1. Crée un compte gratuit sur intervals.icu et relie Garmin Connect (Settings → Connections).\n2. Settings → Developer Settings : copie l'« Athlete ID » et génère une « API Key ».\n3. Colle-les ici, puis synchronise. Tu récupères tes séances complètes, la VFC nocturne, le score de sommeil, la readiness Garmin et ton calendrier d'entraînement.")
             }
+            }
+            if page == .notifications {
             Section {
                 Toggle("Plan du matin", isOn: $morningEnabled)
                 if morningEnabled {
@@ -120,9 +158,15 @@ private struct ProfileForm: View {
             } footer: {
                 Text("Matin : verdict du jour, séance adaptée à ta nuit et ta récup, priorité n° 1. Repas : quantités visées (ce qu'il reste à manger aujourd'hui) et conseil selon tes séances ; pas de rappel si le repas est déjà noté. Soir : protéines ou calories manquantes, préparation du lendemain. Alertes importantes : uniquement les seuils critiques (surcharge, dette de sommeil, symptôme récurrent, surmenage), une fois par jour au maximum.")
             }
-            AgendaSection(profile: profile)
-            ShoesSection()
-            ExportSection()
+            }
+            if page == .profile {
+                AgendaSection(profile: profile)
+            }
+            if page == .data {
+                ShoesSection()
+                ExportSection()
+            }
+            if page == .connections {
             Section("Synchronisation") {
                 Button {
                     Task { await app.syncAll(context: context, profile: profile) }
@@ -132,6 +176,8 @@ private struct ProfileForm: View {
                 .disabled(app.isSyncing)
                 Label("Muscu : séances dans Activité → Muscu (historique Hevy importable une fois)", systemImage: "dumbbell")
             }
+            }
+            if page == .data {
             Section {
                 Button("Charger des données de démo") {
                     try? DemoData.load(into: context)
@@ -146,6 +192,7 @@ private struct ProfileForm: View {
                 Text("Démo")
             } footer: {
                 Text("Pour essayer l'app dans le simulateur, sans iPhone ni Apple Santé. « Effacer » supprime séances, mesures et repas, pas ton profil.")
+            }
             }
         }
         .scrollContentBackground(.hidden)

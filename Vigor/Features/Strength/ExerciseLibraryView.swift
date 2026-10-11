@@ -80,7 +80,7 @@ struct ExerciseLibraryView: View {
 
     private func row(_ exercise: LibraryExercise, sessions: Int) -> some View {
         HStack(spacing: 12) {
-            IconBadge(symbol: exercise.group?.symbol ?? "dumbbell.fill", tint: exercise.isCustom ? Theme.sleep : Theme.strain, size: 34)
+            IconBadge(symbol: exercise.group?.symbol ?? "dumbbell.fill", tint: exercise.isCustom ? Theme.sleep : Theme.accent, size: 34)
             VStack(alignment: .leading, spacing: 2) {
                 Text(exercise.name).font(.subheadline.weight(.semibold)).foregroundStyle(Color.primary)
                 Text([exercise.musclesText, exercise.equipment.label].filter { !$0.isEmpty }.joined(separator: " · "))
@@ -103,7 +103,7 @@ struct ExerciseLibraryView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
                 .foregroundStyle(selected ? Color.white : Color.primary)
-                .background(selected ? AnyShapeStyle(tint.gradient) : AnyShapeStyle(Color(uiColor: .secondarySystemGroupedBackground)),
+                .background(selected ? AnyShapeStyle(tint.gradient) : AnyShapeStyle(Theme.card),
                             in: .capsule)
         }
         .buttonStyle(.plain)

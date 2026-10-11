@@ -1,90 +1,72 @@
 import SwiftUI
 import SwiftData
 
-/// Haut de l'onglet Charge, façon Bevel : la semaine en calendrier, l'effort du jour et la fraîcheur musculaire.
-struct ActivityOverview: View {
+/// La semaine en calendrier (fait, manqué, repos, à venir) : ouvre le détail de la semaine.
+struct WeekOverviewCard: View {
     let snapshot: CoachSnapshot
-    @Query(sort: \StrengthWorkout.start, order: .reverse) private var workouts: [StrengthWorkout]
-    @Query(sort: \CardioActivity.start, order: .reverse) private var activities: [CardioActivity]
 
     var body: some View {
-        VStack(spacing: 12) {
-            if !snapshot.weekStatus.isEmpty {
-                if let week = snapshot.plan.currentWeek {
-                    NavigationLink { WeekDetailView(week: week) } label: { weekCard }.buttonStyle(.plain)
-                } else {
-                    weekCard
-                }
+        if !snapshot.weekStatus.isEmpty {
+            if let week = snapshot.plan.currentWeek {
+                NavigationLink { WeekDetailView(week: week) } label: { card }.buttonStyle(.plain)
+            } else {
+                card
             }
-
-            NavigationLink {
-                EffortDetailView(today: snapshot.effortToday, target: snapshot.effortTarget, history: snapshot.effortHistory,
-                                 verdict: snapshot.brief.verdict)
-            } label: { effortCard }
-            .buttonStyle(.plain)
-
-            let entries = freshness
-            NavigationLink {
-                DetailPage(title: "Fraîcheur musculaire") { MuscleFreshnessList(entries: entries) }
-            } label: {
-                GlassCard(tint: Theme.recovery) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            IconBadge(symbol: "figure.strengthtraining.traditional", tint: Theme.recovery, size: 24)
-                            Text("Fraîcheur musculaire").font(.headline)
-                            Spacer()
-                            DetailChevron()
-                        }
-                        let tired = entries.sorted { $0.percent < $1.percent }.prefix(4)
-                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
-                            ForEach(Array(tired)) { entry in MuscleFreshnessCell(entry: entry) }
-                        }
-                    }
-                }
-            }
-            .buttonStyle(.plain)
         }
     }
 
-    private var weekCard: some View {
-        GlassCard(tint: Theme.sleep) {
+    private var card: some View {
+        let done = snapshot.weekStatus.filter { $0.status == .done || $0.status == .partial }.count
+        let planned = snapshot.weekStatus.filter { $0.status != .rest }.count
+        return GlassCard {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    IconBadge(symbol: "calendar", tint: Theme.sleep, size: 24)
-                    Text("Cette semaine").font(.headline)
-                    Spacer()
-                    if let week = snapshot.plan.currentWeek {
-                        Text("\(week.phase.label) · \(week.targetHours.hoursText)").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                    IconBadge(symbol: "calendar", tint: Theme.accent, size: 24)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Cette semaine").font(.headline)
+                        if let week = snapshot.plan.currentWeek {
+                            Text("\(done) / \(planned) séances · \(week.phase.label) · \(week.targetHours.hoursText) prévues")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     }
+                    Spacer()
                     DetailChevron()
                 }
                 WeekStrip(days: snapshot.weekStatus)
             }
         }
     }
+}
 
-    private var effortCard: some View {
-        let target = snapshot.effortTarget
-        return GlassCard(tint: Theme.strain) {
-            HStack(spacing: 16) {
-                ZStack {
-                    GradientRing(fraction: snapshot.effortToday / 21, colors: Theme.strainGradient, lineWidth: 10)
-                    VStack(spacing: 0) {
-                        Text(snapshot.effortToday.oneDecimal).font(.system(.title2, design: .rounded).weight(.bold)).monospacedDigit()
-                        Text("/ 21").font(.caption2).foregroundStyle(.secondary)
+/// Fraîcheur des muscles les plus sollicités : ouvre la liste complète.
+struct MuscleFreshnessCard: View {
+    @Query(sort: \StrengthWorkout.start, order: .reverse) private var workouts: [StrengthWorkout]
+    @Query(sort: \CardioActivity.start, order: .reverse) private var activities: [CardioActivity]
+
+    var body: some View {
+        let entries = freshness
+        let tired = Array(entries.sorted { $0.percent < $1.percent }.prefix(4))
+        NavigationLink {
+            DetailPage(title: "Fraîcheur musculaire") { MuscleFreshnessList(entries: entries) }
+        } label: {
+            GlassCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        IconBadge(symbol: "figure.strengthtraining.traditional", tint: Theme.accent, size: 24)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Fraîcheur musculaire").font(.headline)
+                            Text("Les 4 muscles les moins récupérés").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        DetailChevron()
+                    }
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
+                        ForEach(tired) { entry in MuscleFreshnessCell(entry: entry) }
                     }
                 }
-                .frame(width: 92, height: 92)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Effort du jour").font(.headline)
-                    Text(EffortScore.label(snapshot.effortToday)).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.strain)
-                    Text(String(format: "Cible : %.0f – %.0f", target.lowerBound, target.upperBound))
-                        .font(.caption).foregroundStyle(.secondary)
-                    GradientBar(fraction: min(1, snapshot.effortToday / max(target.upperBound, 1)), colors: Theme.strainGradient, height: 8)
-                }
-                DetailChevron()
             }
         }
+        .buttonStyle(.plain)
     }
 
     private var freshness: [MuscleFreshness.Entry] {
@@ -101,7 +83,7 @@ struct ActivityOverview: View {
 
 extension MuscleFreshness.Entry {
     var color: Color {
-        percent >= 80 ? Theme.recovery : (percent >= 55 ? Theme.nutrition : Theme.strain)
+        percent >= 80 ? Theme.good : (percent >= 55 ? Theme.caution : Theme.alert)
     }
 }
 

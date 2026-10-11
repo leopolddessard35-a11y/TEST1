@@ -9,6 +9,8 @@ struct QuickAddView: View {
     var isSheet = false
     @State private var sheet: Entry?
     @State private var waterAdded: Double?
+    /// Dernières saisies utilisées (les plus récentes d'abord), pour les proposer en tête.
+    @AppStorage("quickAdd.recent") private var recentRaw = ""
 
     enum Entry: String, Identifiable {
         case food, workout, cardio, rpe, weight, symptom, life, unavailability, injury
@@ -32,21 +34,21 @@ struct QuickAddView: View {
 
     private let groups: [ActionGroup] = [
         ActionGroup(title: "Nutrition", actions: [
-            Action(id: "food", title: "Repas", caption: "scan, favoris, récents", symbol: "fork.knife", tint: Theme.nutrition, entry: .food),
-            Action(id: "weight", title: "Pesée", caption: "poids du matin", symbol: "scalemass.fill", tint: Theme.nutrition, entry: .weight)
+            Action(id: "food", title: "Repas", caption: "scan, favoris, récents", symbol: "fork.knife", tint: Theme.accent, entry: .food),
+            Action(id: "weight", title: "Pesée", caption: "poids du matin", symbol: "scalemass.fill", tint: Theme.accent, entry: .weight)
         ]),
         ActionGroup(title: "Entraînement", actions: [
-            Action(id: "workout", title: "Séance de muscu", caption: "libre ou séance type", symbol: "dumbbell.fill", tint: Theme.strain, entry: .workout),
-            Action(id: "cardio", title: "Séance d'endurance", caption: "vélo, course sans montre", symbol: "bicycle", tint: Theme.strain, entry: .cardio),
-            Action(id: "rpe", title: "Effort ressenti", caption: "noter une séance", symbol: "gauge.with.dots.needle.67percent", tint: Theme.strain, entry: .rpe)
+            Action(id: "workout", title: "Séance de muscu", caption: "libre ou séance type", symbol: "dumbbell.fill", tint: Theme.accent, entry: .workout),
+            Action(id: "cardio", title: "Séance d'endurance", caption: "vélo, course sans montre", symbol: "bicycle", tint: Theme.accent, entry: .cardio),
+            Action(id: "rpe", title: "Effort ressenti", caption: "noter une séance", symbol: "gauge.with.dots.needle.67percent", tint: Theme.accent, entry: .rpe)
         ]),
         ActionGroup(title: "Corps et santé", actions: [
-            Action(id: "symptom", title: "Symptôme", caption: "douleur, gêne", symbol: "bandage.fill", tint: Theme.warning, entry: .symptom),
-            Action(id: "injury", title: "Blessure", caption: "adapte le plan", symbol: "cross.case.fill", tint: Theme.warning, entry: .injury)
+            Action(id: "symptom", title: "Symptôme", caption: "douleur, gêne", symbol: "bandage.fill", tint: Theme.accent, entry: .symptom),
+            Action(id: "injury", title: "Blessure", caption: "adapte le plan", symbol: "cross.case.fill", tint: Theme.accent, entry: .injury)
         ]),
         ActionGroup(title: "Quotidien", actions: [
-            Action(id: "life", title: "Hors sport", caption: "travaux, debout", symbol: "hammer.fill", tint: Theme.sleep, entry: .life),
-            Action(id: "unavailability", title: "Imprévu", caption: "maladie, voyage…", symbol: "calendar.badge.exclamationmark", tint: Theme.sleep, entry: .unavailability)
+            Action(id: "life", title: "Hors sport", caption: "travaux, debout", symbol: "hammer.fill", tint: Theme.accent, entry: .life),
+            Action(id: "unavailability", title: "Imprévu", caption: "maladie, voyage…", symbol: "calendar.badge.exclamationmark", tint: Theme.accent, entry: .unavailability)
         ])
     ]
 
@@ -60,15 +62,25 @@ struct QuickAddView: View {
                                 .font(.headline).frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.glassProminent)
-                        .tint(Theme.strain)
+                        .tint(Theme.accent)
                         .controlSize(.large)
                     }
                     waterCard
+                    let recent = recentActions
+                    if !recent.isEmpty {
+                        SectionHeader(title: "Récents")
+                        LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                            ForEach(recent) { action in
+                                Button { open(action.entry) } label: { tile(action) }
+                                    .buttonStyle(.plain)
+                            }
+                        }
+                    }
                     ForEach(groups) { group in
                         SectionHeader(title: group.title)
                         LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
                             ForEach(group.actions) { action in
-                                Button { sheet = action.entry } label: { tile(action) }
+                                Button { open(action.entry) } label: { tile(action) }
                                     .buttonStyle(.plain)
                             }
                         }
@@ -98,6 +110,19 @@ struct QuickAddView: View {
                 }
             }
         }
+    }
+
+    private var recentActions: [Action] {
+        let all = groups.flatMap(\.actions)
+        let ids = recentRaw.split(separator: ",").map(String.init)
+        return ids.prefix(4).compactMap { id in all.first { $0.entry.rawValue == id } }
+    }
+
+    private func open(_ entry: Entry) {
+        var ids = recentRaw.split(separator: ",").map(String.init).filter { $0 != entry.rawValue }
+        ids.insert(entry.rawValue, at: 0)
+        recentRaw = ids.prefix(6).joined(separator: ",")
+        sheet = entry
     }
 
     private func tile(_ action: Action) -> some View {

@@ -3,58 +3,150 @@ import SwiftData
 import Charts
 import UniformTypeIdentifiers
 
+/// Entraînement : la semaine, la muscu, le vélo, la saison, puis la charge pour qui veut creuser.
+/// Plus de segments : une seule page, dans l'ordre d'usage.
 struct TrainingView: View {
-    enum Segment: String, CaseIterable {
-        case summary = "Vue"
-        case endurance = "Endurance"
-        case strength = "Muscu"
-        case life = "Hors sport"
-    }
-
-    @State private var segment: Segment = .summary
-    @State private var showPlan = false
-
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 16) {
-                    Picker("Type", selection: $segment) {
-                        ForEach(Segment.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
+                SnapshotReader { profile, snapshot in
+                    VStack(spacing: 12) {
+                        WeekOverviewCard(snapshot: snapshot)
 
-                    switch segment {
-                    case .summary:
-                        SnapshotReader { _, snapshot in
-                            VStack(spacing: 12) {
-                                ActivityOverview(snapshot: snapshot)
-                                SectionHeader(title: "Charge d'entraînement", symbol: "chart.line.uptrend.xyaxis", tint: Theme.strain)
-                                LoadSummarySection(snapshot: snapshot)
+                        SectionHeader(title: "Musculation", symbol: "dumbbell.fill")
+                        StrengthPlansSection()
+                        MuscleFreshnessCard()
+                        NavigationLink {
+                            DetailPage(title: "Progression muscu") { StrengthProgressContent() }
+                        } label: {
+                            GlassCard {
+                                LinkRow(symbol: "chart.bar.xaxis", title: "Progression",
+                                        subtitle: "Prochaines charges, volume par muscle, tonnage, records")
                             }
                         }
-                    case .strength: StrengthSection()
-                    case .life: SnapshotReader { _, snapshot in LifeSection(lifeLoad7: snapshot.lifeLoad7) }
-                    case .endurance: EnduranceSection()
+                        .buttonStyle(.plain)
+
+                        SectionHeader(title: "Vélo et endurance", symbol: "bicycle")
+                        EnduranceSummaryCard(profile: profile)
+
+                        SectionHeader(title: "Saison", symbol: "flag.checkered")
+                        NavigationLink { SeasonPlanView() } label: {
+                            SeasonCard(plan: snapshot.plan, raceName: profile.raceName, raceDate: profile.raceDate)
+                        }
+                        .buttonStyle(.plain)
+
+                        SectionHeader(title: "Charge et fatigue", symbol: "gauge.with.needle")
+                        GlassCard {
+                            VStack(spacing: 0) {
+                                NavigationLink {
+                                    DetailPage(title: "Charge d'entraînement") { LoadSummarySection(snapshot: snapshot) }
+                                } label: {
+                                    LinkRow(symbol: "chart.line.uptrend.xyaxis", title: "Indicateurs de charge",
+                                            subtitle: loadSummary(snapshot))
+                                }
+                                Divider().padding(.leading, 44)
+                                NavigationLink {
+                                    DetailPage(title: "Hors sport") { LifeSection(lifeLoad7: snapshot.lifeLoad7) }
+                                } label: {
+                                    LinkRow(symbol: "hammer", title: "Hors sport",
+                                            subtitle: "Travaux, journées debout, pas : \(snapshot.lifeLoad7.noDecimal) pts sur 7 jours")
+                                }
+                            }
+                        }
+                        .buttonStyle(.plain)
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 24)
                 }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 24)
             }
             .background(AppBackground())
-            .navigationTitle("Activité")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showPlan = true } label: { Label("Plan", systemImage: "calendar") }
+            .navigationTitle("Entraînement")
+        }
+    }
+
+    /// Résumé en langage courant (le ratio technique reste dans le détail).
+    private func loadSummary(_ snapshot: CoachSnapshot) -> String {
+        let ratio = snapshot.disciplineLoads.first { $0.name == "Global" }?.ratio
+        guard let ratio else { return "Charge, fraîcheur, régularité des séances" }
+        switch ratio {
+        case ..<0.8: return "Charge récente en baisse"
+        case ..<1.3: return "Charge récente normale"
+        case ..<1.5: return "Charge récente élevée : reste vigilant"
+        default: return "Pic de charge : risque de blessure accru"
+        }
+    }
+}
+
+/// La dernière sortie + l'accès à toutes les sorties.
+private struct EnduranceSummaryCard: View {
+    let profile: AthleteProfile
+    @Query(sort: \CardioActivity.start, order: .reverse) private var activities: [CardioActivity]
+
+    var body: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 10) {
+                if let last = activities.first {
+                    CapsLabel("Dernière sortie")
+                    NavigationLink {
+                        ActivityDetailView(activity: last, thresholds: profile.thresholds)
+                    } label: {
+                        ActivityRow(activity: last, thresholds: profile.thresholds)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Text("Aucune sortie pour l'instant : relie Garmin (Réglages → Intervals.icu) ou Apple Santé.")
+                        .font(.subheadline).foregroundStyle(.secondary)
                 }
+                Divider()
+                NavigationLink {
+                    DetailPage(title: "Sorties") { EnduranceSection() }
+                } label: {
+                    LinkRow(symbol: "list.bullet", title: "Toutes les sorties",
+                            subtitle: "FTP \(profile.ftp.noDecimal) W · \(activities.count) séances enregistrées")
+                }
+                .buttonStyle(.plain)
             }
-            .sheet(isPresented: $showPlan) { PlanView(presentedAsSheet: true) }
+        }
+    }
+}
+
+/// Compte à rebours et phase de la saison.
+private struct SeasonCard: View {
+    let plan: SeasonPlan
+    let raceName: String
+    let raceDate: Date
+
+    var body: some View {
+        let days = max(0, Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: .now),
+                                                          to: Calendar.current.startOfDay(for: raceDate)).day ?? 0)
+        let progress = plan.targetCTL > 0 ? min(1, plan.startCTL / plan.targetCTL) : 0
+        GlassCard {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(raceName).font(.headline)
+                        Text(raceDate.formatted(date: .long, time: .omitted)).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Text("J-\(days)").font(.system(.title2, design: .rounded).weight(.heavy)).monospacedDigit()
+                    DetailChevron()
+                }
+                if let week = plan.currentWeek {
+                    Text("Phase \(week.phase.label.lowercased()) · \(week.kind.label.lowercased())")
+                        .font(.subheadline.weight(.semibold))
+                }
+                GradientBar(fraction: progress, colors: Theme.recoveryGradient, height: 8)
+                Text("Condition \(plan.startCTL.noDecimal) sur \(plan.targetCTL.noDecimal) visés le jour J")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
     }
 }
 
 // MARK: - Musculation
 
-private struct StrengthSection: View {
+/// Suivi détaillé de la muscu (2e niveau) : charges conseillées, volume, tonnage, records, dernières séances.
+struct StrengthProgressContent: View {
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
     @Query(sort: \StrengthWorkout.start, order: .reverse) private var workouts: [StrengthWorkout]
@@ -64,8 +156,6 @@ private struct StrengthSection: View {
         SnapshotReader { _, snapshot in
             let injured = snapshot.activeInjuries.reduce(into: Set<Muscle>()) { $0.formUnion($1.muscles) }
             VStack(spacing: 16) {
-                StrengthPlansSection()
-
                 if workouts.isEmpty {
                     EmptyStateCard(
                         title: "Aucune séance pour l'instant",
@@ -427,20 +517,22 @@ private struct LoadSummarySection: View {
         let lastWeek = snapshot.weeklyVolumes.dropLast().last
         LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
             NavigationLink { detail } label: {
-                SimpleTile(title: "Ratio 7 j / 28 j", value: global?.ratio.map { String(format: "%.2f", $0) } ?? "–",
-                           caption: ratioCaption(global?.ratio), symbol: "gauge.with.needle", tint: Theme.strain)
+                SimpleTile(title: "Charge récente", value: ratioWord(global?.ratio),
+                           caption: global?.ratio.map { String(format: "ratio 7 j / 28 j : %.2f", $0) } ?? "moyennes exponentielles",
+                           symbol: "gauge.with.needle", tint: ratioColor(global?.ratio))
             }
             NavigationLink { detail } label: {
-                SimpleTile(title: "Forme", value: snapshot.today?.form.noDecimal ?? "–",
-                           caption: "condition \(snapshot.today?.ctl.noDecimal ?? "–")", symbol: "chart.line.uptrend.xyaxis", tint: Theme.recovery)
+                SimpleTile(title: "Fraîcheur", value: snapshot.today?.form.noDecimal ?? "–",
+                           caption: "condition de fond \(snapshot.today?.ctl.noDecimal ?? "–")", symbol: "chart.line.uptrend.xyaxis", tint: Theme.good)
             }
             NavigationLink { detail } label: {
                 SimpleTile(title: "Volume semaine", value: lastWeek.map { $0.sportHours.hoursText } ?? "–",
                            caption: snapshot.volumeAlerts.isEmpty ? "progression OK" : "⚠︎ +10 % dépassé", symbol: "calendar", tint: Theme.sleep)
             }
             NavigationLink { detail } label: {
-                SimpleTile(title: "Monotonie", value: snapshot.monotony.map { String(format: "%.1f", $0) } ?? "–",
-                           caption: (snapshot.monotony ?? 0) > 2 ? "⚠︎ trop uniforme" : "repère < 2", symbol: "waveform", tint: Theme.nutrition)
+                SimpleTile(title: "Variété des séances", value: (snapshot.monotony ?? 0) > 2 ? "Trop uniforme" : "OK",
+                           caption: snapshot.monotony.map { String(format: "monotonie %.1f (repère < 2)", $0) } ?? "repère < 2",
+                           symbol: "waveform", tint: (snapshot.monotony ?? 0) > 2 ? Theme.caution : Theme.good)
             }
             NavigationLink {
                 DetailPage(title: "Efficiency Factor") {
@@ -448,7 +540,7 @@ private struct LoadSummarySection: View {
                     ExplanationCard(title: "Ce que ça mesure", symbol: "lightbulb", text: "Puissance produite par battement cardiaque, sur des sorties d'endurance comparables (≥ 45 min, peu de dénivelé). Il monte quand ta base aérobie progresse : c'est l'indicateur de progrès sans chrono.")
                 }
             } label: {
-                SimpleTile(title: "Efficacité aérobie", value: snapshot.efSeries.last.map { String(format: "%.2f", $0.value) } ?? "–",
+                SimpleTile(title: "Endurance aérobie", value: snapshot.efSeries.last.map { String(format: "%.2f", $0.value) } ?? "–",
                            caption: "puissance / FC", symbol: "bolt.heart.fill", tint: Theme.recovery)
             }
             NavigationLink { detail } label: {
@@ -457,6 +549,21 @@ private struct LoadSummarySection: View {
             }
         }
         .buttonStyle(.plain)
+    }
+
+    private func ratioWord(_ ratio: Double?) -> String {
+        guard let ratio else { return "–" }
+        if ratio > 1.5 { return "Pic" }
+        if ratio > 1.3 { return "Élevée" }
+        if ratio < 0.8 { return "Basse" }
+        return "Normale"
+    }
+
+    private func ratioColor(_ ratio: Double?) -> Color {
+        guard let ratio else { return Theme.accent }
+        if ratio > 1.5 { return Theme.alert }
+        if ratio > 1.3 || ratio < 0.8 { return Theme.caution }
+        return Theme.good
     }
 
     private func ratioCaption(_ ratio: Double?) -> String {

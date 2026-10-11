@@ -131,9 +131,9 @@ struct HealthReading {
 
     var color: Color {
         switch status {
-        case .normal: Theme.recovery
+        case .normal: Theme.good
         case .unknown: .secondary
-        case .higher, .lower: concerning ? Theme.warning : Theme.strain
+        case .higher, .lower: concerning ? Theme.alert : Theme.caution
         }
     }
 }
@@ -156,7 +156,7 @@ struct VerticalGauge: View {
                     .offset(y: -height * band.lowerBound)
                 Circle()
                     .fill(color)
-                    .overlay(Circle().stroke(Color(uiColor: .secondarySystemGroupedBackground), lineWidth: 2))
+                    .overlay(Circle().stroke(Theme.card, lineWidth: 2))
                     .frame(width: 12, height: 12)
                     .offset(y: -(height - 12) * shown)
             }
@@ -182,7 +182,7 @@ struct HealthMonitorTile: View {
         HStack(alignment: .top, spacing: 10) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
-                    IconBadge(symbol: symbol, tint: tint, size: 22)
+                    IconBadge(symbol: symbol, tint: Theme.accent, size: 22)
                     Text(title).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
@@ -315,5 +315,45 @@ struct GradientBar: View {
         .frame(height: height)
         .onAppear { withAnimation(.spring(response: 1.0, dampingFraction: 0.85).delay(0.1)) { shown = fraction } }
         .onChange(of: fraction) { withAnimation(.spring) { shown = fraction } }
+    }
+}
+
+// MARK: - Ligne de navigation
+
+/// Ligne « liste iOS » dans une carte : pastille, titre, détail, compteur éventuel, chevron.
+struct LinkRow: View {
+    let symbol: String
+    let title: String
+    var subtitle: String = ""
+    var badge: String?
+    var badgeColor: Color = Theme.accent
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Theme.accent)
+                .frame(width: 32, height: 32)
+                .background(Theme.well, in: .circle)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                if !subtitle.isEmpty {
+                    Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                }
+            }
+            Spacer(minLength: 6)
+            if let badge {
+                Text(badge)
+                    .font(.caption.weight(.bold).monospacedDigit())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(badgeColor, in: .capsule)
+            }
+            DetailChevron()
+        }
+        .padding(.vertical, 8)
+        .frame(minHeight: 44)
+        .contentShape(.rect)
     }
 }

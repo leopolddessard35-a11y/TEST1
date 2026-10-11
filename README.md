@@ -77,6 +77,15 @@ Réglables dans *Réglages → Notifications*.
 Tu récupères : séances complètes (TSS, puissance normalisée, IF), VFC nocturne (rMSSD), score de sommeil, readiness Garmin,
 FC de repos, SpO2, respiration, VO2max, poids, et le calendrier des séances prévues.
 
+## Organisation (v1.0) et couleurs
+
+- **Aujourd'hui** : ta forme (3 anneaux), le coaching en 2 phrases avec la séance du jour (▶ lance la muscu), « À faire aujourd'hui » (manger, boire, séance, coucher, revue du dimanche) et, tant que ce n'est pas fini, « Configurer Vigor ».
+- **Santé** : moniteur (6 mesures vs ta normale), sommeil, blessures et symptômes, analyses (récupération, jour par jour, tendances, analyse du coach).
+- **Entraînement** : la semaine, la musculation (programmes, fraîcheur, progression), le vélo, la saison Traka, la charge et le hors-sport.
+- **Nutrition** et **+** (saisies récentes en tête).
+- **Réglages** en 4 groupes : Profil et objectif, Connexions, Notifications, Données.
+- Palette « terre et forêt » (noyer, blé, mousse, olive). La couleur indique le statut : mousse = OK, blé = à surveiller, brique = alerte.
+
 ## Design (v0.7, style Bevel)
 
 - Fond gris très clair, cartes blanches très arrondies avec ombre douce ; mode sombre automatique (cartes gris foncé sur fond noir).
