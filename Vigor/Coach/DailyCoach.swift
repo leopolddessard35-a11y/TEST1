@@ -197,11 +197,12 @@ enum DailyCoach {
         if week.kind == .race {
             // Tout se cale sur le vrai jour de la course (dimanche par défaut).
             let raceWeekday = week.raceDay.map { Calendar.current.component(.weekday, from: $0) } ?? 1
-            func offset(_ days: Int) -> Int { ((raceWeekday - 1 - days) % 7 + 7) % 7 + 1 }
-            switch weekday {
-            case raceWeekday: return [SessionPrescription(kind: .race, minutes: 0, detail: "Jour J : petit-déjeuner riche en glucides 3 h avant, 60–90 g de glucides par heure pendant la course.")]
-            case offset(1): return [bike(.openers, minutes: 45, ftp: ftp, phase: week.phase)]
-            case offset(3), offset(5): return [bike(.endurance, minutes: 45, ftp: ftp, phase: week.phase)]
+            // Position dans la semaine (lundi = 0) : rien n'est placé après la course.
+            let daysBefore = (raceWeekday + 5) % 7 - (weekday + 5) % 7
+            switch daysBefore {
+            case 0: return [SessionPrescription(kind: .race, minutes: 0, detail: "Jour J : petit-déjeuner riche en glucides 3 h avant, 60–90 g de glucides par heure pendant la course.")]
+            case 1: return [bike(.openers, minutes: 45, ftp: ftp, phase: week.phase)]
+            case 3, 5: return [bike(.endurance, minutes: 45, ftp: ftp, phase: week.phase)]
             default: return [SessionPrescription(kind: .rest, minutes: 0, detail: "Repos, hydratation, sommeil.")]
             }
         }
@@ -214,7 +215,7 @@ enum DailyCoach {
             sessions.append(bike(.longRide, minutes: Int(week.longRideHours * 60), ftp: ftp, phase: week.phase))
         } else {
             // Le reste du volume en endurance, réparti sur dimanche, lundi et mercredi.
-            let intensityMinutes = Double(intensityDays.count) * 75
+            let intensityMinutes = Double(intensityDays.count) * (week.phase == .taper ? 45 : 75)
             let remaining = max(0, week.targetHours * 60 - week.longRideHours * 60 - intensityMinutes)
             let enduranceDays = [1, 2, 4]
             if enduranceDays.contains(weekday), remaining >= 30 {

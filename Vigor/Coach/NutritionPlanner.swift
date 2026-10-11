@@ -156,7 +156,10 @@ enum NutritionPlanner {
             kcal = protein * 4 + carbs * 4 + fat * 9
             explanation.append("Glucides relevés au minimum conseillé pour ton entraînement du jour")
         }
-        carbs = max(0, carbs)
+        if carbs < 0 {
+            carbs = 0
+            kcal = protein * 4 + fat * 9
+        }
         explanation.append("Protéines : \(goal.proteinPerKg.oneDecimal) g/kg = \(protein.noDecimal) g · Lipides : \(goal.fatPerKg.oneDecimal) g/kg = \(fat.noDecimal) g")
         explanation.append("Glucides : \((carbs / weightKg).oneDecimal) g/kg = \(carbs.noDecimal) g (\(trainingHours.oneDecimal) h d'entraînement aujourd'hui)")
 

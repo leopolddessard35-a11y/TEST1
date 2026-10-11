@@ -66,7 +66,7 @@ struct WorkoutDraft: Codable, Equatable {
     /// Durée estimée : de la première à la dernière série + un repos ; sinon depuis l'ouverture (4 h au plus).
     var estimatedMinutes: Int {
         if let first = firstSetAt, let last = lastSetAt {
-            return max(5, Int((last.timeIntervalSince(first) + 120) / 60))
+            return min(240, max(5, Int((last.timeIntervalSince(first) + 120) / 60)))
         }
         return min(240, max(5, Int(Date.now.timeIntervalSince(start) / 60)))
     }
@@ -386,21 +386,24 @@ struct WorkoutLoggerView: View {
                      rest: Int? = nil, note: String? = nil, defaultReps: Int? = nil) {
         let sessions: [ExerciseSession] = history[name] ?? []
         var sets: [WorkoutDraft.SetDraft] = []
+        var deload = false
         if let last = sessions.last {
             let progression = advice(for: name, sessions: sessions, target: target)
             for set in last.sets where (set.reps ?? 0) > 0 {
                 let weight: Double? = set.isWarmup ? set.weightKg : (progression?.suggestedWeightKg ?? set.weightKg)
                 sets.append(WorkoutDraft.SetDraft(weight: weight, reps: set.reps, warmup: set.isWarmup))
             }
-            // Décharge conseillée : moitié des séries de travail (au moins 2).
+            // Décharge conseillée : moitié des séries de travail (au moins 2), aussi pour une séance type.
             if progression?.action == .deload {
                 let warmups = sets.filter(\.warmup)
                 let working = sets.filter { !$0.warmup }
                 sets = warmups + Array(working.prefix(max(2, working.count / 2)))
+                deload = true
             }
         }
-        // Nombre de séries de travail imposé par la séance type.
-        if let setCount {
+        // Nombre de séries de travail imposé par la séance type (divisé par deux en décharge).
+        if let routineSets = setCount {
+            let setCount = deload ? max(2, routineSets / 2) : routineSets
             let warmups = sets.filter(\.warmup)
             var working = sets.filter { !$0.warmup }
             let template = working.last ?? WorkoutDraft.SetDraft(weight: nil, reps: defaultReps)

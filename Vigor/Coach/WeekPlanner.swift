@@ -10,7 +10,7 @@ struct DoneSession: Equatable, Identifiable {
     let symbol: String
     let minutes: Int
     let isStrength: Bool
-    /// Cardio intense : IF ≥ 0,82 ou effort ressenti ≥ 7.
+    /// Cardio intense : IF ≥ 0,76 (tempo et au-delà) ou effort ressenti ≥ 7.
     let isIntense: Bool
     /// Muscu avec au moins 3 séries pour le bas du corps.
     var isLegs = false
@@ -293,7 +293,8 @@ enum WeekPlanner {
                 occupants.append(Occupant(id: item.id, day: day, category: item.category, isLegs: false))
             }
         }
-        for session in extras {
+        // Une séance exclue (« ne compte pas ») n'occupe pas non plus son jour.
+        for session in extras where !excluded.contains(session.id) {
             occupants.append(Occupant(id: session.id, day: calendar.startOfDay(for: session.date),
                                       category: category(of: session, matched: nil), isLegs: session.isLegs))
         }

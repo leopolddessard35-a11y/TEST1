@@ -322,8 +322,12 @@ struct CoachSnapshot {
         let trainingHours: Double = max(doneToday, plannedSeconds) / 3600
         // Entraînement d'hier (glucides de la veille jugés selon l'entraînement réel).
         var doneYesterday: Double = 0
-        for sample in samples where calendar.isDate(sample.date, inSameDayAs: calendar.date(byAdding: .day, value: -1, to: now) ?? now) {
+        let yesterdayDate: Date = calendar.date(byAdding: .day, value: -1, to: now) ?? now
+        for sample in samples where calendar.isDate(sample.date, inSameDayAs: yesterdayDate) {
             doneYesterday += sample.durationSeconds
+        }
+        for workout in strength where calendar.isDate(workout.start, inSameDayAs: yesterdayDate) {
+            doneYesterday += workout.durationSeconds
         }
         let macroTargets: MacroTargets? = NutritionPlanner.targets(
             weightKg: currentWeight,
@@ -815,9 +819,13 @@ struct CoachSnapshot {
             plannedLastWeek = baselines.first { calendar.isDate($0.weekStart, inSameDayAs: lastWeekStart) }?.targetHours
         }
         let doneStrength: Int = strength.filter { $0.start >= weekAgo }.count
+        // Muscu prévue la semaine passée (semaine figée), sinon ton réglage.
+        let lastWeekKey: String = FrozenWeek.dayKey(isoCalendar.date(byAdding: .day, value: -7, to: thisWeekStart) ?? thisWeekStart,
+                                                    calendar: calendar)
+        let lastWeekStrength: Int? = frozenByKey[lastWeekKey]?.strengthSessions
         let weeklyReview: WeeklyReport.Review? = weeklyReport.map {
             WeeklyReport.review(report: $0, plannedHours: plannedLastWeek,
-                                plannedStrength: plan.currentWeek?.strengthSessions ?? profile.strengthSessionsPerWeek,
+                                plannedStrength: lastWeekStrength ?? profile.strengthSessionsPerWeek,
                                 doneStrength: doneStrength, acuteChronic: Robust.acuteChronicRatio(load.map(\.tss)))
         }
 

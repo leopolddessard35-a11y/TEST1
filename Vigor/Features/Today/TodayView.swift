@@ -62,6 +62,8 @@ struct TodayView: View {
 /// Carte principale façon Bevel : effort, récupération, sommeil en anneaux, puis le coaching du jour.
 private struct RingsCoachingCard: View {
     let snapshot: CoachSnapshot
+    @State private var startingRoutine: WorkoutRoutine?
+    @State private var startingFree = false
 
     var body: some View {
         let brief = snapshot.brief
@@ -132,7 +134,9 @@ private struct RingsCoachingCard: View {
                             SessionRow(session: session, changed: !brief.planned.contains(session), compact: true)
                             Spacer(minLength: 4)
                             if session.kind.isStrength {
-                                RoutineStartMenu()
+                                RoutineStartMenu { routine in
+                                    if let routine { startingRoutine = routine } else { startingFree = true }
+                                }
                             }
                         }
                         .padding(10)
@@ -151,6 +155,8 @@ private struct RingsCoachingCard: View {
                 }
             }
         }
+        .sheet(item: $startingRoutine) { routine in WorkoutLoggerView(routine: routine) }
+        .sheet(isPresented: $startingFree) { WorkoutLoggerView() }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
         .card()

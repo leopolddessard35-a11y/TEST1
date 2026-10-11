@@ -2,11 +2,12 @@ import SwiftUI
 import SwiftData
 
 /// « Démarrer » : tu choisis une de tes séances types (ou une séance libre) au moment de commencer.
+/// La feuille de séance est présentée par l'écran parent (`onPick(nil)` = séance libre), pour qu'elle
+/// ne se ferme pas si la ligne qui contient ce bouton est recalculée pendant la séance.
 struct RoutineStartMenu: View {
     @Query(sort: \WorkoutRoutine.order) private var routines: [WorkoutRoutine]
-    @State private var startingRoutine: WorkoutRoutine?
-    @State private var startingFree = false
     var title = "Démarrer"
+    let onPick: (WorkoutRoutine?) -> Void
 
     var body: some View {
         Menu {
@@ -14,12 +15,12 @@ struct RoutineStartMenu: View {
                 Text("Crée tes séances types dans Sport → Musculation")
             }
             ForEach(routines) { routine in
-                Button { startingRoutine = routine } label: {
+                Button { onPick(routine) } label: {
                     Label(routine.name, systemImage: "dumbbell.fill")
                 }
             }
             Divider()
-            Button { startingFree = true } label: {
+            Button { onPick(nil) } label: {
                 Label("Séance libre", systemImage: "plus")
             }
         } label: {
@@ -28,7 +29,5 @@ struct RoutineStartMenu: View {
         .buttonStyle(.glassProminent)
         .tint(Theme.accent)
         .accessibilityHint("Choisis la séance type à faire")
-        .sheet(item: $startingRoutine) { routine in WorkoutLoggerView(routine: routine) }
-        .sheet(isPresented: $startingFree) { WorkoutLoggerView() }
     }
 }
