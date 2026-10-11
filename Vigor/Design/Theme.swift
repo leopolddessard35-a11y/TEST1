@@ -16,38 +16,149 @@ extension Color {
     }
 }
 
-/// Palette « terre et forêt » : noyer, blé, mousse, olive.
-/// 582F0E · 7F4F24 · 936639 · A68A64 · B6AD90 · C2C5AA · A4AC86 · 656D4A · 414833 · 333D29
+/// Couleur claire / sombre d'une palette.
+struct ColorPair {
+    let light: UInt32
+    let dark: UInt32
+
+    init(_ light: UInt32, _ dark: UInt32) {
+        self.light = light
+        self.dark = dark
+    }
+
+    var color: Color { Color(light: light, dark: dark) }
+}
+
+/// Palettes au choix (Réglages → Apparence). La couleur sert d'abord au STATUT :
+/// « bien » = OK, « à surveiller », « alerte » ; l'accent sert aux boutons et à l'onglet actif.
+enum ThemePalette: String, CaseIterable, Identifiable {
+    case earth, simple, ocean, plum
+
+    static let storageKey = "vigor.palette"
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .earth: "Terre et forêt"
+        case .simple: "Simple"
+        case .ocean: "Océan"
+        case .plum: "Prune"
+        }
+    }
+
+    /// Palette en cours (lue à chaque construction des vues ; l'app se redessine quand elle change).
+    static var current: ThemePalette {
+        UserDefaults.standard.string(forKey: storageKey).flatMap(ThemePalette.init(rawValue:)) ?? .earth
+    }
+
+    struct Colors {
+        let good, caution, alert, accent: ColorPair
+        let background, card, well: ColorPair
+        let strain, sleep, nutrition: ColorPair
+        /// Début clair des dégradés d'anneaux.
+        let recoveryLight, strainLight, sleepLight, nutritionLight: ColorPair
+        /// Halos colorés du haut de l'écran.
+        let halos: [UInt32]
+        /// Grain « papier » (palette Terre seulement).
+        let grain: Bool
+        /// Stades de sommeil : profond, léger, paradoxal, éveil.
+        let deep, core, rem, awake: ColorPair
+    }
+
+    var colors: Colors {
+        switch self {
+        case .earth:
+            // 582F0E · 7F4F24 · 936639 · A68A64 · B6AD90 · C2C5AA · A4AC86 · 656D4A · 414833 · 333D29
+            Colors(good: ColorPair(0x656D4A, 0xA4AC86), caution: ColorPair(0x936639, 0xE0A85C),
+                   alert: ColorPair(0x9C4221, 0xD0805A), accent: ColorPair(0x7F4F24, 0xA68A64),
+                   background: ColorPair(0xF3F1EA, 0x1A1E15), card: ColorPair(0xFCFBF7, 0x262C1F), well: ColorPair(0xE9E6DB, 0x333D29),
+                   strain: ColorPair(0x582F0E, 0xD8CDB0), sleep: ColorPair(0x414833, 0xC2C5AA), nutrition: ColorPair(0xA68A64, 0xB6AD90),
+                   recoveryLight: ColorPair(0xA4AC86, 0x656D4A), strainLight: ColorPair(0xA68A64, 0x936639),
+                   sleepLight: ColorPair(0xA4AC86, 0x656D4A), nutritionLight: ColorPair(0xC2C5AA, 0x936639),
+                   halos: [0xA68A64, 0xA4AC86, 0x656D4A], grain: true,
+                   deep: ColorPair(0x333D29, 0x656D4A), core: ColorPair(0xA4AC86, 0xA4AC86),
+                   rem: ColorPair(0x7F4F24, 0xA68A64), awake: ColorPair(0xD8CDB0, 0xE0A85C))
+        case .simple:
+            // Blanc pur / noir profond, couleurs vives seulement pour les statuts (façon apps d'habitudes).
+            Colors(good: ColorPair(0x16A34A, 0x30D158), caution: ColorPair(0xD97706, 0xFFB340),
+                   alert: ColorPair(0xDC2626, 0xFF6961), accent: ColorPair(0xEA580C, 0xFF8A3D),
+                   background: ColorPair(0xF5F5F3, 0x000000), card: ColorPair(0xFFFFFF, 0x161616), well: ColorPair(0xECECEA, 0x262626),
+                   strain: ColorPair(0xEA580C, 0xFF9F5A), sleep: ColorPair(0x5B5BD6, 0x9B9BF5), nutrition: ColorPair(0x0891B2, 0x38BDF8),
+                   recoveryLight: ColorPair(0x86EFAC, 0x166534), strainLight: ColorPair(0xFDBA74, 0x9A3412),
+                   sleepLight: ColorPair(0xC7C7F5, 0x3730A3), nutritionLight: ColorPair(0xA5F3FC, 0x155E75),
+                   halos: [0xFB923C, 0x8B5CF6, 0x38BDF8], grain: false,
+                   deep: ColorPair(0x3730A3, 0x6366F1), core: ColorPair(0x818CF8, 0xA5B4FC),
+                   rem: ColorPair(0x06B6D4, 0x67E8F9), awake: ColorPair(0xFDBA74, 0xFDBA74))
+        case .ocean:
+            Colors(good: ColorPair(0x0F766E, 0x2DD4BF), caution: ColorPair(0xB45309, 0xFBBF24),
+                   alert: ColorPair(0xB91C1C, 0xF87171), accent: ColorPair(0x1D4ED8, 0x60A5FA),
+                   background: ColorPair(0xF1F5F9, 0x0B1220), card: ColorPair(0xFFFFFF, 0x131C2E), well: ColorPair(0xE2E8F0, 0x1E293B),
+                   strain: ColorPair(0x1E3A8A, 0x93C5FD), sleep: ColorPair(0x4338CA, 0xA5B4FC), nutrition: ColorPair(0x0E7490, 0x67E8F9),
+                   recoveryLight: ColorPair(0x99F6E4, 0x115E59), strainLight: ColorPair(0x93C5FD, 0x1E40AF),
+                   sleepLight: ColorPair(0xC7D2FE, 0x3730A3), nutritionLight: ColorPair(0xA5F3FC, 0x155E75),
+                   halos: [0x60A5FA, 0x2DD4BF, 0x1D4ED8], grain: false,
+                   deep: ColorPair(0x1E3A8A, 0x3B82F6), core: ColorPair(0x60A5FA, 0x93C5FD),
+                   rem: ColorPair(0x14B8A6, 0x5EEAD4), awake: ColorPair(0xFCD34D, 0xFCD34D))
+        case .plum:
+            Colors(good: ColorPair(0x15803D, 0x4ADE80), caution: ColorPair(0xC2410C, 0xFDBA74),
+                   alert: ColorPair(0xBE123C, 0xFB7185), accent: ColorPair(0x7C3AED, 0xA78BFA),
+                   background: ColorPair(0xF7F5FB, 0x120F1A), card: ColorPair(0xFFFFFF, 0x1C1828), well: ColorPair(0xEDE9F6, 0x2A2438),
+                   strain: ColorPair(0x6D28D9, 0xC4B5FD), sleep: ColorPair(0x4F46E5, 0xA5B4FC), nutrition: ColorPair(0xDB2777, 0xF9A8D4),
+                   recoveryLight: ColorPair(0xBBF7D0, 0x166534), strainLight: ColorPair(0xDDD6FE, 0x5B21B6),
+                   sleepLight: ColorPair(0xC7D2FE, 0x3730A3), nutritionLight: ColorPair(0xFBCFE8, 0x9D174D),
+                   halos: [0xA78BFA, 0xF472B6, 0x7C3AED], grain: false,
+                   deep: ColorPair(0x4C1D95, 0x7C3AED), core: ColorPair(0xA78BFA, 0xC4B5FD),
+                   rem: ColorPair(0xF472B6, 0xF9A8D4), awake: ColorPair(0xFDE68A, 0xFDE68A))
+        }
+    }
+
+    /// Quatre pastilles pour l'aperçu dans les réglages.
+    var swatches: [ColorPair] { [colors.accent, colors.good, colors.sleep, colors.background] }
+}
+
+/// Couleurs de l'app, selon la palette choisie.
 enum Theme {
-    // Rôles fonctionnels. La couleur sert d'abord au STATUT : vert mousse = OK, blé = à surveiller, brique = alerte.
+    private static var palette: ThemePalette.Colors { ThemePalette.current.colors }
+
+    // Rôles fonctionnels. La couleur sert d'abord au STATUT : OK, à surveiller, alerte.
     /// OK / récupéré / dans la norme.
-    static let good = Color(light: 0x656D4A, dark: 0xA4AC86)
+    static var good: Color { palette.good.color }
     /// À surveiller.
-    /// (En sombre, un ocre clair bien distinct de la sauge « OK ».)
-    static let caution = Color(light: 0x936639, dark: 0xE0A85C)
-    /// Alerte (seule teinte hors palette, nécessaire pour distinguer une alerte d'un simple « à surveiller »).
-    static let alert = Color(light: 0x9C4221, dark: 0xD0805A)
+    static var caution: Color { palette.caution.color }
+    /// Alerte.
+    static var alert: Color { palette.alert.color }
     /// Couleur de marque : boutons, onglet actif, pastilles d'icône.
-    static let accent = Color(light: 0x7F4F24, dark: 0xA68A64)
+    static var accent: Color { palette.accent.color }
 
     // Surfaces.
-    static let background = Color(light: 0xF3F1EA, dark: 0x1A1E15)
-    static let card = Color(light: 0xFCFBF7, dark: 0x262C1F)
-    static let well = Color(light: 0xE9E6DB, dark: 0x333D29)
+    static var background: Color { palette.background.color }
+    static var card: Color { palette.card.color }
+    static var well: Color { palette.well.color }
 
     // Familles de mesures (anneaux, graphiques).
-    static let recovery = good
-    /// Effort : teinte neutre (noyer profond), pour ne pas ressembler à un « à surveiller ».
-    static let strain = Color(light: 0x582F0E, dark: 0xD8CDB0)
-    static let sleep = Color(light: 0x414833, dark: 0xC2C5AA)
-    static let nutrition = Color(light: 0xA68A64, dark: 0xB6AD90)
-    static let warning = alert
+    static var recovery: Color { good }
+    /// Effort : teinte à part, pour ne pas ressembler à un « à surveiller ».
+    static var strain: Color { palette.strain.color }
+    static var sleep: Color { palette.sleep.color }
+    static var nutrition: Color { palette.nutrition.color }
+    static var warning: Color { alert }
 
     /// Dégradés des anneaux (clair → profond).
-    static let recoveryGradient = [Color(light: 0xA4AC86, dark: 0x656D4A), good]
-    static let strainGradient = [Color(light: 0xA68A64, dark: 0x936639), strain]
-    static let sleepGradient = [Color(light: 0xA4AC86, dark: 0x656D4A), sleep]
-    static let nutritionGradient = [Color(light: 0xC2C5AA, dark: 0x936639), nutrition]
+    static var recoveryGradient: [Color] { [palette.recoveryLight.color, good] }
+    static var strainGradient: [Color] { [palette.strainLight.color, strain] }
+    static var sleepGradient: [Color] { [palette.sleepLight.color, sleep] }
+    static var nutritionGradient: [Color] { [palette.nutritionLight.color, nutrition] }
+
+    /// Stades de sommeil.
+    static var sleepDeep: Color { palette.deep.color }
+    static var sleepCore: Color { palette.core.color }
+    static var sleepREM: Color { palette.rem.color }
+    static var sleepAwake: Color { palette.awake.color }
+
+    /// Halos du fond et grain papier.
+    static var halos: [Color] { palette.halos.map { Color(hex: $0) } }
+    static var hasGrain: Bool { palette.grain }
 
     static let cardRadius: CGFloat = 22
 
@@ -170,17 +281,22 @@ struct AppBackground: View {
 
     var body: some View {
         let dark = colorScheme == .dark
+        let halos = Theme.halos
         ZStack {
             Theme.background
             // Halo coloré en haut de l'écran, qui s'efface vers le milieu.
-            ZStack {
-                Circle().fill(Color(hex: 0xA68A64).opacity(dark ? 0.20 : 0.22)).frame(width: 340).blur(radius: 110).offset(x: -150, y: -330)
-                Circle().fill(Color(hex: 0xA4AC86).opacity(dark ? 0.18 : 0.24)).frame(width: 320).blur(radius: 120).offset(x: 160, y: -280)
-                Circle().fill(Color(hex: 0x656D4A).opacity(dark ? 0.14 : 0.08)).frame(width: 300).blur(radius: 130).offset(x: 40, y: -120)
+            if halos.count >= 3 {
+                ZStack {
+                    Circle().fill(halos[0].opacity(dark ? 0.20 : 0.22)).frame(width: 340).blur(radius: 110).offset(x: -150, y: -330)
+                    Circle().fill(halos[1].opacity(dark ? 0.18 : 0.24)).frame(width: 320).blur(radius: 120).offset(x: 160, y: -280)
+                    Circle().fill(halos[2].opacity(dark ? 0.14 : 0.08)).frame(width: 300).blur(radius: 130).offset(x: 40, y: -120)
+                }
             }
             LinearGradient(colors: [.clear, Theme.background.opacity(0.0), Theme.background],
                            startPoint: .top, endPoint: .center)
-            PaperGrain(opacity: dark ? 0.05 : 0.035)
+            if Theme.hasGrain {
+                PaperGrain(opacity: dark ? 0.05 : 0.035)
+            }
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)

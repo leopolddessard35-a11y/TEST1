@@ -11,15 +11,43 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Query private var profiles: [AthleteProfile]
     @AppStorage(Appearance.storageKey) private var appearance = Appearance.light.rawValue
+    @AppStorage(ThemePalette.storageKey) private var palette = ThemePalette.earth.rawValue
 
     var body: some View {
         NavigationStack {
             List {
-                Section("Apparence") {
+                Section {
                     Picker("Apparence", selection: $appearance) {
                         ForEach(Appearance.allCases) { Text($0.label).tag($0.rawValue) }
                     }
                     .pickerStyle(.segmented)
+                    ForEach(ThemePalette.allCases) { option in
+                        Button { palette = option.rawValue } label: {
+                            HStack(spacing: 12) {
+                                HStack(spacing: -6) {
+                                    ForEach(Array(option.swatches.enumerated()), id: \.offset) { _, pair in
+                                        Circle().fill(pair.color)
+                                            .frame(width: 22, height: 22)
+                                            .overlay(Circle().strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
+                                    }
+                                }
+                                Text(option.label).foregroundStyle(.primary)
+                                Spacer()
+                                if palette == option.rawValue {
+                                    Image(systemName: "checkmark").font(.body.weight(.semibold)).foregroundStyle(Theme.accent)
+                                }
+                            }
+                            .frame(minHeight: 44)
+                            .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Palette \(option.label)")
+                        .accessibilityAddTraits(palette == option.rawValue ? .isSelected : [])
+                    }
+                } header: {
+                    Text("Apparence")
+                } footer: {
+                    Text("« Simple » : blanc pur ou noir profond, couleurs vives seulement pour les statuts. Changer de palette redessine l'app (les réglages se referment).")
                 }
                 if let profile = profiles.first {
                     Section {

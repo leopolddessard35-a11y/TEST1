@@ -170,10 +170,10 @@ struct SleepDetailView: View {
 
     static func color(_ stage: SleepSegment.Stage) -> Color {
         switch stage {
-        case .deep: Color(light: 0x333D29, dark: 0x656D4A)
-        case .core: Color(light: 0xA4AC86, dark: 0xA4AC86)
-        case .rem: Color(light: 0x7F4F24, dark: 0xA68A64)
-        case .awake: Color(light: 0xD8CDB0, dark: 0xE0A85C)
+        case .deep: Theme.sleepDeep
+        case .core: Theme.sleepCore
+        case .rem: Theme.sleepREM
+        case .awake: Theme.sleepAwake
         }
     }
 

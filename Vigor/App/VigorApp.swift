@@ -30,9 +30,12 @@ struct VigorApp: App {
 /// Applique l'apparence choisie (clair par défaut) à toute l'app, feuilles comprises.
 struct AppearanceRoot: View {
     @AppStorage(Appearance.storageKey) private var appearance = Appearance.light.rawValue
+    @AppStorage(ThemePalette.storageKey) private var palette = ThemePalette.earth.rawValue
 
     var body: some View {
         ContentView()
+            // Nouvelle palette : toute l'interface est reconstruite avec les nouvelles couleurs.
+            .id(palette)
             .preferredColorScheme((Appearance(rawValue: appearance) ?? .light).colorScheme)
     }
 }
