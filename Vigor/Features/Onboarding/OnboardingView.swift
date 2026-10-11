@@ -51,11 +51,16 @@ private struct OnboardingFlow: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    switch step {
-                    case 0: goalStep
-                    case 1: healthStep
-                    default: garminStep
+                    // Chaque écran arrive par la droite.
+                    Group {
+                        switch step {
+                        case 0: goalStep
+                        case 1: healthStep
+                        default: garminStep
+                        }
                     }
+                    .id(step)
+                    .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
                 }
                 .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)

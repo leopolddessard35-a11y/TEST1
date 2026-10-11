@@ -126,7 +126,7 @@ private struct MacroSummaryTile: View {
                     ZStack {
                         GradientRing(fraction: totals.kcal / max(targets.kcal, 1), colors: Theme.nutritionGradient, lineWidth: 10)
                         VStack(spacing: 0) {
-                            Text(totals.kcal.noDecimal).font(.system(.title3, design: .rounded).weight(.bold)).monospacedDigit()
+                            AnimatedNumber(value: totals.kcal).font(.system(.title3, design: .rounded).weight(.bold))
                             Text("kcal").font(.caption2).foregroundStyle(.secondary)
                         }
                     }

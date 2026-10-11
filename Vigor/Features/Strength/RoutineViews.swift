@@ -72,7 +72,7 @@ struct StrengthPlansSection: View {
                                symbol: "clock.arrow.circlepath", tint: Theme.recovery)
                 }
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
         }
         .sheet(isPresented: $startingEmpty) { WorkoutLoggerView() }
         .sheet(item: $startingRoutine) { routine in WorkoutLoggerView(routine: routine) }
@@ -117,7 +117,7 @@ private struct RoutineCard: View {
                             .frame(width: 44, height: 44)
                             .contentShape(.rect)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("Modifier la séance type")
                 }

@@ -15,7 +15,7 @@ struct HealthMonitorGrid: View {
             tile(.weight, series: MetricKind.weight.series(from: wellness))
             tile(.vo2max, series: MetricKind.vo2max.series(from: wellness))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 
     private var sleepTiles: [(title: String, value: String, caption: String)] {

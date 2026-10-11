@@ -142,3 +142,64 @@ extension View {
         }
     }
 }
+
+// MARK: - Vie de l'interface
+
+/// Entrée en cascade : la carte glisse et apparaît, un peu après la précédente (une seule fois).
+/// Avec « Réduire les animations », simple fondu sans déplacement.
+struct CascadeIn: ViewModifier {
+    let index: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .offset(y: shown || reduceMotion ? 0 : 18)
+            .onAppear {
+                guard !shown else { return }
+                let delay = reduceMotion ? 0 : Double(min(index, 8)) * 0.07
+                withAnimation(.spring(response: 0.55, dampingFraction: 0.86).delay(delay)) { shown = true }
+            }
+    }
+}
+
+extension View {
+    /// Entrée en cascade (`index` = position dans la page).
+    func cascadeIn(_ index: Int) -> some View { modifier(CascadeIn(index: index)) }
+}
+
+/// Bouton ou tuile qui s'enfonce légèrement sous le doigt.
+struct PressableStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .opacity(configuration.isPressed ? 0.88 : 1)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
+    }
+}
+
+extension ButtonStyle where Self == PressableStyle {
+    static var pressable: PressableStyle { PressableStyle() }
+}
+
+/// Nombre qui compte depuis 0 à l'apparition, puis glisse vers chaque nouvelle valeur.
+struct AnimatedNumber: View {
+    let value: Double
+    var suffix = ""
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown: Double = 0
+
+    var body: some View {
+        CountingText(value: shown, suffix: suffix)
+            .onAppear {
+                if reduceMotion {
+                    shown = value
+                } else {
+                    withAnimation(.spring(response: 1.1, dampingFraction: 0.9).delay(0.1)) { shown = value }
+                }
+            }
+            .onChange(of: value) { withAnimation(.snappy) { shown = value } }
+            .accessibilityLabel("\(Int(value.rounded()))\(suffix)")
+    }
+}

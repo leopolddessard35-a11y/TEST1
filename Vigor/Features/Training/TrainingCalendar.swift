@@ -228,7 +228,7 @@ struct TrainingCalendarCard: View {
                         Button { shift(1) } label: { Image(systemName: "chevron.right").frame(width: 44, height: 44) }
                             .accessibilityLabel("Mois suivant")
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                     .foregroundStyle(Theme.accent)
                 }
 
@@ -246,12 +246,15 @@ struct TrainingCalendarCard: View {
                         ForEach(Array(days.enumerated()), id: \.offset) { _, day in
                             if let day {
                                 Button { selected = day } label: { CalendarDayCell(day: day) }
-                                    .buttonStyle(.plain)
+                                    .buttonStyle(.pressable)
                             } else {
                                 Color.clear.frame(height: 44)
                             }
                         }
                     }
+                    // Changement de mois : la grille se remplace en fondu.
+                    .id(month)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
                     .simultaneousGesture(DragGesture(minimumDistance: 30).onEnded { value in
                         // Balayage nettement horizontal seulement : un défilement vertical ne change pas de mois.
                         let dx = value.translation.width
@@ -269,7 +272,7 @@ struct TrainingCalendarCard: View {
                     HStack(spacing: 4) {
                         ForEach(week) { day in
                             Button { selected = day } label: { CalendarDayCell(day: day) }
-                                .buttonStyle(.plain)
+                                .buttonStyle(.pressable)
                         }
                     }
                 }
@@ -284,7 +287,7 @@ struct TrainingCalendarCard: View {
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .foregroundStyle(Theme.accent)
 
                 if let plan = snapshot.weekPlan {
@@ -292,7 +295,7 @@ struct TrainingCalendarCard: View {
                         LinkRow(symbol: "calendar.badge.clock", title: "Organiser ma semaine",
                                 subtitle: WeekPlannerView.summary(plan))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                 }
             }
         }

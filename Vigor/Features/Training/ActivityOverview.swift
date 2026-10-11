@@ -29,7 +29,7 @@ struct MuscleFreshnessCard: View {
                 }
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 
     private var freshness: [MuscleFreshness.Entry] {

@@ -129,7 +129,7 @@ struct ExerciseLibraryView: View {
                 .background(selected ? AnyShapeStyle(tint.gradient) : AnyShapeStyle(Theme.card),
                             in: .capsule)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 }
 
@@ -191,7 +191,7 @@ struct CustomExerciseForm: View {
                         .foregroundStyle(on ? Color.white : Color.primary)
                         .background(on ? AnyShapeStyle(Theme.strain.gradient) : AnyShapeStyle(Color.secondary.opacity(0.12)), in: .capsule)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
             }
         }
         .padding(.vertical, 4)

@@ -19,10 +19,10 @@ struct TodayView: View {
                     // Trois questions, trois cartes : comment je vais, quoi faire, ce qu'il me reste à faire aujourd'hui.
                     // Le reste (mesures, analyses) vit dans Santé et Entraînement.
                     VStack(spacing: 12) {
-                        SyncStatusBadge()
-                        SetupChecklistCard { showSettings = true }
-                        RingsCoachingCard(snapshot: snapshot)
-                        TodayChecklistCard(snapshot: snapshot) { addingFood = true }
+                        SyncStatusBadge().cascadeIn(0)
+                        SetupChecklistCard { showSettings = true }.cascadeIn(1)
+                        RingsCoachingCard(snapshot: snapshot).cascadeIn(2)
+                        TodayChecklistCard(snapshot: snapshot) { addingFood = true }.cascadeIn(3)
                     }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 24)
@@ -98,7 +98,7 @@ private struct RingsCoachingCard: View {
                              colors: Theme.sleepGradient)
                 }
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .frame(maxWidth: .infinity)
 
             Divider()
@@ -123,7 +123,7 @@ private struct RingsCoachingCard: View {
                 }
                 .contentShape(.rect)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
 
             // Séance du jour : la muscu se lance d'ici, en un tap.
             let sessions = brief.adapted.filter { $0.kind != .rest }
@@ -149,7 +149,7 @@ private struct RingsCoachingCard: View {
                                 .font(.subheadline.weight(.semibold))
                                 .frame(maxWidth: .infinity, minHeight: 44)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                         .foregroundStyle(Theme.accent)
                     }
                 }
@@ -177,7 +177,15 @@ private struct SideRing: View {
             ZStack {
                 GradientRing(fraction: fraction, colors: colors, lineWidth: 9)
                 VStack(spacing: 0) {
-                    Text(text).font(.system(.title2, design: .rounded).weight(.heavy)).monospacedDigit()
+                    // Score qui compte jusqu'à sa valeur à l'ouverture.
+                    Group {
+                        if let number = Double(text) {
+                            AnimatedNumber(value: number)
+                        } else {
+                            Text(text)
+                        }
+                    }
+                    .font(.system(.title2, design: .rounded).weight(.heavy)).monospacedDigit()
                     Text(suffix).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
                 }
                 .lineLimit(1)

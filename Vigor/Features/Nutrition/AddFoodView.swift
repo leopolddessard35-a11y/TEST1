@@ -219,6 +219,8 @@ struct AddFoodView: View {
             }
             if let error { Section { Text(error).foregroundStyle(Theme.warning) } }
         }
+        // Petite vibration de confirmation à chaque ajout.
+        .sensoryFeedback(.success, trigger: added.count)
     }
 
     /// Enregistre tout de suite l'aliment créé à la main : il reste disponible même si la quantité est annulée.

@@ -59,7 +59,7 @@ struct RecoveryView: View {
                                 }
                             }
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                     }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 24)
@@ -121,7 +121,7 @@ private struct SleepSummaryCard: View {
                 }
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 }
 
@@ -171,7 +171,7 @@ private struct BodyJournalCard: View {
                 }
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 
     private func symptomSubtitle(recent: Int) -> String {

@@ -16,6 +16,7 @@ struct SyncStatusBadge: View {
                     Text(error.localizedDescription).lineLimit(1)
                 } else if let date = sync.lastSyncDate {
                     Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.recovery)
+                        .symbolEffect(.bounce, value: date)
                     Text(Calendar.current.isDateInToday(date)
                          ? "Nuit synchronisée à \(date.formatted(date: .omitted, time: .shortened))"
                          : "Dernière synchro \(date.formatted(.relative(presentation: .named)))")

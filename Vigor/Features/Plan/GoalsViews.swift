@@ -25,7 +25,7 @@ struct GoalsCard: View {
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 ForEach(goals.filter { $0.date >= Calendar.current.startOfDay(for: .now) }) { goal in
-                    Button { editing = goal } label: { row(goal) }.buttonStyle(.plain)
+                    Button { editing = goal } label: { row(goal) }.buttonStyle(.pressable)
                 }
             }
         }

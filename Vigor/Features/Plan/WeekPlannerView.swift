@@ -110,7 +110,10 @@ struct WeekPlannerView: View {
                     dayRow(day, plan: plan, profile: profile)
                 }
             }
+            // Une séance déplacée glisse vers son nouveau jour.
+            .animation(.snappy, value: plan)
         }
+        .sensoryFeedback(.selection, trigger: plan.items.map(\.day))
     }
 
     private func dayRow(_ day: Date, plan: WeekPlan, profile: AthleteProfile) -> some View {

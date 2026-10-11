@@ -20,6 +20,8 @@ struct GradientRing: View {
                                         startAngle: .degrees(0), endAngle: .degrees(360 * trimmed)),
                         style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
+                // Léger halo de la couleur de l'anneau : il semble « éclairé ».
+                .shadow(color: (colors.last ?? .clear).opacity(0.28), radius: lineWidth * 0.5)
         }
         .onAppear { withAnimation(.spring(response: 1.1, dampingFraction: 0.85).delay(0.1)) { shown = fraction } }
         .onChange(of: fraction) { withAnimation(.spring(response: 0.8, dampingFraction: 0.85)) { shown = fraction } }

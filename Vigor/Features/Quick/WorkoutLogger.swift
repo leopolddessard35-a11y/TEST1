@@ -558,6 +558,7 @@ struct WorkoutLoggerView: View {
             message += "\nRecords : " + records.joined(separator: ", ") + "."
         }
         app.statusMessage = message
+        Feedback.success()
         dismiss()
     }
 
@@ -751,6 +752,9 @@ private struct SetLogRow: View {
                 Image(systemName: set.done ? "checkmark.circle.fill" : "circle")
                     .font(.title2)
                     .foregroundStyle(set.done ? Theme.recovery : Color.secondary)
+                    // La coche « saute » quand la série est validée.
+                    .contentTransition(.symbolEffect(.replace))
+                    .symbolEffect(.bounce, value: set.done)
                     .frame(width: 44, height: 44)
                     .contentShape(.rect)
             }
@@ -777,6 +781,11 @@ private struct RestBanner: View {
                 Image(systemName: "timer").foregroundStyle(Theme.strain)
                 Text(remaining > 0 ? String(format: "Repos %d:%02d", locale: Locale.current, remaining / 60, remaining % 60) : "Repos terminé")
                     .font(.headline.monospacedDigit())
+                    .contentTransition(.numericText(countsDown: true))
+                    .animation(.snappy, value: remaining)
+                    // Dernières secondes : le texte prend la couleur de l'effort et grossit un peu.
+                    .foregroundStyle(remaining > 0 && remaining <= 3 ? Theme.strain : Color.primary)
+                    .scaleEffect(remaining > 0 && remaining <= 3 ? 1.06 : 1)
                 Spacer()
                 Button("−15 s") { onAdjust(-15) }
                 Button("+15 s") { onAdjust(15) }

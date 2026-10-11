@@ -24,7 +24,7 @@ struct TrainingView: View {
                                         subtitle: "Prochaines charges, volume par muscle, tonnage, records")
                             }
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
 
                         SectionHeader(title: "Vélo et endurance", symbol: "bicycle")
                         EnduranceSummaryCard(profile: profile)
@@ -33,7 +33,7 @@ struct TrainingView: View {
                         NavigationLink { SeasonPlanView() } label: {
                             SeasonCard(plan: snapshot.plan, raceName: profile.raceName, raceDate: profile.raceDate)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
 
                         SectionHeader(title: "Charge et fatigue", symbol: "gauge.with.needle")
                         GlassCard {
@@ -53,7 +53,7 @@ struct TrainingView: View {
                                 }
                             }
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                     }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 24)
@@ -92,7 +92,7 @@ private struct EnduranceSummaryCard: View {
                     } label: {
                         ActivityRow(activity: last, thresholds: profile.thresholds)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                 } else {
                     Text("Aucune sortie pour l'instant : relie Garmin (Réglages → Intervals.icu) ou Apple Santé.")
                         .font(.subheadline).foregroundStyle(.secondary)
@@ -104,7 +104,7 @@ private struct EnduranceSummaryCard: View {
                     LinkRow(symbol: "list.bullet", title: "Toutes les sorties",
                             subtitle: "FTP \(profile.ftp.noDecimal) W · \(activities.count) séances enregistrées")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
             }
         }
     }
@@ -205,14 +205,14 @@ struct StrengthProgressContent: View {
                                        caption: "1RM estimé par exercice", symbol: "trophy.fill", tint: Theme.sleep)
                         }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                     WorkoutListCard(workouts: Array(workouts.prefix(5)))
                 }
                 Button { importing = true } label: {
                     Label("Récupérer mon historique Hevy (CSV)", systemImage: "square.and.arrow.down")
                         .font(.footnote)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .foregroundStyle(.secondary)
                 .padding(.top, 4)
             }
@@ -330,7 +330,7 @@ private struct WorkoutListCard: View {
                             Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                         }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                 }
             }
         }
@@ -423,7 +423,7 @@ private struct EnduranceSection: View {
                                 } label: {
                                     ActivityRow(activity: activity, thresholds: profile.thresholds)
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(.pressable)
                             }
                         }
                     }
@@ -510,7 +510,7 @@ private struct ExerciseListCard: View {
                             DetailChevron()
                         }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                 }
             }
         }
@@ -561,7 +561,7 @@ private struct LoadSummarySection: View {
                            caption: "travaux, journées debout", symbol: "hammer.fill", tint: Theme.strain)
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 
     private func ratioWord(_ ratio: Double?) -> String {

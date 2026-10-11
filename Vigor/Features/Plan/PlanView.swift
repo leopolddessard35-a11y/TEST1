@@ -19,7 +19,7 @@ struct SeasonPlanView: View {
 
                         if let plan = snapshot.weekPlan {
                             NavigationLink { WeekPlannerView() } label: { WeekPlanCard(plan: plan) }
-                                .buttonStyle(.plain)
+                                .buttonStyle(.pressable)
                         }
 
                         HStack(spacing: 12) {
@@ -60,7 +60,7 @@ struct SeasonPlanView: View {
                                 DetailPage(title: "Toutes les semaines") {
                                     ForEach(snapshot.plan.weeks) { week in
                                         NavigationLink { WeekDetailView(week: week) } label: { WeekCard(week: week) }
-                                            .buttonStyle(.plain)
+                                            .buttonStyle(.pressable)
                                     }
                                 }
                             } label: {
@@ -76,7 +76,7 @@ struct SeasonPlanView: View {
                                 }
                             }
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                     }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 24)

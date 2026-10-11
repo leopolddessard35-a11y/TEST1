@@ -20,6 +20,11 @@ enum Feedback {
     static func setDone() {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
+
+    /// Séance enregistrée, objectif atteint.
+    static func success() {
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
 }
 
 /// Affiche les notifications même quand Vigor est ouverte (sinon iOS les rend muettes au premier plan).

@@ -33,7 +33,7 @@ struct TodayChecklistCard: View {
                         DetailChevron()
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 if let report = snapshot.weeklyReport, let review = snapshot.weeklyReview,
                    [1, 2].contains(Calendar.current.component(.weekday, from: .now)) {
                     Divider().padding(.leading, 44)
@@ -43,7 +43,7 @@ struct TodayChecklistCard: View {
                         ChecklistRow(symbol: "calendar.badge.checkmark", title: "Revue de la semaine",
                                      subtitle: review.strongPoint, done: false) { DetailChevron() }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                 }
             }
         }
@@ -103,6 +103,7 @@ struct ChecklistRow<Trailing: View>: View {
         HStack(spacing: 12) {
             Image(systemName: done ? "checkmark" : symbol)
                 .font(.system(size: iconSize, weight: .semibold))
+                .contentTransition(.symbolEffect(.replace))
                 .foregroundStyle(done ? Color.white : Theme.accent)
                 .frame(width: circleSize, height: circleSize)
                 .background(done ? AnyShapeStyle(Theme.good) : AnyShapeStyle(Theme.well), in: .circle)

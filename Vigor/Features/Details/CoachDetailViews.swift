@@ -279,7 +279,7 @@ struct InsightCard: View {
                         Image(systemName: expanded ? "chevron.up" : "chevron.down").font(.caption).foregroundStyle(.tertiary)
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
 
                 if expanded {
                     VStack(alignment: .leading, spacing: 4) {

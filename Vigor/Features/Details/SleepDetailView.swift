@@ -30,7 +30,7 @@ struct SleepDetailView: View {
                                 subtitle: "Besoin de \(snapshot.sleepNeed.total.hoursText), d'où il vient")
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 ExplanationCard(title: "Comment le score est calculé", symbol: "function", text: """
                 Durée vs ton besoin (50 %), efficacité : temps endormi sur le temps au lit (15 %), stades : profond ≥ 15 % et paradoxal ≥ 20 % de la nuit (20 %), régularité : heure de coucher proche de ta médiane des 14 dernières nuits (15 %).
                 Le sommeil profond sert surtout à la récupération physique (hormone de croissance), le paradoxal à la mémoire et à l'équilibre émotionnel. Les stades mesurés par une montre sont des estimations : regarde la tendance plutôt qu'une nuit isolée.
