@@ -52,7 +52,7 @@ enum SharedStore {
                                       FoodItem.self, FoodEntry.self, LifeActivity.self, Symptom.self, Shoe.self,
                                       Goal.self, PlanBaseline.self, Experiment.self,
                                       WorkoutRoutine.self, CustomExercise.self, SessionPlacement.self,
-                                      FrozenWeek.self)
+                                      FrozenWeek.self, MealTemplate.self)
         } catch {
             fatalError("Base de données impossible à ouvrir : \(error)")
         }

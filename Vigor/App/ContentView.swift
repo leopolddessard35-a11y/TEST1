@@ -9,6 +9,8 @@ struct ContentView: View {
     @Query private var profiles: [AthleteProfile]
     @State private var selection: AppTab = .today
     @State private var showQuickAdd = false
+    /// Accueil en 3 écrans au premier lancement (déjà vu, ou app déjà utilisée = pas d'accueil).
+    @AppStorage("onboarding.done") private var onboardingDone = false
 
     enum AppTab: Hashable {
         case today, activity, health, nutrition, add
@@ -54,14 +56,29 @@ struct ContentView: View {
                 try? context.save()
             }
             ExerciseLibrary.registerCustom((try? context.fetch(FetchDescriptor<CustomExercise>())) ?? [])
+            // App déjà utilisée avant cette version : pas d'accueil.
+            if !onboardingDone,
+               ((try? context.fetchCount(FetchDescriptor<DailyWellness>())) ?? 0) > 0 || !app.intervalsAPIKey.isEmpty {
+                onboardingDone = true
+            }
             // Pas de demande de notifications au premier lancement : elle vient quand tu actives un rappel
             // (Réglages) ou valides ta première série (`NotificationScheduler.requestAuthorizationIfNeeded`).
             app.scheduleBackgroundRefresh()
+            // Pendant l'accueil, pas de synchro (ni de demande Apple Santé) : elle part à la fin de l'accueil.
+            if onboardingDone {
+                await app.foregroundSync(context: context, profile: profiles.first, sleep: sync)
+            }
         }
-        // Au lancement, l'une après l'autre : sommeil du jour (si pas encore fait), réparation unique
-        // de l'historique, puis synchro complète si la dernière date de plus d'une heure.
-        .task {
-            await app.foregroundSync(context: context, profile: profiles.first, sleep: sync)
+        // Premier lancement : accueil en 3 écrans, puis la première synchro.
+        .fullScreenCover(isPresented: Binding(get: { !onboardingDone }, set: { if !$0 { onboardingDone = true } })) {
+            OnboardingView {
+                onboardingDone = true
+                Task {
+                    await app.foregroundSync(context: context, profile: profiles.first, sleep: sync)
+                    // Clé Garmin saisie à l'accueil : un an d'historique d'un coup.
+                    if !app.intervalsAPIKey.isEmpty { await app.syncAll(context: context, profile: profiles.first) }
+                }
+            }
         }
         .onChange(of: sync.lastSyncDate) {
             app.dataVersion += 1
@@ -70,7 +87,7 @@ struct ContentView: View {
             await app.refreshNotifications(context: context)
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active {
+            if phase == .active, onboardingDone {
                 app.scheduleBackgroundRefresh()
                 // Retour dans l'app (ex. le lendemain) : mêmes synchros, en série, puis notifications.
                 Task {

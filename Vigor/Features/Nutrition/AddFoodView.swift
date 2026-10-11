@@ -166,6 +166,10 @@ struct AddFoodView: View {
             }
 
             if query.isEmpty {
+                MealTemplatesSection(meal: meal, day: day) { name, _ in
+                    added.append(name)
+                    onSaved()
+                }
                 let frequent = recents.filter { $0.useCount >= 3 }.sorted { $0.useCount > $1.useCount }.prefix(6)
                 if !frequent.isEmpty {
                     Section("Favoris · + = ta portion habituelle") {

@@ -227,6 +227,7 @@ enum DemoData {
         try context.delete(model: Goal.self)
         try context.delete(model: PlanBaseline.self)
         try context.delete(model: SessionPlacement.self)
+        try context.delete(model: MealTemplate.self)
         try context.delete(model: FrozenWeek.self)
         try context.save()
         // Marqueurs de synchro, séances supprimées et brouillon de séance : la prochaine synchro repart de zéro.

@@ -389,6 +389,73 @@ final class FoodEntry {
     }
 }
 
+extension FoodEntry {
+    /// Entrée recréée depuis un aliment d'un repas type (valeurs pour 100 g gardées telles quelles).
+    convenience init(date: Date, meal: Meal, templateItem item: MealTemplateItem) {
+        self.init(date: date, meal: meal, grams: item.grams,
+                  item: FoodItem(key: item.itemKey, name: item.name, brand: item.brand, barcode: nil, source: "repas type",
+                                 kcal100: item.kcal100, protein100: item.protein100, carbs100: item.carbs100, fat100: item.fat100))
+        self.fiber100 = item.fiber100
+        self.sugar100 = item.sugar100
+    }
+}
+
+/// Un aliment d'un repas type, avec sa quantité.
+struct MealTemplateItem: Codable, Hashable {
+    var itemKey: String
+    var name: String
+    var brand: String
+    var grams: Double
+    var kcal100: Double
+    var protein100: Double
+    var carbs100: Double
+    var fat100: Double
+    var fiber100: Double?
+    var sugar100: Double?
+
+    init(entry: FoodEntry) {
+        itemKey = entry.itemKey
+        name = entry.name
+        brand = entry.brand
+        grams = entry.grams
+        kcal100 = entry.kcal100
+        protein100 = entry.protein100
+        carbs100 = entry.carbs100
+        fat100 = entry.fat100
+        fiber100 = entry.fiber100
+        sugar100 = entry.sugar100
+    }
+
+    var kcal: Double { kcal100 * grams / 100 }
+    var protein: Double { protein100 * grams / 100 }
+}
+
+/// Repas type (« petit-déj habituel », recette pesée une fois) : ajouté en un tap.
+@Model
+final class MealTemplate {
+    @Attribute(.unique) var templateID: String
+    var name: String
+    /// Repas proposé par défaut (Meal.rawValue).
+    var mealRaw: String
+    var itemsData: Data
+    var createdAt: Date
+    var lastUsed: Date?
+    var useCount: Int = 0
+
+    init(name: String, meal: Meal, items: [MealTemplateItem]) {
+        self.templateID = UUID().uuidString
+        self.name = name
+        self.mealRaw = meal.rawValue
+        self.itemsData = (try? JSONEncoder().encode(items)) ?? Data()
+        self.createdAt = .now
+    }
+
+    var meal: Meal { Meal(rawValue: mealRaw) ?? .snack }
+    var items: [MealTemplateItem] { (try? JSONDecoder().decode([MealTemplateItem].self, from: itemsData)) ?? [] }
+    var kcal: Double { items.reduce(0) { $0 + $1.kcal } }
+    var protein: Double { items.reduce(0) { $0 + $1.protein } }
+}
+
 /// Activité physique hors sport : elle fatigue autant qu'une séance.
 @Model
 final class LifeActivity {

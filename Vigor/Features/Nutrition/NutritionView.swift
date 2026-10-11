@@ -62,6 +62,8 @@ struct NutritionContent: View {
                 .buttonStyle(.glassProminent)
                 .controlSize(.large)
 
+                YesterdayMealsCard(day: day, entries: entries)
+
                 if dayEntries.isEmpty {
                     EmptyStateCard(title: Calendar.current.isDateInToday(day) ? "Aucun repas noté aujourd'hui" : "Aucun repas noté ce jour-là",
                                    message: "Touche « Ajouter un aliment » : recherche, scan du code-barres ou tes favoris en un tap.",
@@ -192,6 +194,8 @@ private struct MealCard: View {
     let meal: Meal
     let entries: [FoodEntry]
     @State private var editing: FoodEntry?
+    @State private var naming = false
+    @State private var templateName = ""
 
     var body: some View {
         GlassCard {
@@ -200,6 +204,18 @@ private struct MealCard: View {
                     Label(meal.label, systemImage: meal.symbol).font(.headline)
                     Spacer()
                     Text("\(NutritionView.totals(of: entries, day: .now).kcal.noDecimal) kcal").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                    Menu {
+                        Button("Enregistrer comme repas type", systemImage: "square.and.arrow.down") {
+                            templateName = "\(meal.label) habituel"
+                            naming = true
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .foregroundStyle(.secondary)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("Options du repas \(meal.label)")
                 }
                 ForEach(entries) { entry in
                     HStack {
@@ -233,6 +249,16 @@ private struct MealCard: View {
         }
         .sheet(item: $editing) { entry in
             FoodEntryEditor(entry: entry) { app.dataVersion += 1 }
+        }
+        .alert("Nouveau repas type", isPresented: $naming) {
+            TextField("Nom", text: $templateName)
+            Button("Enregistrer") {
+                MealTemplates.save(name: templateName, meal: meal, entries: entries, context: context)
+                app.statusMessage = "Repas type « \(templateName) » enregistré : retrouve-le en haut de « Ajouter un aliment »."
+            }
+            Button("Annuler", role: .cancel) {}
+        } message: {
+            Text("\(entries.count) aliment\(entries.count > 1 ? "s" : "") · \(NutritionView.totals(of: entries, day: .now).kcal.noDecimal) kcal, avec leurs quantités.")
         }
     }
 
